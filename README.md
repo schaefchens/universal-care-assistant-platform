@@ -7,9 +7,10 @@ An AI-powered assistive and care platform for disabled people and people who nee
 
 ## Status
 
-Milestone 1, step S8 done: identity and devices, people and permissions, help requests with helpers' browsers and the
+Milestone 1, step S9 done: identity and devices, people and permissions, help requests with helpers' browsers and the
 Android app's alarm, interactive reminders, speech providers and each person's voices, push-to-talk with commands and
-the help question. Next: S9, the assistant. Departures from the plan are in [docs/decisions.md](docs/decisions.md).
+the help question, and the assistant (notes, reminders, confirmed actions, help it proposes). Next: S10, Telegram.
+Departures from the plan are in [docs/decisions.md](docs/decisions.md).
 
 ## Running the development stack
 
@@ -21,6 +22,7 @@ npm install
 docker compose up -d --wait   # Postgres, ntfy, Caddy, and the core, assistant and connectors processes
 curl -s localhost:8810/healthz
 npm test
+npm run evals                 # the assistant against the dialogue model on Ollama (48 German utterances)
 ```
 
 `npm run setup` keeps existing secrets and adds missing ones: run it again after an update that needs a new one

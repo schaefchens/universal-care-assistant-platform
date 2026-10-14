@@ -14,11 +14,12 @@ export type CommandLang = 'de' | 'en';
 
 /**
  * Where the utterance was said: anywhere (`global`), while a yes-or-no question waits (`confirm`: the help ask-back,
- * later the assistant's confirmations), or on a reminder's question (`reminder`).
+ * the assistant's confirmations), on a reminder's question (`reminder`), or as the words of a new note (`dictation`:
+ * matched like `global`, so help and stop still work; anything else is the note).
  */
-export type CommandContext = 'global' | 'confirm' | 'reminder';
+export type CommandContext = 'global' | 'confirm' | 'reminder' | 'dictation';
 
-export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later';
+export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo';
 
 export type Match = { kind: 'command'; intent: Intent } | { kind: 'ask'; reason: 'help_word' | 'help_near' } | { kind: 'none' };
 
@@ -49,6 +50,7 @@ const GLOBAL: Record<CommandLang, Table> = {
     time: ['Wie spät ist es?', 'Uhrzeit', 'Wie viel Uhr ist es?'],
     whereAmI: ['Wo bin ich?'],
     whatCanIDo: ['Was kann ich hier tun?', 'Was kann ich tun?'],
+    undo: ['Rückgängig', 'Rückgängig machen', 'Mach das rückgängig'],
   },
   en: {
     stop: ['Stop', 'Cancel', 'Enough', 'Quiet'],
@@ -60,10 +62,11 @@ const GLOBAL: Record<CommandLang, Table> = {
     time: ['What time is it?', 'What is the time?'],
     whereAmI: ['Where am I?'],
     whatCanIDo: ['What can I do here?', 'What can I do?'],
+    undo: ['Undo', 'Undo that'],
   },
 };
 
-const CONTEXTS: Record<Exclude<CommandContext, 'global'>, Record<CommandLang, Table>> = {
+const CONTEXTS: Record<Exclude<CommandContext, 'global' | 'dictation'>, Record<CommandLang, Table>> = {
   confirm: {
     de: { yes: ['Ja', 'Ja bitte', 'Jawohl', 'Genau', 'Senden', 'Ja senden'], no: ['Nein', 'Nein danke', 'Lieber nicht', 'Nicht senden'] },
     en: { yes: ['Yes', 'Yes please', 'Yeah', 'Send it', 'Send'], no: ['No', 'No thanks', "Don't send it", "Don't send"] },
@@ -103,7 +106,7 @@ const NEAR = new Map((['de', 'en'] as const).map((lang) => [lang, HELP_PHRASES[l
 export function match(transcript: string, lang: CommandLang, context: CommandContext = 'global'): Match {
   const n = normalise(transcript, lang);
   if (!n) return { kind: 'none' };
-  const intent = SETS.get(`${lang}:${context}`)!.get(n);
+  const intent = SETS.get(`${lang}:${context === 'dictation' ? 'global' : context}`)!.get(n);
   if (intent) return { kind: 'command', intent };
   if (n.split(' ').some((w) => HELP_WORDS[lang].test(w))) return { kind: 'ask', reason: 'help_word' };
   if (NEAR.get(lang)!.some((p) => distance(n, p) <= (p.length <= 5 ? 1 : 2))) return { kind: 'ask', reason: 'help_near' };
@@ -112,7 +115,7 @@ export function match(transcript: string, lang: CommandLang, context: CommandCon
 
 /** Every phrase of a context, for "Was kann ich hier tun?" and the tests. */
 export function phrases(lang: CommandLang, context: CommandContext): { intent: Intent; phrase: string }[] {
-  const tables = [{ help: HELP_PHRASES[lang] }, ...(context === 'global' ? [] : [CONTEXTS[context][lang]]), GLOBAL[lang]];
+  const tables = [{ help: HELP_PHRASES[lang] }, ...(context === 'global' || context === 'dictation' ? [] : [CONTEXTS[context][lang]]), GLOBAL[lang]];
   return tables.flatMap((t) => (Object.entries(t) as [Intent, string[]][]).flatMap(([intent, ps]) => ps.map((phrase) => ({ intent, phrase }))));
 }
 

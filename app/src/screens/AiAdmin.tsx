@@ -12,8 +12,8 @@ import { useUi } from '../ui.tsx';
 
 interface Provider {
   id: string;
-  function: 'tts' | 'stt';
-  type: 'openai' | 'elevenlabs' | 'stt_mlx';
+  function: 'tts' | 'stt' | 'llm';
+  type: 'openai' | 'elevenlabs' | 'stt_mlx' | 'ollama' | 'anthropic';
   name: string;
   baseUrl: string | null;
   location: 'server' | 'operator_lan' | 'external';
@@ -73,7 +73,7 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
   const [status, setStatus] = useState('');
   // The add form's outcome is shown at the form: the page's status line is far above it.
   const [formStatus, setFormStatus] = useState('');
-  const [form, setForm] = useState({ fn: 'tts' as 'tts' | 'stt', type: 'openai', name: '', baseUrl: '', model: '', apiKey: '', location: 'external', classes: [] as string[], price: '', cap: '', voices: '' });
+  const [form, setForm] = useState({ fn: 'tts' as 'tts' | 'stt' | 'llm', type: 'openai', name: '', baseUrl: '', model: '', apiKey: '', location: 'external', classes: [] as string[], price: '', cap: '', voices: '' });
   const [workerName, setWorkerName] = useState('');
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
@@ -126,13 +126,14 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
     const body = {
       function: form.fn,
       type: form.type,
-      name: form.name.trim() || (form.type === 'openai' ? 'OpenAI' : form.type === 'stt_mlx' ? 'Whisper' : 'ElevenLabs'),
+      name: form.name.trim() || ({ openai: 'OpenAI', stt_mlx: 'Whisper', elevenlabs: 'ElevenLabs', ollama: 'Ollama', anthropic: 'Claude' } as Record<string, string>)[form.type]!,
       baseUrl: form.baseUrl.trim() || null,
       location: form.location,
       model: form.model.trim() || null,
       ...(form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
       allowedClasses: form.classes,
-      // Prices are entered in euros: speech per 1000 characters, recognition per minute (kept per 1000 seconds).
+      // Prices are entered in euros: speech per 1000 characters, recognition per minute (kept per 1000 seconds),
+      // a language model per 1000 tokens.
       priceMicrosPerUnit: Math.round(form.fn === 'stt' ? (euros * 1_000_000 * 1000) / 60 : euros * 1_000_000),
       monthlyCapMicros: form.cap.trim() ? Math.round(Number(form.cap.replace(',', '.')) * 1_000_000) : null,
       voices: form.fn === 'tts' ? parseVoices(form.voices) : [],
@@ -189,9 +190,9 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
         </ul>
         <h3>{tr('admin.provider.add')}</h3>
         <Form className="stack" onSubmit={add}>
-          <RadioGroup className="choice" value={form.fn} onChange={(fn) => set({ fn: fn as 'tts' | 'stt', type: 'openai', classes: [] })}>
+          <RadioGroup className="choice" value={form.fn} onChange={(fn) => set({ fn: fn as 'tts' | 'stt' | 'llm', type: fn === 'llm' ? 'ollama' : 'openai', classes: [] })}>
             <Label className="choice-label">{tr('admin.field.function')}</Label>
-            {(['tts', 'stt'] as const).map((f) => (
+            {(['tts', 'stt', 'llm'] as const).map((f) => (
               <Radio key={f} value={f} className="choice-option">
                 {tr(`admin.function.${f}`)}
               </Radio>
@@ -199,16 +200,27 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
           </RadioGroup>
           <RadioGroup className="choice" value={form.type} onChange={(type) => set({ type })}>
             <Label className="choice-label">{tr('admin.field.type')}</Label>
+            {form.fn === 'llm' && (
+              <Radio value="ollama" className="choice-option">
+                {tr('admin.type.ollama')}
+              </Radio>
+            )}
             <Radio value="openai" className="choice-option">
               {tr('admin.type.openai')}
             </Radio>
-            {form.fn === 'tts' ? (
+            {form.fn === 'tts' && (
               <Radio value="elevenlabs" className="choice-option">
                 ElevenLabs
               </Radio>
-            ) : (
+            )}
+            {form.fn === 'stt' && (
               <Radio value="stt_mlx" className="choice-option">
                 {tr('admin.type.stt_mlx')}
+              </Radio>
+            )}
+            {form.fn === 'llm' && (
+              <Radio value="anthropic" className="choice-option">
+                {tr('admin.type.anthropic')}
               </Radio>
             )}
           </RadioGroup>
@@ -226,13 +238,13 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
           </RadioGroup>
           <CheckboxGroup className="choice" value={form.classes} onChange={(classes) => set({ classes })}>
             <Label className="choice-label">{tr('admin.field.classes')}</Label>
-            {(form.fn === 'tts' ? ['personal', 'communication', 'health'] : ['voice_audio']).map((c) => (
+            {(form.fn === 'stt' ? ['voice_audio'] : ['personal', 'communication', 'health']).map((c) => (
               <Checkbox key={c} value={c} className="choice-option checkbox">
                 {tr(`admin.class.${c}`)}
               </Checkbox>
             ))}
           </CheckboxGroup>
-          <Field label={tr(form.fn === 'stt' ? 'admin.field.price.stt' : 'admin.field.price')} value={form.price} onChange={(price) => set({ price })} />
+          <Field label={tr(form.fn === 'stt' ? 'admin.field.price.stt' : form.fn === 'llm' ? 'admin.field.price.llm' : 'admin.field.price')} value={form.price} onChange={(price) => set({ price })} />
           <Field label={tr('admin.field.cap')} value={form.cap} onChange={(cap) => set({ cap })} />
           {form.fn === 'tts' && <Field label={tr('admin.field.voices')} value={form.voices} onChange={(voices) => set({ voices })} description={tr('admin.field.voices.hint')} />}
           <Button type="submit" className="button primary">

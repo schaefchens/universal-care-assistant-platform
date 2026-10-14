@@ -35,7 +35,9 @@ import { AreaScreen } from './screens/AreaScreen.tsx';
 import { Approve } from './screens/Approve.tsx';
 import { CareScreen } from './screens/CareScreen.tsx';
 import { HelperAlert, HelperInbox } from './screens/HelperInbox.tsx';
+import { ConfirmAction } from './screens/ConfirmAction.tsx';
 import { HelpQuestion } from './screens/HelpQuestion.tsx';
+import { NotesScreen } from './screens/NotesScreen.tsx';
 import { Devices } from './screens/Devices.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
@@ -73,8 +75,15 @@ type Page =
   | 'voices'
   | 'voiceIntro'
   | 'aiAdmin'
-  /** "Soll ich einen Hilferuf senden?" after a help word or a near match (A17). */
-  | 'helpQuestion'
+  /**
+   * "Soll ich einen Hilferuf senden?" after a help word or a near match, or proposed by the assistant (A17); asked at a
+   * reminder, the request is linked to it.
+   */
+  | { help: { fromAssistant: boolean; occurrenceId?: string } }
+  /** The person's notes (S9). */
+  | 'notes'
+  /** An action of the assistant waiting for the person's yes. */
+  | { confirm: { id: string; contentHash: string; prompt: string } }
   /** The recovery words were said to the assistant: a warning, and new words offered (Appendix C). */
   | 'leak'
   | { approve: string }
@@ -83,7 +92,7 @@ type Page =
   | { remindersOf: RemindersOf };
 const pageKey = (p: Page) => (typeof p === 'string' ? p : Object.keys(p)[0]!);
 /** Pages a due reminder does not interrupt: a help request in progress, a helper's alert. It waits for its next prompt. */
-const busy = (p: Page) => p === 'care' || p === 'helpQuestion' || (typeof p === 'object' && ('alert' in p || 'approve' in p));
+const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p || 'confirm' in p || 'help' in p));
 
 /** An invitation opened as a link in the browser (`…/#invite=CODE`): taken once and removed from the address bar
  *  and history. The code sits in the fragment, so it never reaches a server's access log. */
@@ -120,6 +129,8 @@ export function App() {
   const careRef = useRef<CareClient | null>(null);
 
   const assistive: AssistiveMode = modeFrom(a11y, prefs.assistive);
+  const assistiveRef = useRef(assistive);
+  assistiveRef.current = assistive;
   const earcons = useMemo(() => createEarcons(), []);
   const speechRef = useRef<SpeechOut | null>(null);
   if (!speechRef.current) speechRef.current = new SpeechOut(pickBackend({ screenReader: false, lang: prefs.lang }));
@@ -266,8 +277,16 @@ export function App() {
     input: micInput(),
     onState: (state, heard) => setVoiceView({ state, heard }),
     onIntent: (i) => intentRef.current(i),
-    onAsk: () => setPage((pg) => (pg === 'care' ? pg : 'helpQuestion')),
+    // Asked at a reminder ("Noch nicht. Kann mir jemand Wasser bringen?"), the help request is linked to it (CONCEPT §9).
+    onAsk: (reason) =>
+      setPage((pg) => (pg === 'care' ? pg : { help: { fromAssistant: reason === 'assistant', ...(typeof pg === 'object' && 'reminder' in pg ? { occurrenceId: pg.reminder } : {}) } })),
     onLeak: () => setPage('leak'),
+    onAction: (a) => setPage((pg) => (pg === 'care' ? pg : { confirm: a })),
+    speakAs: (text, purpose) => {
+      const s = sessionRef.current;
+      if (!s) return Promise.resolve(false);
+      return speakAs({ session: s, text, purpose, player, screenReader: assistiveRef.current === 'screen-reader', notice: (reason) => uiRef.current.say(uiRef.current.tr(`voices.fallback.${reason}`), 'system') });
+    },
   });
   useEffect(() => () => voiceRef.current?.cancel(), [session]);
 
@@ -620,19 +639,25 @@ export function App() {
       />
     );
   else if (page === 'aiAdmin' && me?.isAdmin) content = <AiAdmin session={session} onClose={() => setPage('settings')} />;
-  else if (page === 'helpQuestion')
+  else if (typeof page === 'object' && 'help' in page) {
+    const ask = page.help;
     content = (
       <HelpQuestion
         config={config}
         policy={loadFallbacks().unconfirmedPolicy}
         gesture={gestureRef.current}
+        fromAssistant={ask.fromAssistant}
         onSend={(source) => {
-          void careRef.current?.press(source);
+          void careRef.current?.press(source, ask.occurrenceId ? { reminderOccurrenceId: ask.occurrenceId } : {});
           setPage('care');
         }}
-        onDone={() => setPage('areas')}
+        onDone={() => setPage(ask.occurrenceId ? { reminder: ask.occurrenceId } : 'areas')}
       />
     );
+  }
+  else if (typeof page === 'object' && 'confirm' in page)
+    content = <ConfirmAction key={page.confirm.id} session={session} config={config} action={page.confirm} onDone={() => setPage('areas')} />;
+  else if (page === 'notes') content = <NotesScreen session={session} config={config} read={(text) => speakVoice(text, 'reading')} onHome={() => setPage('areas')} />;
   else if (page === 'leak')
     content = (
       <main className="area-screen" aria-label={ui.tr('voice.leak.title')}>
@@ -737,6 +762,7 @@ export function App() {
         careOpen={careOpen}
         onCare={() => setPage('care')}
         onInbox={isHelper ? () => setPage('inbox') : undefined}
+        pages={{ notes: () => setPage('notes') }}
       />
     );
 

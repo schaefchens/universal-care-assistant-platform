@@ -16,6 +16,8 @@ export interface Ui {
   lang: Lang;
   tr: (key: string, params?: Params) => string;
   say: (text: string, channel: Channel) => void;
+  /** Says it and resolves when it ended (true) or was cut off (false): for the parts of an answer, one after another. */
+  sayAndWait: (text: string, channel: Channel) => Promise<boolean>;
   speech: SpeechOut;
   earcons: EarconPlayer;
   assistive: AssistiveMode;
@@ -29,6 +31,10 @@ export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; ea
     say: (text, channel) => {
       record('spoken', { channel, text: ceremony.active ? redactWords(text) : text });
       o.speech.say(text, o.lang, channel);
+    },
+    sayAndWait: (text, channel) => {
+      record('spoken', { channel, text: ceremony.active ? redactWords(text) : text });
+      return o.speech.sayAndWait(text, o.lang, channel);
     },
     speech: o.speech,
     earcons: o.earcons,

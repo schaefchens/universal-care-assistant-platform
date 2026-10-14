@@ -3,13 +3,20 @@
  * are in-process, so whatever enqueues or waits on herde must run in this process (docs/plan.md).
  */
 import { hkdfSync } from 'node:crypto';
+import { isTimeZone } from '@ucap/shared';
 import { createHerdeProject } from 'herde-project';
+import { sql } from 'kysely';
+import { createLlm } from '../ai/llm/service.ts';
 import { createProviders } from '../ai/providers.ts';
 import { createStt } from '../ai/stt/service.ts';
 import { createSpeech } from '../ai/tts/service.ts';
 import { registerAuth } from '../core/auth.ts';
 import { ensureServerId } from '../core/server-info.ts';
+import { deliveryNonce } from '../domain/care/service.ts';
 import { createIdentityService } from '../domain/identity/service.ts';
+import { createNotes } from '../domain/notes/service.ts';
+import { createPeopleService } from '../domain/people/service.ts';
+import { createReminderService } from '../domain/reminders/service.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Config } from '../lib/config.ts';
 import { type Db, ping } from '../lib/db.ts';
@@ -18,7 +25,10 @@ import { createHttp } from '../lib/http.ts';
 import { createJobRunner, enqueue, type Handler } from '../lib/jobs.ts';
 import { createSealer } from '../lib/sealed.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
+import { createActions } from './actions.ts';
+import { createAssistant } from './loop.ts';
 import { registerAiAdminRoutes } from './routes/ai-admin.ts';
+import { registerAssistantRoutes } from './routes/assistant.ts';
 import { registerSpeechRoutes } from './routes/speech.ts';
 import { registerTurnRoutes } from './routes/turns.ts';
 import { createTurns } from './turns.ts';
@@ -80,16 +90,46 @@ export async function buildAssistant(o: {
   const providers = createProviders({ db: o.db, clock: o.clock, sealer: createSealer(o.secrets.masterKey) });
   const speech = createSpeech({ db: o.db, clock: o.clock, providers, herde, files, fetch: o.providerFetch, log, claimTimeoutMs: o.claimTimeoutMs });
   const stt = createStt({ db: o.db, clock: o.clock, providers, fetch: o.providerFetch, log, sttUrl: o.config.sttUrl });
-  const turns = createTurns({ db: o.db, clock: o.clock, stt });
+  // The assistant's tools reach the person's notes and reminders through the same domain code as core; reminders'
+  // prompts and alarms stay with core's jobs (only core runs them).
+  const notes = createNotes({ db: o.db, clock: o.clock });
+  const people = createPeopleService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, identity });
+  const reminders = createReminderService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, people, nonceFor: deliveryNonce(o.secrets.pepper) });
+  const llm = createLlm({ db: o.db, clock: o.clock, providers, fetch: o.providerFetch, log, ollamaUrl: o.config.ollamaUrl, ollamaModel: o.config.ollamaModel });
+  const actions = createActions({ db: o.db, clock: o.clock, log });
+  const assistant = createAssistant({ db: o.db, clock: o.clock, llm, actions, notes, reminders, log });
+  const contextFor = async (userId: string, deviceId: string, lang?: 'de' | 'en') => {
+    const r = await sql<{ locale: string; address_form: 'du' | 'Sie'; timezone: string }>`select locale, address_form, timezone from users where id = ${userId}`.execute(o.db);
+    const u = r.rows[0]!;
+    return {
+      userId,
+      deviceId,
+      lang: lang ?? (u.locale === 'en' ? ('en' as const) : ('de' as const)),
+      form: u.address_form,
+      timezone: isTimeZone(u.timezone) ? u.timezone : 'Europe/Berlin',
+      now: new Date(o.clock()),
+      notes,
+      reminders,
+      db: o.db,
+    };
+  };
+  const turns = createTurns({ db: o.db, clock: o.clock, stt, assistant, actions, contextFor });
   registerSpeechRoutes(app, { speech, providers, stt });
-  registerTurnRoutes(app, { turns, stt });
-  registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, stt, herde, publicUrl: o.config.publicUrl });
+  registerTurnRoutes(app, { turns, stt, llm });
+  registerAssistantRoutes(app, { actions, llm, contextFor });
+  registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, stt, llm, herde, publicUrl: o.config.publicUrl });
 
   const handlers: Record<string, Handler> = {
     'providers.health': async () => {
       await speech.checkHealth();
       await stt.checkHealth();
+      await llm.checkHealth();
       await enqueue(o.db, { queue: 'assistant', kind: 'providers.health', key: 'providers.health', runAt: o.clock() + HEALTH_EVERY_MS });
+    },
+    // Questions nobody answered, attempts that never finished, and old contents of actions.
+    'assistant.sweep': async () => {
+      await actions.sweep();
+      await enqueue(o.db, { queue: 'assistant', kind: 'assistant.sweep', key: 'assistant.sweep', runAt: o.clock() + 60_000 });
     },
     'speech.sweep': async () => {
       await speech.sweep();
@@ -118,11 +158,19 @@ export async function buildAssistant(o: {
     providers,
     speech,
     stt,
+    llm,
+    actions,
+    assistant,
+    notes,
     turns,
     identity,
     files,
     async start() {
       await stt.ensureConfigured();
+      await llm.ensureConfigured();
+      // The dialogue model loads in the background (6–17 s), so the first question does not wait for it.
+      void llm.warm();
+      await enqueue(o.db, { queue: 'assistant', kind: 'assistant.sweep', key: 'assistant.sweep', runAt: o.clock() + 60_000, onConflict: 'keep' });
       await enqueue(o.db, { queue: 'assistant', kind: 'providers.health', key: 'providers.health', runAt: o.clock() + 60_000, onConflict: 'keep' });
       await enqueue(o.db, { queue: 'assistant', kind: 'speech.sweep', key: 'speech.sweep', runAt: o.clock() + 120_000, onConflict: 'keep' });
       jobs.start();

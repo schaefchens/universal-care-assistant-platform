@@ -8,7 +8,7 @@
  * app (navigation, the time, volume, help). Voice input is optional: when it cannot work, A19 says so and points to
  * the help area. It never starts while the recovery words are shown (Appendix C: the ceremony is isolated).
  */
-import type { Intent } from '@ucap/speech-text';
+import type { CommandContext, Intent } from '@ucap/speech-text';
 import { record } from '../debug.ts';
 import type { Session } from '../identity/account.ts';
 import { ceremony } from '../identity/ceremony.ts';
@@ -30,10 +30,14 @@ export interface VoiceHost {
   onState(s: VoiceState, heard: string | null): void;
   /** A command the screen in front did not take. */
   onIntent(i: Intent): void;
-  /** A help word, or nearly a help phrase: the help question (A17). */
-  onAsk(): void;
+  /** The help question (A17): after a help word or a near match, or proposed by the assistant (then silence sends nothing). */
+  onAsk(reason: 'help_word' | 'help_near' | 'assistant'): void;
   /** The recovery words were said: offer new ones. */
   onLeak(): void;
+  /** An action waits for the person's yes: the confirmation screen. */
+  onAction(a: { id: string; contentHash: string; prompt: string }): void;
+  /** Says a part of an answer in the person's voice for it; false: the device voice must (the chosen one cannot). */
+  speakAs(text: string, purpose: 'reply' | 'reading'): Promise<boolean>;
 }
 
 const MIC_ASKED = 'ucap.mic.v1';
@@ -52,19 +56,26 @@ export class VoiceController {
   private starting = false;
   /** Held already while the microphone was opening. */
   private heldEarly = false;
+  /** Each turn's answer is said in order; a new turn, or a part cut off, drops the rest. */
+  private gen = 0;
+  private parts: Promise<void> = Promise.resolve();
 
   constructor(h: VoiceHost) {
     this.h = h;
   }
 
+  /** For the next turn only: the words of a new note, say (the notes screen's "Neue Notiz"). */
+  private nextContext: CommandContext | null = null;
+
   /** The talk button or area: start, end the utterance, or abandon an answer and listen again. */
-  talk(): void {
+  talk(o: { context?: CommandContext } = {}): void {
     if (this.starting) return;
     if (this.state === 'listening') return this.recorder?.finish();
     if (this.state === 'working') {
       this.turn?.abort();
       this.turn = null;
     }
+    this.nextContext = o.context ?? null;
     void this.listen();
   }
 
@@ -105,6 +116,8 @@ export class VoiceController {
   private async listen() {
     const session = this.h.session();
     if (!session || ceremony.active) return;
+    // What the last answer still had to say is dropped: the person is talking now.
+    this.gen++;
     if (this.down && Date.now() - this.down < 30_000) return this.unavailable();
     this.heard = null;
     this.starting = true;
@@ -174,7 +187,9 @@ export class VoiceController {
     const turn = new AbortController();
     this.turn = turn;
     try {
-      await postTurn(session, { wav: rec.wav, context: currentVoice().context, lang: ui.lang, signal: turn.signal }, (e) => this.event(e));
+      const context = this.nextContext ?? currentVoice().context;
+      this.nextContext = null;
+      await postTurn(session, { wav: rec.wav, context, lang: ui.lang, signal: turn.signal }, (e) => this.event(e));
     } catch {
       if (turn.signal.aborted) return;
       this.unavailable();
@@ -184,6 +199,22 @@ export class VoiceController {
         this.set('idle');
       }
     }
+  }
+
+  /** A part of the answer, after the ones before it; dropped once one was cut off or the person talks again. */
+  private part(text: string, kind: 'reply' | 'summary' | 'original' | 'system') {
+    const gen = this.gen;
+    this.parts = this.parts.then(async () => {
+      if (gen !== this.gen) return;
+      const ui = this.h.ui();
+      // UCAP's own words (readbacks, questions) in the device voice; the assistant's in the person's chosen one.
+      if (kind !== 'system' && (await this.h.speakAs(text, kind === 'original' ? 'reading' : 'reply'))) return;
+      if (gen !== this.gen) return;
+      const said = await ui.sayAndWait(text, kind === 'system' ? 'system' : 'assistant');
+      // A screen reader's live region answers at once: its own speech takes about this long.
+      if (said && ui.speech.kind === 'live') await sleep(Math.min(15_000, 400 + text.length * 70));
+      if (!said) this.gen++;
+    });
   }
 
   private event(e: TurnEvent) {
@@ -208,14 +239,22 @@ export class VoiceController {
         if (!currentVoice().onIntent?.(e.intent)) this.h.onIntent(e.intent);
         return;
       case 'ask':
-        // Where a question waits, it is asked again instead (the help question itself, a reminder's).
-        if (!currentVoice().onOther?.()) this.h.onAsk();
+        // The assistant proposing help always asks; a help word where a question waits asks that question again.
+        if (e.reason === 'assistant' || !currentVoice().onOther?.()) this.h.onAsk(e.reason);
+        return;
+      case 'segment':
+        this.part(e.text, e.kind);
+        return;
+      case 'action':
+        this.h.onAction({ id: e.id, contentHash: e.contentHash, prompt: e.prompt });
         return;
       case 'unmatched':
         if (!currentVoice().onOther?.()) ui.say(ui.tr('voice.unmatched'), 'assistant');
         return;
       case 'error':
         if (e.code === 'stt_unavailable') this.unavailable();
+        else if (e.code === 'assistant_unavailable') ui.say(ui.tr('assistant.unavailable'), 'system');
+        else if (e.code === 'assistant_failed') ui.say(ui.tr('assistant.failed'), 'system');
         else ui.say(ui.tr('voice.failed'), 'system');
         return;
       case 'done':

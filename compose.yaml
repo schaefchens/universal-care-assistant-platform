@@ -111,6 +111,7 @@ services:
       PORT: "8821"
       DATABASE_URL: postgres://ucap:ucap@db:5432/ucap
       OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: qwen3.6:35b-mlx
       STT_URL: http://host.docker.internal:8813
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -13,11 +13,15 @@
  * kept: a turn is recorded by its timings and outcome, and the audio only lives for the recognition call.
  */
 import { mustDrop, scanForPhrase } from '@ucap/identity';
+import { t } from '@ucap/shared';
 import { type CommandContext, type Intent, judgeTranscript, match } from '@ucap/speech-text';
 import { sql } from 'kysely';
 import type { Stt } from '../ai/stt/service.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
+import type { Actions } from './actions.ts';
+import type { Assistant, AssistantEvent } from './loop.ts';
+import { type ToolContext, toolByName } from './tools.ts';
 
 export type TurnEvent =
   | { t: 'turn'; id: string }
@@ -28,6 +32,7 @@ export type TurnEvent =
   | { t: 'ask'; kind: 'help_confirm'; reason: 'help_word' | 'help_near' }
   | { t: 'unmatched' }
   | { t: 'error'; code: 'stt_unavailable' | 'audio' }
+  | AssistantEvent
   | { t: 'done'; ms: { stt: number | null; total: number }; audioMs: number | null };
 
 /** The longest utterance a turn takes (push-to-talk; the app ends its recording before). */
@@ -56,7 +61,10 @@ export function wavMs(b: Uint8Array): number | null {
   return null;
 }
 
-export function createTurns(d: { db: Db; clock: Clock; stt: Stt }) {
+/** The person's context for tools outside the assistant's loop ("Rückgängig"). */
+export type ContextFor = (userId: string, deviceId: string, lang?: 'de' | 'en') => Promise<ToolContext>;
+
+export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Assistant; actions?: Actions; contextFor?: ContextFor }) {
   async function identityKeys(userId: string): Promise<Uint8Array[]> {
     const r = await sql<{ public_key: Buffer }>`select public_key from identity_keys where user_id = ${userId} and status = 'active'`.execute(d.db);
     return r.rows.map((x) => new Uint8Array(x.public_key));
@@ -69,7 +77,7 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt }) {
       emit: (e: TurnEvent) => void,
     ): Promise<void> {
       const t0 = performance.now();
-      let outcome: 'command' | 'ask' | 'unmatched' | 'nothing' | 'leak' | 'error' | 'aborted' = 'error';
+      let outcome: 'command' | 'ask' | 'unmatched' | 'nothing' | 'leak' | 'error' | 'aborted' | 'assistant' = 'error';
       let detail: string | null = null;
       let sttMs: number | null = null;
       let audioMs: number | null = null;
@@ -110,13 +118,37 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt }) {
           return emit({ t: 'heard', what: 'nothing' });
         }
         // Before the transcript goes anywhere, the app included.
-        if (mustDrop(scanForPhrase(text, await identityKeys(o.userId)))) {
+        const leak = scanForPhrase(text, await identityKeys(o.userId));
+        if (mustDrop(leak)) {
           outcome = 'leak';
           return emit({ t: 'leak' });
         }
         emit({ t: 'transcript', text });
         const m = match(text, o.lang, o.context);
-        if (m.kind === 'command') {
+        if (m.kind === 'command' && m.intent === 'undo' && d.actions && d.contextFor) {
+          // "Rückgängig" needs the server: the last thing the assistant did, undone.
+          outcome = 'command';
+          detail = 'undo';
+          const ctx = await d.contextFor(o.userId, o.deviceId, o.lang);
+          const said = await d.actions.undoLast(ctx).catch(() => null);
+          emit({ t: 'segment', kind: 'system', text: said ?? t(ctx.lang, 'assistant.undo.nothing', {}, ctx.form) });
+        } else if (m.kind === 'none' && o.context === 'dictation' && d.actions && d.contextFor) {
+          // The words of a new note ("Neue Notiz"): kept as said, without the language model; undo works as for any.
+          outcome = 'command';
+          detail = 'dictation';
+          const ctx = await d.contextFor(o.userId, o.deviceId, o.lang);
+          const tool = toolByName.get('notes.create');
+          if (tool?.kind === 'act') {
+            const prepared = await tool.prepare(ctx, { body: text }, false);
+            const out = await d.actions.runNow(ctx, o.id, tool, prepared.args, false);
+            emit({ t: 'segment', kind: 'system', text: out.ok ? out.say : t(ctx.lang, 'assistant.failed', {}, ctx.form) });
+          }
+        } else if (m.kind === 'none' && d.assistant) {
+          outcome = 'assistant';
+          const r = await d.assistant.run({ userId: o.userId, deviceId: o.deviceId, turnId: o.id, text, lang: o.lang, suspicious: leak.kind === 'suspicious', signal: o.signal }, emit);
+          detail = r;
+          if (r === 'aborted') outcome = 'aborted';
+        } else if (m.kind === 'command') {
           outcome = 'command';
           detail = m.intent;
           emit({ t: 'command', intent: m.intent });

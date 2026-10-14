@@ -11,6 +11,7 @@ import { createJobRunner, enqueue, type Handler } from '../lib/jobs.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
 import { CLOSE } from '@ucap/shared';
 import { createIdentityService } from '../domain/identity/service.ts';
+import { createNotes } from '../domain/notes/service.ts';
 import { createPeopleService } from '../domain/people/service.ts';
 import { createHeartbeats } from '../domain/care/heartbeat.ts';
 import { createPush } from '../domain/care/push.ts';
@@ -24,6 +25,7 @@ import { registerRealtime } from './realtime.ts';
 import { registerIdentityRoutes } from './routes/identity.ts';
 import { registerPeopleRoutes } from './routes/people.ts';
 import { registerCareRoutes } from './routes/care.ts';
+import { registerNoteRoutes } from './routes/notes.ts';
 import { registerReminderRoutes } from './routes/reminders.ts';
 import { createSignedCheck } from './signed.ts';
 import { ensureServerId, registerServerInfo } from './server-info.ts';
@@ -131,6 +133,8 @@ export async function buildCore(o: {
   registerPeopleRoutes(app, { people });
   registerCareRoutes(app, { db: o.db, clock: o.clock, pepper: o.secrets.pepper, care, people, push, heartbeats, reminders, requireSigned, log });
   registerReminderRoutes(app, { reminders, requireSigned });
+  const notes = createNotes({ db: o.db, clock: o.clock });
+  registerNoteRoutes(app, { notes });
 
   return {
     app,

@@ -66,6 +66,10 @@ interface Row {
 const COLUMNS = sql`id, person_id, client_request_id, origin_device, source, status, episode, tier, exhausted, accepted_by, accepted_at,
   received_at, pressed_at_est, client_delay_ms, next_action_at, last_alert_at, resolved_at, version`;
 
+
+/** A delivery's nonce, derived from the pepper: the same in every process that makes deliveries. */
+export const deliveryNonce = (pepper: Uint8Array) => (deliveryId: string) => mac(pepper, 'delivery-nonce', deliveryId).toString('base64url').slice(0, 22);
+
 export function createCareService(d: CareDeps) {
   const now = () => new Date(d.clock());
   const tickKey = (id: string) => `care:${id}`;
@@ -117,7 +121,7 @@ export function createCareService(d: CareDeps) {
     return { plan, tiers: [{ waitS: plan.tiers[0]!.waitS, helpers: [first] }, ...rest] };
   }
 
-  const nonceFor = (deliveryId: string) => mac(d.pepper, 'delivery-nonce', deliveryId).toString('base64url').slice(0, 22);
+  const nonceFor = deliveryNonce(d.pepper);
 
   /** Alerts helpers' devices: a realtime delivery to each (received when the device acknowledges the event) and a
    *  push delivery where the device registered an endpoint (sent after commit by a job). */

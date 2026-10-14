@@ -59,6 +59,10 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - There is no linter: the checks are `npm run typecheck` and `npm test`. `npx <name>` for a tool that is not
   installed downloads whatever npm package has that name and runs it (`npx biome` once ran an unrelated old package).
 
+**Providers**
+- A fetch's signal also aborts the body: a limit on how long a provider may take to start answering must be cleared
+  once it started, or every long streamed answer is cut off. Give every streamed reply its own total and idle limits.
+
 **Capacitor and Android**
 - Never `await` or return a Capacitor plugin object (it is a Proxy that answers `then`).
 - The Android WebView has no `speechSynthesis`; use the `DeviceTts` plugin, local voices only.

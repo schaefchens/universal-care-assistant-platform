@@ -20,6 +20,8 @@ export interface Config {
   ntfyPublicUrl: string | null;
   ntfyInternalUrl: string | null;
   ollamaUrl: string | null;
+  /** The dialogue model on Ollama (lookup: only the MoE model is fast enough for spoken replies). */
+  ollamaModel: string;
   sttUrl: string | null;
   serverName: string;
   logLevel: string;
@@ -56,6 +58,7 @@ export function loadConfig(role: Role, env: NodeJS.ProcessEnv = process.env): Co
     ntfyPublicUrl: env.NTFY_PUBLIC_URL ?? null,
     ntfyInternalUrl: env.NTFY_INTERNAL_URL ?? null,
     ollamaUrl: env.OLLAMA_URL ?? null,
+    ollamaModel: env.OLLAMA_MODEL ?? 'qwen3.6:35b-mlx',
     sttUrl: env.STT_URL ?? null,
     serverName: env.UCAP_SERVER_NAME ?? 'UCAP',
     logLevel: env.LOG_LEVEL ?? 'info',

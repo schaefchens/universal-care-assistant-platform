@@ -18,18 +18,24 @@ export class ProviderError extends Error {
 export const ANSWER_WITHIN_MS = 4000;
 const ATTEMPTS = 3;
 
-/** One request, tried again while it does not start answering in time (`attempts`, 3 by default). */
+/**
+ * One request, tried again while it does not start answering in time (`attempts`, 3 by default). The limit is on the
+ * start of the answer only: a long answer streaming in is never cut off by it.
+ */
 export async function call(fetchFn: typeof fetch, url: string, init: RequestInit & { signal: AbortSignal }, answerWithinMs = ANSWER_WITHIN_MS, attempts = ATTEMPTS): Promise<Response> {
   for (let attempt = 1; ; attempt++) {
-    const slow = AbortSignal.timeout(answerWithinMs);
+    const slow = new AbortController();
+    const timer = setTimeout(() => slow.abort(new DOMException('no answer in time', 'TimeoutError')), answerWithinMs);
     let res: Response;
     try {
-      res = await fetchFn(url, { ...init, signal: AbortSignal.any([init.signal, slow]) });
+      res = await fetchFn(url, { ...init, signal: AbortSignal.any([init.signal, slow.signal]) });
     } catch (e) {
       const kind = (e as Error).name === 'TimeoutError' || (e as Error).name === 'AbortError' ? 'timeout' : 'network';
       // Again, unless the caller's own time is up.
       if (attempt < attempts && !init.signal.aborted) continue;
       throw new ProviderError(kind);
+    } finally {
+      clearTimeout(timer);
     }
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});

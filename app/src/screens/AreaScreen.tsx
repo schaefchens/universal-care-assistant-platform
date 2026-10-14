@@ -48,6 +48,8 @@ export function AreaScreen(p: {
   onCare?: () => void;
   /** This user helps someone: the top bar leads to their help requests. */
   onInbox?: () => void;
+  /** Screens the app implements itself (the notes), opened by their areas. */
+  pages?: Record<string, () => void>;
 }) {
   const ui = useUi();
   const { tr, say, earcons, speech, assistive } = ui;
@@ -84,7 +86,8 @@ export function AreaScreen(p: {
           else say(tr('notyet.feature'), 'system');
           return;
         case 'screen':
-          if (p.config.screens[act.screen]) p.onNavigate([...p.stack, act.screen]);
+          if (p.pages?.[act.screen]) p.pages[act.screen]!();
+          else if (p.config.screens[act.screen]) p.onNavigate([...p.stack, act.screen]);
           else say(tr('notyet.feature'), 'system');
           return;
         case 'back':

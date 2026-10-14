@@ -110,7 +110,10 @@ describe('voice turns', () => {
     expect((await turn(anna, { said: 'Kann mir jemand beim Anziehen helfen?' })).events[2]).toEqual({ t: 'ask', kind: 'help_confirm', reason: 'help_word' });
     expect((await turn(anna, { said: 'Ja.', context: 'confirm' })).events[2]).toEqual({ t: 'command', intent: 'yes' });
     expect((await turn(anna, { said: 'Ja.', context: 'reminder' })).events[2]).toEqual({ t: 'command', intent: 'done' });
-    expect(kinds((await turn(anna, { said: 'Erzähl mir einen Witz' })).events)).toEqual(['turn', 'transcript', 'unmatched', 'done']);
+    // Anything else goes to the assistant; with no language model set up, that is said (help keeps working).
+    const other = await turn(anna, { said: 'Erzähl mir einen Witz' });
+    expect(kinds(other.events)).toEqual(['turn', 'transcript', 'error', 'done']);
+    expect(other.events[2]).toEqual({ t: 'error', code: 'assistant_unavailable' });
   });
 
   it('silence and what whisper writes into it are nothing heard: no transcript goes out', async () => {

@@ -6,6 +6,7 @@
  */
 import { Readable } from 'node:stream';
 import Type from 'typebox';
+import type { Llm } from '../../ai/llm/service.ts';
 import type { Stt } from '../../ai/stt/service.ts';
 import { auth, requireAuth } from '../../core/auth.ts';
 import { AppError } from '../../lib/errors.ts';
@@ -14,20 +15,20 @@ import { MAX_TURN_MS, type TurnEvent, type Turns } from '../turns.ts';
 
 const Query = Type.Object({
   id: Type.String({ format: 'uuid' }),
-  context: Type.Union([Type.Literal('global'), Type.Literal('confirm'), Type.Literal('reminder')]),
+  context: Type.Union([Type.Literal('global'), Type.Literal('confirm'), Type.Literal('reminder'), Type.Literal('dictation')]),
   lang: Type.Union([Type.Literal('de'), Type.Literal('en')]),
 });
 
 /** 16 kHz × 2 bytes × the longest turn, and a little. */
 const AUDIO_LIMIT = Math.ceil((MAX_TURN_MS / 1000 + 2) * 32_000) + 1024;
 
-export function registerTurnRoutes(app: AnyApp, o: { turns: Turns; stt: Stt }) {
+export function registerTurnRoutes(app: AnyApp, o: { turns: Turns; stt: Stt; llm?: Llm }) {
   void app.register(async (scope) => {
     scope.addContentTypeParser('audio/wav', { parseAs: 'buffer', bodyLimit: AUDIO_LIMIT }, (_req, body, done) => done(null, body));
 
     scope.post('/api/v1/assistant/turns', { preHandler: requireAuth, bodyLimit: AUDIO_LIMIT, schema: { querystring: Query } }, async (req, reply) => {
       const a = auth(req);
-      const q = req.query as { id: string; context: 'global' | 'confirm' | 'reminder'; lang: 'de' | 'en' };
+      const q = req.query as { id: string; context: 'global' | 'confirm' | 'reminder' | 'dictation'; lang: 'de' | 'en' };
       const body = req.body as Buffer | { text?: unknown } | undefined;
       let audio: Uint8Array<ArrayBuffer> | undefined;
       let text: string | undefined;
@@ -63,6 +64,10 @@ export function registerTurnRoutes(app: AnyApp, o: { turns: Turns; stt: Stt }) {
     });
   });
 
-  // The app's warm-up when the talk area is first touched: whether voice input can work now (nothing is sent).
-  app.post('/api/v1/assistant/warmup', { preHandler: requireAuth }, async (req) => ({ voice: await o.stt.ready(auth(req).userId) }));
+  // The app's warm-up when the talk area is first touched: whether voice input can work now (nothing is sent), and
+  // the dialogue model loading meanwhile.
+  app.post('/api/v1/assistant/warmup', { preHandler: requireAuth }, async (req) => {
+    void o.llm?.warm();
+    return { voice: await o.stt.ready(auth(req).userId) };
+  });
 }

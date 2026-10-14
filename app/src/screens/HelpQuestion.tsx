@@ -13,11 +13,12 @@ import { useUi } from '../ui.tsx';
 import { useScreenVoice } from '../voice/screen.ts';
 import { TalkButton } from '../voice/TalkButton.tsx';
 
-export type VoiceHelpSource = 'voice_exact' | 'voice_confirmed' | 'voice_unconfirmed';
+export type VoiceHelpSource = 'voice_exact' | 'voice_confirmed' | 'voice_unconfirmed' | 'assistant';
 
 const WINDOW_MS = 15_000;
 
-export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop'; gesture: string; onSend: (source: VoiceHelpSource) => void; onDone: () => void }) {
+/** `fromAssistant`: the assistant proposed help (Appendix D: "LLM-proposed help always asks A17, and silence gives A18b"). */
+export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop'; gesture: string; fromAssistant?: boolean; onSend: (source: VoiceHelpSource) => void; onDone: () => void }) {
   const ui = useUi();
   const { tr, say } = ui;
   const asks = useRef(0);
@@ -52,7 +53,9 @@ export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop';
   function unanswered() {
     if (over.current) return;
     if (asks.current < 2) return ask();
-    if (p.policy === 'send') return send('voice_unconfirmed');
+    // What the person said had help words in it: sent marked unconfirmed, if they chose so. What the assistant
+    // proposed is never sent unasked.
+    if (p.policy === 'send' && !p.fromAssistant) return send('voice_unconfirmed');
     finish(() => {
       say(tr('care.A18b', { gesture: p.gesture }), 'care');
       p.onDone();
@@ -75,7 +78,7 @@ export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop';
     {
       context: 'confirm',
       onIntent: (i) => {
-        if (i === 'yes') send('voice_confirmed');
+        if (i === 'yes') send(p.fromAssistant ? 'assistant' : 'voice_confirmed');
         else if (i === 'no') decline();
         else if (i === 'help') send('voice_exact');
         else if (i === 'repeat') ask(false);
@@ -104,7 +107,7 @@ export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop';
           { id: 'yes', label: tr('voice.ask.yes'), role: 'help' },
           { id: 'no', label: tr('voice.ask.no'), role: 'nav' },
         ]}
-        onChoose={(id) => (id === 'yes' ? send('voice_confirmed') : decline())}
+        onChoose={(id) => (id === 'yes' ? send(p.fromAssistant ? 'assistant' : 'voice_confirmed') : decline())}
       />
     </main>
   );

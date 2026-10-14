@@ -24,6 +24,8 @@ export interface Utterance {
   text: string;
   lang: string;
   channel: Channel;
+  /** Told once: true when it was said to the end, false when it was cut off or dropped. */
+  done?: (completed: boolean) => void;
 }
 
 export interface SpeechBackend {
@@ -119,12 +121,13 @@ export class SpeechOut {
     return this.backend.kind;
   }
 
-  say(text: string, lang: string, channel: Channel): void {
-    const u: Utterance = { text, lang, channel };
-    if (channel !== 'label') this.last = u;
+  say(text: string, lang: string, channel: Channel, done?: (completed: boolean) => void): void {
+    const u: Utterance = { text, lang, channel, done };
+    if (channel !== 'label') this.last = { text, lang, channel };
     const cur = this.current;
     if (cur && PRIORITY[cur.channel] > PRIORITY[channel]) {
       if (channel !== 'label') this.enqueue(u); // labels are only useful while the finger is there
+      else done?.(false);
       return;
     }
     if (cur && (cur.channel === 'label' || PRIORITY[cur.channel] < PRIORITY[channel])) {
@@ -142,11 +145,16 @@ export class SpeechOut {
 
   /** Stops one channel's current utterance and its queue (e.g. the label when the finger moves on). */
   stop(channel: Channel): void {
-    for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i]!.channel === channel) this.queue.splice(i, 1);
+    for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i]!.channel === channel) this.queue.splice(i, 1)[0]!.done?.(false);
     if (this.current?.channel === channel) {
       this.interrupt();
       this.next();
     }
+  }
+
+  /** Resolves when it was said to the end (true) or cut off, dropped or stopped (false). */
+  sayAndWait(text: string, lang: string, channel: Channel): Promise<boolean> {
+    return new Promise((resolve) => this.say(text, lang, channel, resolve));
   }
 
   /** "Wiederholen": the last thing said again, in its channel; false when nothing was said yet. */
@@ -158,7 +166,7 @@ export class SpeechOut {
 
   /** "Stopp": everything, care included. */
   stopAll(): void {
-    this.queue.length = 0;
+    for (const u of this.queue.splice(0)) u.done?.(false);
     this.interrupt();
   }
 
@@ -172,9 +180,11 @@ export class SpeechOut {
   }
 
   private interrupt() {
-    if (!this.current) return;
+    const cur = this.current;
+    if (!cur) return;
     this.current = null;
     this.backend.stop();
+    cur.done?.(false);
   }
 
   private play(u: Utterance) {
@@ -185,6 +195,7 @@ export class SpeechOut {
       .finally(() => {
         if (this.current === u) {
           this.current = null;
+          u.done?.(true);
           this.next();
         }
       });

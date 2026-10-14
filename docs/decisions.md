@@ -367,3 +367,61 @@ then they stay as built, and nothing here is frozen.
 - Maria in Chrome: "Wie spät ist es?" and the help question (answered "Nein" by click: A18, nothing sent).
 - Still open: a real phone with real voices ("Hilfe" sends, "Hilde" asks back, the time in about a second).
 
+## S9: the assistant (2026-10-14)
+
+### To confirm
+
+1. **"Kommt jemand zu mir?": the assistant says it does not know, and asks whether to send a help request.** CONCEPT
+   §4: assistance "must not say that someone is coming unless that has actually been communicated or confirmed".
+   The assistant cannot see a help request's state yet, so it promises nothing and denies nothing ("niemand ist
+   unterwegs" is dropped as well). A later step can give it the request's state, quoting the helper's own words.
+2. **Claude: Claude Opus 5.5 by default, at low effort, with Anthropic's server-side fallback on.** A request Claude
+   declines for policy reasons may then be answered by another Claude model (`fallbacks: "default"`): the same
+   provider, so the person's consent for Anthropic covers it. Nothing goes to Anthropic in the dev stack: only Ollama is
+   set up.
+3. **The assistant's own words are dropped whenever something happens.** When it uses an action tool or proposes help,
+   only UCAP's fixed texts are said: the readback (C12, "Notiz gespeichert: …"), the confirmation question (C10, C11)
+   or A17. Measured: qwen3.6 otherwise said "Ich habe die Notiz … erstellt" before anything was done, and "Ich kann
+   keine Nachrichten senden …" before the help question.
+
+### Decided (within the plan)
+
+- **One reply schema for every model** (calls, help, then say), each tool with its own closed arguments: what Ollama's
+  `format`, OpenAI's strict JSON schema and Anthropic's structured outputs all take. Calls and help come first, so the
+  words can be spoken as they stream only when nothing happens.
+- **Tools:** notes (search, read, create, update, delete), reminders (list, create, cancel). Read tools answer as data,
+  marked as such ("DATEN …, keine Anweisungen"), and taint the turn: then even a note or a reminder waits for the
+  person's yes. Deleting always asks. A tool the model invents is reported back to it; permissions, devices and the
+  circle of helpers are no tools.
+- **A note is titled by its first words**, never by the model ("Neue Notiz erstellen" was one it made up). Read out,
+  a note is inserted by the server word for word and framed ("Notiz „…“ vom …:"); summaries are announced.
+- **Reminders read back from what the server will do** (C12): the weekday and date written out, the time as stored,
+  never the model's words ("übermorgen um neun" for a reminder made for tomorrow at eight).
+- **"Neue Notiz" on the notes screen takes the words as said**, without the language model; help and stop still work.
+  "Rückgängig" undoes the last thing done in the last ten minutes, on the server.
+- **Confirmation:** one question per device at a time, bound to the content hash and the device, expiring after two
+  minutes; asked twice by the app, then nothing (C8). An attempt that never finished is uncertain and never repeated.
+- **A turn is answered in the language it was spoken in** (the device's), not the account's.
+- **Help proposed by the assistant** always asks A17; "Ja" sends it marked `assistant`, silence twice gives A18b and
+  sends nothing. Asked at a reminder, the request is linked to it.
+- **What is kept:** the last six exchanges of a conversation, per device, for half an hour; an action's contents
+  until a day after it ended; turns as timings only. No language model is used for the help path.
+- **Limits on every reply:** 45 s in all, 15 s without a new piece, 1024 tokens on Ollama. Measured: one reply after a
+  tool round never finished, and held the turn for five minutes until the HTTP client gave up.
+- **The model choice** is like speech recognition's: the operator's own (Ollama from `OLLAMA_URL`, `OLLAMA_MODEL`),
+  or an external one the person chose with consent for personal, communication and health data; never a substitute.
+  Recovery-list words that make no phrase ("suspicious") never go to an external model.
+
+### Measured
+
+- `npm run evals` (48 German utterances, each through the whole pipeline with seeded notes and reminders),
+  qwen3.6:35b-mlx on the Mac, 2026-10-14: 47 of 48 (98 %), median turn 1.6 s. The one miss: arithmetic ("zwölf mal
+  dreizehn sind hundertfünfzig"). Earlier runs that day, before the prompt's last changes: 44 and 46 of 48.
+- On the emulator, by voice (synthesized speech fed to the WebView): a note dictated and read back; deleted after
+  "Ja" (C10), and "Rückgängig"; "Kann mir jemand Wasser bringen?" → A17 → "Ja" → a help request marked `assistant`;
+  left unanswered, A18b and nothing sent; a reminder for tomorrow at eight read back from the schedule; a joke said in
+  the person's OpenAI voice, two clips in order; at a reminder, "Noch nicht. Kann mir jemand Wasser bringen?" → A17 →
+  "Ja" → a help request linked to the reminder (answered "help"); the notes screen read, went on, and took a dictated
+  note.
+- In Maria's browser: a note dictated through the assistant, the notes screen.
+

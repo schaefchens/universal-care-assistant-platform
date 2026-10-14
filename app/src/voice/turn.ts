@@ -14,7 +14,12 @@ export type TurnEvent =
   | { t: 'command'; intent: Intent }
   | { t: 'ask'; kind: 'help_confirm'; reason: 'help_word' | 'help_near' }
   | { t: 'unmatched' }
-  | { t: 'error'; code: 'stt_unavailable' | 'audio' }
+  | { t: 'error'; code: 'stt_unavailable' | 'audio' | 'assistant_unavailable' | 'assistant_failed' }
+  /** A part of the assistant's answer: its own words, a summary, an original (read word for word), or UCAP's own. */
+  | { t: 'segment'; kind: 'reply' | 'summary' | 'original' | 'system'; text: string }
+  /** An action waiting for the person's yes on this device. */
+  | { t: 'action'; id: string; contentHash: string; prompt: string; expiresAt: string }
+  | { t: 'ask'; kind: 'help_confirm'; reason: 'assistant' }
   | { t: 'done'; ms: { stt: number | null; total: number }; audioMs: number | null };
 
 /** Rejects with `unreachable` when the assistant cannot be reached (it is optional: help never needs it). */

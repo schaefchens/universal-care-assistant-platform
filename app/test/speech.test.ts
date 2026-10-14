@@ -95,4 +95,22 @@ describe('speech channels', () => {
     expect(s.speaking).toBeNull();
     expect(f.log.filter((l) => l.startsWith('start'))).toEqual(['start care: A']);
   });
+
+  it('says when an utterance ended, or was cut off, so an answer\'s parts go out one after another', async () => {
+    const f = fakeBackend();
+    const out = new SpeechOut(f.backend);
+    const first = out.sayAndWait('Erster Satz.', 'de', 'assistant');
+    await tick();
+    await f.done();
+    expect(await first).toBe(true);
+    const second = out.sayAndWait('Zweiter Satz.', 'de', 'assistant');
+    await tick();
+    // A touch interrupts the assistant: the part was cut off.
+    out.stop('assistant');
+    expect(await second).toBe(false);
+    // A label while care speaks is dropped, and says so.
+    void out.sayAndWait('Hilferuf wird gesendet.', 'de', 'care');
+    await tick();
+    expect(await out.sayAndWait('Nachrichten', 'de', 'label')).toBe(false);
+  });
 });
