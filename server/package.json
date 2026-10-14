@@ -13,6 +13,7 @@
     "@fastify/cors": "^11.3.1",
     "@fastify/type-provider-typebox": "^6.3.0",
     "@fastify/websocket": "^11.3.4",
+    "@ucap/identity": "*",
     "@ucap/shared": "*",
     "fastify": "^5.12.7",
     "herde-project": "*",

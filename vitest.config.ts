@@ -34,6 +34,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'identity',
+          root: 'packages/identity',
+          include: ['test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'touch',
           root: 'packages/touch',
           include: ['test/**/*.test.ts'],

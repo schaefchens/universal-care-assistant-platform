@@ -1,0 +1,23 @@
+{
+  "name": "@ucap/identity",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "UCAP identity: a recovery phrase rendered in English or German from the same entropy, an Ed25519 identity key derived from it, signed statements.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@scure/bip39": "2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "fast-check": "^4.10.2",
+    "typescript": "~6.0.3"
+  }
+}

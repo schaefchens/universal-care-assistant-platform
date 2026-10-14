@@ -27,3 +27,6 @@ services/stt-mlx/data/
 
 # Results of local runs (spikes keep their reports in docs/spikes/).
 data/
+
+# Word-list build outputs (reports list rejected candidates, some offensive): regenerated, never committed.
+tools/wordlist/out/

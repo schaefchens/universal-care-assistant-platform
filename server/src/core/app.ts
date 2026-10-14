@@ -9,8 +9,13 @@ import { createFileStore, registerFileRoutes } from '../lib/files.ts';
 import { createHttp } from '../lib/http.ts';
 import { createJobRunner, enqueue, type Handler } from '../lib/jobs.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
+import { CLOSE } from '@ucap/shared';
+import { createIdentityService } from '../domain/identity/service.ts';
+import { pruneLimits } from '../lib/rate-limit.ts';
+import { registerAuth } from './auth.ts';
 import { createDispatcher, pruneEvents } from './dispatcher.ts';
-import { type Authenticated, registerRealtime } from './realtime.ts';
+import { registerRealtime } from './realtime.ts';
+import { registerIdentityRoutes } from './routes/identity.ts';
 import { ensureServerId, registerServerInfo } from './server-info.ts';
 
 export async function buildCore(o: {
@@ -18,8 +23,8 @@ export async function buildCore(o: {
   db: Db;
   clock: Clock;
   secrets: Secrets;
-  /** Until S2 brings sessions, nothing authenticates. */
-  authenticate?: (token: string) => Promise<Authenticated | null>;
+  /** A test seam for the realtime hub; normally sockets authenticate with a session token. */
+  authenticate?: (token: string) => Promise<{ userId: string; deviceId: string } | null>;
   logger?: boolean;
   dispatcherLock?: string;
 }) {
@@ -28,10 +33,17 @@ export async function buildCore(o: {
   const serverId = await ensureServerId(o.db);
 
   const files = createFileStore({ dir: o.config.filesDir, key: deriveKey(o.secrets.masterKey, 'files'), clock: o.clock });
+  const identity = createIdentityService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, serverId, publicOrigins: o.config.publicOrigins });
+  registerAuth(app, identity);
   const hub = await registerRealtime(app, {
     db: o.db,
     allowedOrigins: o.config.allowedOrigins,
-    authenticate: o.authenticate ?? (async () => null),
+    authenticate:
+      o.authenticate ??
+      (async (token) => {
+        const a = await identity.authenticate(token);
+        return a ? { userId: a.userId, deviceId: a.deviceId } : null;
+      }),
     clock: o.clock,
   });
   const dispatcher = createDispatcher({
@@ -48,6 +60,7 @@ export async function buildCore(o: {
     // that its attempts were reset and leaves the row open).
     'events.prune': async () => {
       await pruneEvents(o.db, o.clock);
+      await pruneLimits(o.db, o.clock);
       await enqueue(o.db, { queue: 'core', kind: 'events.prune', key: 'events.prune', runAt: o.clock() + 86_400_000 });
     },
   };
@@ -61,6 +74,7 @@ export async function buildCore(o: {
   });
   registerServerInfo(app, { serverId, config: o.config });
   registerFileRoutes(app, { db: o.db, store: files, dir: o.config.filesDir });
+  registerIdentityRoutes(app, { identity, closeDevice: (deviceId) => hub.closeDevice(deviceId, CLOSE.revoked) });
 
   return {
     app,
@@ -68,6 +82,7 @@ export async function buildCore(o: {
     dispatcher,
     jobs,
     files,
+    identity,
     serverId,
     async start() {
       await dispatcher.start();
