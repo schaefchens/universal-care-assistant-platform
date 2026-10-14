@@ -126,8 +126,9 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         }
         emit({ t: 'transcript', text });
         const m = match(text, o.lang, o.context);
-        if (m.kind === 'command' && m.intent === 'undo' && d.actions && d.contextFor) {
-          // "Rückgängig" needs the server: the last thing the assistant did, undone.
+        if (m.kind === 'command' && m.intent === 'undo' && o.context !== 'confirm' && d.actions && d.contextFor) {
+          // "Rückgängig" needs the server: the last thing the assistant did, undone. Where a screen asks a question
+          // (a change to keep or undo), it is that screen's answer instead.
           outcome = 'command';
           detail = 'undo';
           const ctx = await d.contextFor(o.userId, o.deviceId, o.lang);

@@ -1,0 +1,92 @@
+/**
+ * Device configurations over HTTP (docs/plan.md, Appendix B "configuration"): the device fetches its own and says
+ * what it received and applied; the person and helpers with `device.configure` list the person's devices, read a
+ * configuration with its history, check one, save a version from the current one (409 when stale, 422 when it breaks
+ * the protected controls), and set an earlier one again.
+ */
+import { DeviceConfig } from '@ucap/shared';
+import Type from 'typebox';
+import type { Configs } from '../../domain/configs/service.ts';
+import type { AnyApp } from '../../lib/http.ts';
+import { auth, requireAuth } from '../auth.ts';
+
+const Id = Type.Object({ id: Type.String({ format: 'uuid' }) });
+const Reason = Type.Union([Type.Literal('touch'), Type.Literal('speech'), Type.Literal('awaiting'), Type.Literal('care')]);
+
+export function registerConfigRoutes(app: AnyApp, o: { configs: Configs }) {
+  const { configs } = o;
+  const id = (req: { params: unknown }) => (req.params as { id: string }).id;
+
+  // —— The device's own ——
+  app.get('/api/v1/devices/current/config', { preHandler: requireAuth }, async (req) => ({ config: await configs.forDevice(auth(req).userId, auth(req).deviceId) }));
+  app.put(
+    '/api/v1/devices/current/config',
+    { preHandler: requireAuth, bodyLimit: 256 * 1024, schema: { body: Type.Object({ body: DeviceConfig }, { additionalProperties: false }) } },
+    async (req) => ({ config: await configs.createForDevice(auth(req).userId, auth(req).deviceId, (req.body as { body: DeviceConfig }).body) }),
+  );
+  app.post(
+    '/api/v1/devices/current/config-state',
+    {
+      preHandler: requireAuth,
+      schema: {
+        body: Type.Object(
+          {
+            delivered: Type.Optional(Type.Integer({ minimum: 1 })),
+            applied: Type.Optional(Type.Integer({ minimum: 1 })),
+            deferred: Type.Optional(Type.Union([Reason, Type.Null()])),
+            repaired: Type.Optional(Type.Array(Type.String({ maxLength: 40 }), { maxItems: 40 })),
+          },
+          { additionalProperties: false },
+        ),
+      },
+    },
+    async (req) => ({ state: await configs.report(auth(req).userId, auth(req).deviceId, req.body as never) }),
+  );
+
+  // —— The person's and their helpers' ——
+  app.get('/api/v1/people/:id/devices', { preHandler: requireAuth, schema: { params: Id } }, async (req) => ({ devices: await configs.devicesOf(auth(req).userId, id(req)) }));
+  app.get('/api/v1/configs/:id', { preHandler: requireAuth, schema: { params: Id } }, async (req) => configs.get(auth(req).userId, id(req)));
+  app.get(
+    '/api/v1/configs/:id/versions/:version',
+    { preHandler: requireAuth, schema: { params: Type.Object({ id: Type.String({ format: 'uuid' }), version: Type.Integer({ minimum: 1 }) }) } },
+    async (req) => configs.version(auth(req).userId, id(req), (req.params as { version: number }).version),
+  );
+  app.post(
+    '/api/v1/configs/validate',
+    { preHandler: requireAuth, bodyLimit: 256 * 1024, schema: { body: Type.Object({ body: DeviceConfig }, { additionalProperties: false }) } },
+    async (req) => configs.validate((req.body as { body: DeviceConfig }).body),
+  );
+  app.post(
+    '/api/v1/configs/:id/versions',
+    {
+      preHandler: requireAuth,
+      bodyLimit: 256 * 1024,
+      schema: {
+        params: Id,
+        body: Type.Object(
+          {
+            base: Type.Integer({ minimum: 1 }),
+            body: DeviceConfig,
+            note: Type.Optional(Type.Union([Type.Null(), Type.String({ maxLength: 300 })])),
+            acknowledge: Type.Optional(Type.Array(Type.String({ maxLength: 120 }), { maxItems: 50 })),
+          },
+          { additionalProperties: false },
+        ),
+      },
+    },
+    async (req, reply) => {
+      const a = auth(req);
+      const b = req.body as { base: number; body: DeviceConfig; note?: string | null; acknowledge?: string[] };
+      const r = await configs.addVersion(a.userId, id(req), { ...b, fromDevice: a.deviceId });
+      return reply.code(r.unchanged ? 200 : 201).send(r);
+    },
+  );
+  app.post(
+    '/api/v1/configs/:id/revert',
+    { preHandler: requireAuth, schema: { params: Id, body: Type.Object({ base: Type.Integer({ minimum: 1 }), to: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }) } },
+    async (req, reply) => {
+      const r = await configs.revert(auth(req).userId, id(req), req.body as { base: number; to: number });
+      return reply.code(r.unchanged ? 200 : 201).send(r);
+    },
+  );
+}

@@ -7,3 +7,6 @@ export * from './i18n.ts';
 export * from './device-config.ts';
 export * from './schedule.ts';
 export * from './connectors.ts';
+export * from './contrast.ts';
+export * from './config-rules.ts';
+export * from './config-diff.ts';

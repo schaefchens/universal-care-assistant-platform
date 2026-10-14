@@ -27,6 +27,8 @@ import { registerPeopleRoutes } from './routes/people.ts';
 import { registerCareRoutes } from './routes/care.ts';
 import { registerNoteRoutes } from './routes/notes.ts';
 import { registerReminderRoutes } from './routes/reminders.ts';
+import { registerConfigRoutes } from './routes/configs.ts';
+import { createConfigs } from '../domain/configs/service.ts';
 import { createSignedCheck } from './signed.ts';
 import { ensureServerId, registerServerInfo } from './server-info.ts';
 
@@ -135,6 +137,8 @@ export async function buildCore(o: {
   registerReminderRoutes(app, { reminders, requireSigned });
   const notes = createNotes({ db: o.db, clock: o.clock });
   registerNoteRoutes(app, { notes });
+  const configs = createConfigs({ db: o.db, clock: o.clock, people });
+  registerConfigRoutes(app, { configs });
 
   return {
     app,
@@ -148,6 +152,7 @@ export async function buildCore(o: {
     push,
     heartbeats,
     reminders,
+    configs,
     serverId,
     async start() {
       await dispatcher.start();

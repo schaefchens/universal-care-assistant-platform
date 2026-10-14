@@ -36,6 +36,10 @@ import { Approve } from './screens/Approve.tsx';
 import { CareScreen } from './screens/CareScreen.tsx';
 import { HelperAlert, HelperInbox } from './screens/HelperInbox.tsx';
 import { ConfirmAction } from './screens/ConfirmAction.tsx';
+import { ConfigChanged } from './screens/ConfigChanged.tsx';
+import { DeviceEditor } from './screens/DeviceEditor.tsx';
+import { type Change, ConfigSync } from './config/sync.ts';
+import { ceremony } from './identity/ceremony.ts';
 import { HelpQuestion } from './screens/HelpQuestion.tsx';
 import { MessagesScreen } from './screens/MessagesScreen.tsx';
 import { NotesScreen } from './screens/NotesScreen.tsx';
@@ -94,10 +98,14 @@ type Page =
   | { approve: string }
   | { alert: string }
   | { reminder: string }
-  | { remindersOf: RemindersOf };
+  | { remindersOf: RemindersOf }
+  /** A change someone else made took effect: said, with keep or undo (S11). */
+  | { configChanged: Change }
+  /** A helper setting up a person's device (S11). */
+  | { configOf: { id: string; displayName: string } };
 const pageKey = (p: Page) => (typeof p === 'string' ? p : Object.keys(p)[0]!);
 /** Pages a due reminder does not interrupt: a help request in progress, a helper's alert. It waits for its next prompt. */
-const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p || 'confirm' in p || 'help' in p));
+const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p || 'confirm' in p || 'help' in p || 'configChanged' in p));
 
 /** An invitation opened as a link in the browser (`…/#invite=CODE`): taken once and removed from the address bar
  *  and history. The code sits in the fragment, so it never reaches a server's access log. */
@@ -115,6 +123,8 @@ function sessionFor(server: ServerRef | null): Session | null {
 
 export function App() {
   const [config, setConfig] = useState<DeviceConfig>(loadDeviceConfig);
+  /** The configuration in use, for long-lived clients (the sync) that outlive a render. */
+  const configRef = useRef(config);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [server, setServer] = useState<ServerRef | null>(loadServer);
   const [session, setSession] = useState<Session | null>(() => sessionFor(loadServer()));
@@ -130,6 +140,7 @@ export function App() {
   const [careRev, setCareRev] = useState(0);
   const [reminderRev, setReminderRev] = useState(0);
   const [messagingRev, setMessagingRev] = useState(0);
+  const [configRev, setConfigRev] = useState(0);
   const [careState, setCareState] = useState<CareState>({ pending: false, request: null });
   const [isHelper, setIsHelper] = useState(false);
   const careRef = useRef<CareClient | null>(null);
@@ -234,6 +245,10 @@ export function App() {
           void reminderNews(e.type, e.data);
         } else if (e.type.startsWith('messaging.')) {
           void messagingNews(e.type, e.data);
+        } else if (e.type === 'config.version' || e.type === 'config.state') {
+          // This device's own: fetched at once, applied when nobody uses it. A helper's editor reads it again.
+          if (e.type === 'config.version' && e.data.deviceId === session.ref.deviceId) void configSync.current?.refresh();
+          setConfigRev((n) => n + 1);
         }
       },
       onRevoked: () => void session.forget().then(() => signedOut(ui.tr('devices.signedOut'))),
@@ -426,6 +441,44 @@ export function App() {
 
   // While a help request is open the screen stays on (docs/plan.md, Appendix D), where the platform allows it.
   const careOpen = careState.pending || careState.request?.status === 'open' || careState.request?.status === 'accepted';
+
+  // When the person last did something here: a configuration from someone else waits until nobody uses the device.
+  const lastActivity = useRef(Date.now());
+  useEffect(() => {
+    const mark = () => (lastActivity.current = Date.now());
+    for (const ev of ['pointerdown', 'keydown', 'touchstart'] as const) document.addEventListener(ev, mark, { capture: true, passive: true });
+    return () => {
+      for (const ev of ['pointerdown', 'keydown', 'touchstart'] as const) document.removeEventListener(ev, mark, { capture: true });
+    };
+  }, []);
+  const idleRef = useRef<() => 'touch' | 'speech' | 'awaiting' | 'care' | null>(() => null);
+  idleRef.current = () => {
+    if (Date.now() - lastActivity.current < 30_000) return 'touch';
+    if (uiRef.current.speech.speaking || player.playing || voiceView.state !== 'idle') return 'speech';
+    if (careOpen) return 'care';
+    if (busy(page) || ceremony.active || page === 'newWords' || page === 'voiceIntro' || page === 'leak') return 'awaiting';
+    return null;
+  };
+  const configSync = useRef<ConfigSync | null>(null);
+  configSync.current ??= new ConfigSync({
+    session: () => sessionRef.current,
+    current: () => configRef.current,
+    apply: (c) => {
+      configRef.current = c;
+      setConfig(c);
+      saveDeviceConfig(c);
+    },
+    idle: () => idleRef.current(),
+    announce: (change) => setPage({ configChanged: change }),
+    lang: () => uiRef.current.lang,
+    form: () => uiRef.current.form,
+  });
+  useEffect(() => {
+    if (!session) return;
+    const sync = configSync.current!;
+    sync.start();
+    return () => sync.stop();
+  }, [session]);
   useEffect(() => {
     if (!careOpen || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
     let lock: WakeLockSentinel | null = null;
@@ -436,7 +489,7 @@ export function App() {
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
     if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin' || page === 'telegram') setPage('settings');
-    else if (typeof page === 'object' && 'remindersOf' in page) setPage('helpers');
+    else if (typeof page === 'object' && ('remindersOf' in page || 'configOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
     else if (stack.length > 1) setStack((s) => s.slice(0, -1));
@@ -493,6 +546,12 @@ export function App() {
         return;
       case 'whatCanIDo':
         u.say(currentVoice().whatCanIDo?.() ?? `${u.tr('whatcan.page', { screen: title() })} ${u.tr('whatcan.commands')}`, 'system');
+        return;
+      case 'undo':
+        // Said where a question waited, and no screen took it: the assistant's last action, as anywhere else.
+        void session
+          ?.call<{ say: string | null }>('/api/v1/assistant/undo', { method: 'POST' })
+          .then((r) => u.say(r.say ?? u.tr('assistant.undo.nothing'), 'system'), () => u.say(u.tr('assistant.unavailable'), 'system'));
         return;
       default:
         // Ja, Nein, Erledigt, Später: nothing is asking.
@@ -612,6 +671,7 @@ export function App() {
   }
 
   function signedOut(why: string) {
+    configSync.current?.forget();
     setSession(null);
     setMe(null);
     setPage('areas');
@@ -622,9 +682,12 @@ export function App() {
     if (session) void session.call<Me>('/api/v1/me').then(setMe, () => {});
   };
 
+  /** The person's own change on this device: in use at once, and sent to the server as a version (S11). */
   const updateConfig = (c: DeviceConfig) => {
+    configRef.current = c;
     setConfig(c);
     saveDeviceConfig(c);
+    configSync.current?.localChange();
   };
   const updatePrefs = (p: Prefs) => {
     setPrefs(p);
@@ -665,6 +728,7 @@ export function App() {
         refresh={peopleRev}
         onApprove={(id) => setPage({ approve: id })}
         onReminders={(person, canManage, canRead) => setPage({ remindersOf: { ...person, canManage, canRead } })}
+        onConfigure={(person) => setPage({ configOf: person })}
         onClose={() => setPage('settings')}
       />
     );
@@ -774,6 +838,22 @@ export function App() {
         onHelp={() => setPage('care')}
       />
     );
+  else if (typeof page === 'object' && 'configChanged' in page) {
+    const change = page.configChanged;
+    content = (
+      <ConfigChanged
+        config={config}
+        change={change}
+        onKeep={() => setPage('areas')}
+        onUndo={() => configSync.current!.undo(change)}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+      />
+    );
+  } else if (typeof page === 'object' && 'configOf' in page)
+    content = <DeviceEditor session={session} person={page.configOf} myName={me?.displayName ?? ''} refresh={configRev} onClose={() => setPage('helpers')} />;
   else if (typeof page === 'object' && 'approve' in page) content = <Approve session={session} relationshipId={page.approve} config={config} onDone={() => setPage('helpers')} />;
   else if (typeof page === 'object') content = <HelperAlert session={session} requestId={page.alert} config={config} onDone={() => setPage('inbox')} />;
   else if (page === 'care' && careRef.current) content = <CareScreen care={careRef.current} state={careState} config={config} onHome={() => setPage('areas')} />;

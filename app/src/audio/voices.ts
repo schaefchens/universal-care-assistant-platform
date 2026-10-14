@@ -42,6 +42,11 @@ export class ClipPlayer {
   private audio: HTMLAudioElement | null = null;
   private token = 0;
 
+  /** Something is playing now (a clip of the person's voice, a recording). */
+  get playing(): boolean {
+    return this.audio !== null && !this.audio.paused && !this.audio.ended;
+  }
+
   async play(urls: string[]): Promise<boolean> {
     this.stop();
     const mine = ++this.token;

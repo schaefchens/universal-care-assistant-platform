@@ -510,3 +510,58 @@ then they stay as built, and nothing here is frozen.
 - **Ollama stalls under memory pressure:** one of ten identical requests paused 23.7 s in the middle of its answer, with
   no thinking; three turns of a full evaluation failed at the 15 s limit. The Mac was swapping (Docker's VM 13 GB, the
   emulator 8 GB, the model 22 GB, 15 GB in swap). The limit stays; the plan's memory budget did not count the emulator.
+
+## S11: remote configuration (2026-10-14)
+
+### To confirm
+
+1. **A change from someone else is announced on a page of its own** ("Neue Einstellungen", with "Behalten",
+   "Rückgängig" and Hilfe), shown only when nobody used the device for 30 s. No answer within a minute keeps the
+   change (the helper meant it, and it stays reversible from the helper's page). CONCEPT §6: "Changes should be
+   explained and confirmed where appropriate."
+2. **The person's own settings win.** When the person changed a setting on the device while someone else saved, the
+   person's changed settings are put on top of the other version (the device is theirs).
+3. **The help area's minimum size is a ninth of its screen**, and its word is kept when a label contains "Hilfe" or
+   "Help" ("Hilfe holen" is allowed). Appendix H says "a minimum size" without a number.
+4. **The editor of M1 changes how the screen looks, touch, and the home screen's areas** (label, place, colour, spoken
+   description). Adding and removing areas, other screens, sounds, and the voice settings come later (M4 in the plan's
+   roadmap: "Remote setup of voice preferences, sounds, activities and care contacts").
+
+### Decided (within the plan)
+
+- **One configuration per device**, revisioned in core (migration 0013): a version is made from the current one or
+  refused as stale (409); every change by someone else is audited; setting an earlier version again is a new version.
+  A device without one makes version 1 from what it has. Templates for new devices are in the data model, unused.
+- **The protected controls are one set of rules** (`packages/shared/src/config-rules.ts`) for the server (422), the
+  device (repairs with the protected defaults and reports which screens) and the editor (shown while editing): a help
+  area on every screen with its function, word, sound and size; a way back on every other screen and home at most two
+  activations away; the grid sound.
+- **Warnings** are saved only when acknowledged, and the acknowledgement is kept with the version. Measured: with the
+  label in black or white chosen for the colour, every colour reaches 4.6:1, so 4.5:1 can never warn; the warning is
+  for the high-contrast themes' 7:1.
+- **The device applies a version** when there was no touch or key for 30 s, nothing is being said or played, no
+  question waits, no help request is open; until then the helper's page says why it waits. "Rückgängig" works by
+  touch and by voice on that page (on a screen that asks, "Rückgängig" is that screen's answer, not the assistant's
+  undo).
+- **What the person hears is built from the two versions** (`config-diff.ts`, golden tests), never from what the author
+  typed: a moved help area first and always, then at most three changes, then "Dazu weitere Einstellungen." The editor
+  shows it before saving.
+- **The editor** (Helfer → "Gerät einrichten", with `device.configure`): the person's devices, the state (saved,
+  received, waiting and why, applied, repaired), how it looks, touch, the home screen's areas with "Anhören" in the
+  helper's own voice, a preview in the person's colours (described for screen readers), what will be said, the history
+  with notes and "Wieder so einstellen". A newer version from elsewhere replaces the draft (unsaved edits are told to be
+  lost), so a save never puts back what was changed meanwhile.
+- **The person's own Settings** are versions too, sent 1.5 s after the last change.
+
+### Measured on the emulator and in the browser
+
+- Clara granted Maria "Bedienung der Geräte einstellen" on her tablet. Maria, in Chrome, switched the tablet to high
+  contrast and swapped Nachrichten and Notizen (acceptance step 8): saved as version 2, "wartet: das Gerät wird gerade
+  benutzt" while Clara kept touching, applied 30 s after her last touch, announced ("Maria hat den Bildschirm auf hohen
+  Kontrast, dunkel umgestellt. Maria hat das Feld „Nachrichten“ verschoben. Es ist jetzt unten links. …"), and Maria's
+  page said "angewendet".
+- "Rückgängig" by voice and "Behalten" by touch on the tablet; a version set again from Maria's history; Clara's own
+  theme change on the tablet as version "von Clara", in Maria's editor at once; the app closed: "gespeichert, aber noch
+  nicht beim Gerät angekommen", then received and applied after the start; the help area moved: said first, undone.
+- Found and fixed while trying it: the editor kept its draft over a newer version, and Maria's next save put back a text
+  size Clara had undone.

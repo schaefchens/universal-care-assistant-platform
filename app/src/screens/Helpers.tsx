@@ -65,6 +65,8 @@ export function Helpers(p: {
   refresh: number;
   /** The reminders of someone this helper supports, as far as their scopes reach. */
   onReminders?: (person: { id: string; displayName: string }, canManage: boolean, canRead: boolean) => void;
+  /** Setting up the person's device (device.configure, S11). */
+  onConfigure?: (person: { id: string; displayName: string }) => void;
 }) {
   const ui = useUi();
   const { tr, say } = ui;
@@ -320,6 +322,11 @@ export function Helpers(p: {
                 <Confirm question={tr('people.end.confirm.helper', { name: r.person.displayName })} yes={tr('people.end.yes')} onYes={() => void end(r)} onNo={() => setEnding(null)} />
               ) : (
                 <div className="row">
+                  {r.state === 'active' && r.scopes.includes('device.configure') && (
+                    <Button className="button" onPress={() => p.onConfigure?.(r.person)}>
+                      {tr('config.editor.open')}
+                    </Button>
+                  )}
                   {r.state === 'active' && (r.scopes.includes('reminders.manage') || r.scopes.includes('reminders.responses.read')) && (
                     <Button className="button" onPress={() => p.onReminders?.(r.person, r.scopes.includes('reminders.manage'), r.scopes.includes('reminders.responses.read'))}>
                       {tr('reminder.page.of', { name: r.person.displayName })}

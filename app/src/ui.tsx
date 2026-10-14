@@ -14,6 +14,8 @@ import { has } from './native/plugins.ts';
 
 export interface Ui {
   lang: Lang;
+  /** The person's form of address ("du" or "Sie"), for texts built outside the catalogue's own lookups. */
+  form: AddressForm;
   tr: (key: string, params?: Params) => string;
   say: (text: string, channel: Channel) => void;
   /** Says it and resolves when it ended (true) or was cut off (false): for the parts of an answer, one after another. */
@@ -27,6 +29,7 @@ export interface Ui {
 export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; earcons: EarconPlayer; assistive: AssistiveMode; haptics: boolean }): Ui {
   return {
     lang: o.lang,
+    form: o.form,
     tr: (key, params) => t(o.lang, key, params, o.form),
     say: (text, channel) => {
       record('spoken', { channel, text: ceremony.active ? redactWords(text) : text });

@@ -7,10 +7,11 @@ An AI-powered assistive and care platform for disabled people and people who nee
 
 ## Status
 
-Milestone 1, step S10 done: identity and devices, people and permissions, help requests with helpers' browsers and the
+Milestone 1, step S11 done: identity and devices, people and permissions, help requests with helpers' browsers and the
 Android app's alarm, interactive reminders, speech providers and each person's voices, push-to-talk with commands and
-the help question, the assistant (notes, reminders, confirmed actions, help it proposes), and Telegram (reading,
-voice messages, replies confirmed by the person and by Telegram). Next: S11, remote configuration.
+the help question, the assistant (notes, reminders, confirmed actions, help it proposes), Telegram (reading, voice
+messages, replies confirmed by the person and by Telegram), and remote configuration (helpers set up a person's device;
+it changes only when nobody uses it, and says what changed). Next: S12, hardening.
 Departures from the plan are in [docs/decisions.md](docs/decisions.md).
 
 ## Running the development stack

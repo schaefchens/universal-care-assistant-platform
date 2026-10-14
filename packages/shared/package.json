@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "intl-messageformat": "^12.1.3",
-    "typebox": "^1.3.37"
+    "typebox": "^1.3.37",
+    "@ucap/touch": "*"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",

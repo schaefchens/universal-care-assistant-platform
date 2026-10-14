@@ -645,3 +645,25 @@ body {
   background: var(--c-surface);
   color: var(--c-text);
 }
+
+/* The helper's preview of a person's home screen (S11): the person's colours and sizes, not touchable. */
+.config-preview {
+  flex: none;
+  height: 18rem;
+  max-width: 28rem;
+  border: 1px solid var(--c-border);
+  border-radius: 1rem;
+  background: var(--c-bg);
+  pointer-events: none;
+}
+
+.area-editor {
+  margin: 1rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--c-border);
+  border-radius: 0.75rem;
+}
+
+.area-editor legend h3 {
+  margin: 0;
+}
