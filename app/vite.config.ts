@@ -1,10 +1,22 @@
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { type Plugin, defineConfig } from 'vite';
+import { CONTENT_SECURITY_POLICY } from './src/csp.ts';
+
+/** The built index.html carries the policy right after its charset, ahead of every script and stylesheet. */
+const csp: Plugin = {
+  name: 'ucap-csp',
+  apply: 'build',
+  transformIndexHtml: (html) => {
+    const charset = '<meta charset="utf-8" />';
+    if (!html.includes(charset)) throw new Error('index.html: no charset to put the security policy after');
+    return html.replace(charset, `${charset}\n    <meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}" />`);
+  },
+};
 
 export default defineConfig({
   // Relative paths: the Capacitor WebView serves the app from https://localhost/.
   base: './',
-  plugins: [react()],
+  plugins: [react(), csp],
   // Debug builds keep a record of what the app spoke and did (src/debug.ts); release builds drop it.
   define: { __UCAP_DEBUG__: JSON.stringify(process.env.UCAP_RELEASE !== '1') },
   // The oldest WebView UCAP supports (lookup measured the shell down to Chromium 111).

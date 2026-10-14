@@ -41,11 +41,13 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
         if (!b.identityKey) throw new AppError('bad_request');
         return identity.recoveryChallenge(b.identityKey, req.ip);
       }
-      if (b.purpose === 'session') return identity.newChallenge('session', { deviceId: b.deviceId });
       if (b.purpose === 'identity.rotate' || b.purpose === 'identity.reissue') {
         auth(req);
         return identity.newChallenge(b.purpose);
       }
+      // Asked without a session: limited per address (help needs none: care commands are signed by the device).
+      await identity.limitChallenges(req.ip);
+      if (b.purpose === 'session') return identity.newChallenge('session', { deviceId: b.deviceId });
       return identity.newChallenge('device.proof');
     },
   );
@@ -84,7 +86,7 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
   app.post(
     '/api/v1/sessions',
     { schema: { body: Type.Object({ org: Type.String({ maxLength: 200 }), deviceId: Uuid, challengeId: Uuid, nonce: B64, proof: B64 }) } },
-    async (req) => identity.createSession(req.body as Parameters<IdentityService['createSession']>[0]),
+    async (req) => identity.createSession({ ...(req.body as Omit<Parameters<IdentityService['createSession']>[0], 'ip'>), ip: req.ip }),
   );
 
   app.delete('/api/v1/sessions/current', { preHandler: requireAuth }, async (req, reply) => {

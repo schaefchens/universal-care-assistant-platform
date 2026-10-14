@@ -1,6 +1,8 @@
 import { GERMAN, toWords } from '@ucap/identity';
 import { describe, expect, it } from 'vitest';
-import { redactWords } from '../src/identity/ceremony.ts';
+import { type ClipPlayer, speakAs } from '../src/audio/voices.ts';
+import type { Session } from '../src/identity/account.ts';
+import { ceremony, redactWords } from '../src/identity/ceremony.ts';
 import { columnsFor, shuffle, wordLanguage } from '../src/screens/words/common.ts';
 
 describe('the recovery-word screens', () => {
@@ -13,6 +15,22 @@ describe('the recovery-word screens', () => {
     expect(kept.toLowerCase()).not.toContain(w);
     expect(kept).toMatch(/^Wort 1: •••\. ••• wird so geschrieben: (•, )+•\.$/);
     expect(redactWords('Startseite. 4 Felder.')).toBe('Startseite. 4 Felder.');
+  });
+
+  it('send nothing to a server voice while they are open (ID-03)', async () => {
+    const asked: string[] = [];
+    const session = { ref: { serverUrl: 'http://localhost:8810' }, call: async (path: string) => (asked.push(path), { segments: [{ url: '/clip' }] }) } as unknown as Session;
+    const player = { play: async () => true } as unknown as ClipPlayer;
+    const speak = () => speakAs({ session, text: 'Wort 1: Apfel.', purpose: 'reply', player, screenReader: false, notice: () => {} });
+    ceremony.active = true;
+    try {
+      expect(await speak()).toBe(false);
+      expect(asked).toEqual([]);
+    } finally {
+      ceremony.active = false;
+    }
+    expect(await speak()).toBe(true);
+    expect(asked).toEqual(['/api/v1/speech/render']);
   });
 
   it('give German words only where the list may be used, English otherwise', () => {

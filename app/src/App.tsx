@@ -8,7 +8,7 @@
  * another device, goes back to onboarding and says why.
  */
 import { App as CapApp } from '@capacitor/app';
-import type { DeviceConfig } from '@ucap/shared';
+import { type DeviceConfig, isLang } from '@ucap/shared';
 import type { Intent } from '@ucap/speech-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChoiceGrid } from './areas/ChoiceGrid.tsx';
@@ -16,7 +16,7 @@ import { type AssistiveMode, modeFrom, watchAssistive } from './a11y/assistive.t
 import { createEarcons } from './audio/earcons.ts';
 import { ClipPlayer, speakAs, voicesApi } from './audio/voices.ts';
 import { pickBackend, SpeechOut } from './audio/speech.ts';
-import { loadDeviceRef, type Me, Session } from './identity/account.ts';
+import { loadDeviceRef, type Me, restoreDevice, Session } from './identity/account.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { CareClient, type CareState } from './care/client.ts';
 import { helperCare } from './care/helper.ts';
@@ -50,6 +50,7 @@ import { Helpers } from './screens/Helpers.tsx';
 import { NewWords } from './screens/NewWords.tsx';
 import { Onboarding } from './screens/Onboarding.tsx';
 import { AiAdmin } from './screens/AiAdmin.tsx';
+import { ServerAdmin } from './screens/ServerAdmin.tsx';
 import { ReminderScreen } from './screens/ReminderScreen.tsx';
 import { VoiceIntro, VoicesPage } from './screens/Voices.tsx';
 import { RemindersPage } from './screens/Reminders.tsx';
@@ -81,6 +82,7 @@ type Page =
   | 'voices'
   | 'voiceIntro'
   | 'aiAdmin'
+  | 'serverAdmin'
   /**
    * "Soll ich einen Hilferuf senden?" after a help word or a near match, or proposed by the assistant (A17); asked at a
    * reminder, the request is linked to it.
@@ -348,13 +350,39 @@ export function App() {
     void shareRefWithWorker(session ? { ...session.ref, lang: prefs.lang } : null);
   }, [session, prefs.lang]);
 
-  // In the app, native code does: receipts and the alarm's answers go out with the app closed. Signed out, nothing
-  // may ring for this account any more.
+  // In the app, native code does: receipts and the alarm's answers go out with the app closed. Signing out clears it
+  // (Session.forget); a start without the WebView's storage does not, so alarms keep ringing until the device is back.
   useEffect(() => {
-    if (!has('Alerts')) return;
     const r = session?.ref;
-    void Alerts.setRef(r ? { serverUrl: r.serverUrl, serverId: r.serverId, deviceId: r.deviceId, lang: prefs.lang, form: prefs.addressForm } : {}).catch(() => {});
+    if (!has('Alerts') || !r) return;
+    void Alerts.setRef({ serverUrl: r.serverUrl, serverId: r.serverId, deviceId: r.deviceId, lang: prefs.lang, form: prefs.addressForm }).catch(() => {});
   }, [session, prefs.lang, prefs.addressForm]);
+
+  // The WebView's storage was lost, but Android kept the device (AN-06): it signs in again with its key, no words;
+  // without a connection, again every 15 s.
+  useEffect(() => {
+    if (session) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = () =>
+      void restoreDevice().then((r) => {
+        // Set up meanwhile (the person recovered with the words): nothing to restore any more.
+        if (!r || cancelled || sessionRef.current) return;
+        if (r === 'later') {
+          timer = setTimeout(attempt, 15_000);
+          return;
+        }
+        saveServer(r.server);
+        setServer(r.server);
+        if (isLang(r.lang)) updatePrefs({ ...prefs, lang: r.lang, addressForm: r.form === 'Sie' ? 'Sie' : 'du' });
+        setSession(r.session);
+      }, () => {});
+    attempt();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // An alarm opened the app (a tap on it, or "Annehmen" on the alarm screen): straight to that request. An answer
   // given on the alarm itself refreshes the lists, and its request's screen gives way to the inbox.
@@ -488,7 +516,7 @@ export function App() {
 
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
-    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin' || page === 'telegram') setPage('settings');
+    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'telegram') setPage('settings');
     else if (typeof page === 'object' && ('remindersOf' in page || 'configOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
@@ -742,6 +770,7 @@ export function App() {
       />
     );
   else if (page === 'aiAdmin' && me?.isAdmin) content = <AiAdmin session={session} onClose={() => setPage('settings')} />;
+  else if (page === 'serverAdmin' && me?.isAdmin) content = <ServerAdmin session={session} serverUrl={server.url} onClose={() => setPage('settings')} />;
   else if (typeof page === 'object' && 'help' in page) {
     const ask = page.help;
     content = (
@@ -894,6 +923,7 @@ export function App() {
         onVoices={() => setPage('voices')}
         onTelegram={() => setPage('telegram')}
         onAiAdmin={me?.isAdmin ? () => setPage('aiAdmin') : undefined}
+        onServerAdmin={me?.isAdmin ? () => setPage('serverAdmin') : undefined}
         onNewWords={() => setPage('newWords')}
         onClose={() => setPage('areas')}
       >

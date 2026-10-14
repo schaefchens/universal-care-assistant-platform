@@ -182,7 +182,7 @@ function dial() {
     socket.send(JSON.stringify({ t: 'hello', token: secret('connectors_token'), version: 'fake-telegram/1', running: [...accounts.keys()] } satisfies FromConnectors));
     log('connected to the assistant');
   });
-  socket.addEventListener('message', (m) => void handle(JSON.parse(String(m.data)) as ToConnectors).catch((e) => log(`command failed: ${(e as Error).message}`)));
+  socket.addEventListener('message', (m) => void handle(JSON.parse(String(m.data)) as ToConnectors).catch((e) => log(`command failed: ${(e as Error).name}`)));
   socket.addEventListener('close', () => {
     if (ws === socket) ws = null;
     setTimeout(dial, backoff);

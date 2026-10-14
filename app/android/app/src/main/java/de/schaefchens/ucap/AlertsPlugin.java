@@ -108,6 +108,25 @@ public class AlertsPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * Who this device is, as native code keeps it: when the WebView's storage is lost, the Keystore key and this
+     * survive, and the app signs in again with them (AN-06). Empty when the device is not set up.
+     */
+    @PluginMethod
+    public void getRef(PluginCall call) {
+        Context ctx = getContext();
+        Ref r = Ref.load(ctx);
+        JSObject o = new JSObject();
+        if (r != null) {
+            o.put("serverUrl", r.serverUrl);
+            o.put("serverId", r.serverId);
+            o.put("deviceId", r.deviceId);
+            o.put("lang", r.lang);
+            o.put("form", Ref.form(ctx));
+        }
+        call.resolve(o);
+    }
+
     @PluginMethod
     public void status(PluginCall call) {
         Context ctx = getContext();

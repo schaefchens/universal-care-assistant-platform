@@ -565,3 +565,83 @@ then they stay as built, and nothing here is frozen.
   nicht beim Gerät angekommen", then received and applied after the start; the help area moved: said first, undone.
 - Found and fixed while trying it: the editor kept its draft over a newer version, and Maria's next save put back a text
   size Clara had undone.
+
+## S12: hardening and acceptance (2026-10-15)
+
+### To confirm
+
+1. **"Server und Konten" lists each account by name, its number of devices, when it was made and when one of its
+   devices was last seen**, nothing else. "Zuletzt aktiv" helps an operator find accounts nobody uses; it also tells an
+   administrator when someone last used UCAP. CONCEPT §7: "Admin rights grant no access to anyone's data."
+2. **A device whose app storage was lost signs in again by itself** when Android kept its key and who it is (the
+   WebView's storage alone was lost; `pm clear` loses both, and then the words are needed). No words are asked: the
+   key never left the device. Appendix C: "On Android the Keystore survives WebView eviction."
+
+### Decided (within the plan)
+
+- **Retention** (`server/src/lib/retention.ts`), beside what earlier steps clear: sign-in challenges a day after they
+  expired, sessions a week after they ended, invitations 30 days after they expired, finished jobs after a week and
+  dead ones after 30 days; a conversation's exchanges (the person's own words, for follow-up questions) once it was
+  quiet for 30 minutes, its focus after a day; turns (timings and outcomes, never words) and finished actions after
+  30 days.
+- **Limits per address**, never on help (care commands, receipts and their actions are signed and coalesce instead):
+  challenges asked without a session 200 in ten minutes, failed session proofs 50 an hour, failed WebSocket hellos 50
+  in five minutes (then 429 on the upgrade), beside the invitation (10 an hour) and recovery (30 an hour) limits of S2.
+  A household or a care home behind one address stays far below them (a device renews its session every 13 minutes).
+- **The database restarting is an event, not a crash.** An idle connection the server ends made node-postgres throw
+  outside any query, and core (the help path) exited; the pool now logs "database connection lost" and reconnects.
+- **Postgres logs no statements and no values** (`log_statement=none`, `log_min_duration_statement=-1`,
+  `log_parameter_max_length_on_error=0`, Appendix I).
+- **Backups** (`tools/backup/backup.ts`): the database (`pg_dump`), the files volume and a manifest of row counts and
+  checksums; the secrets only with `--with-secrets`, TDLib's databases with `--with-tdlib`. A restore goes into a new
+  database, never over the live one. `npm run backup:check` makes a backup, restores it and compares every table.
+- **Administration in the app** (Einstellungen → "Server und Konten", administrators only): whether the database and
+  the notices to devices run, helper devices that can be reached, accounts and devices, overdue and failed jobs,
+  storage, the language model, speech recognition, the connectors and herde; account invitations, shown once.
+- **The app's security policy** (`app/src/csp.ts`, put into the built index.html): scripts only from the app, never
+  inline or from strings; Trusted Types with one policy that makes the app's own two script URLs (the service worker,
+  the microphone's worklet); requests and media to any HTTPS server, since the server is chosen at setup, and over
+  plain HTTP to this computer in development. React Aria's one inline style is allowed by its hash; a test reads the
+  installed React Aria and fails when an update changes it. No source file turns a string into markup.
+- **Recovery words isolate server voices too**: while a word screen is open, nothing is spoken by a server voice
+  (the microphone already refused).
+- **The help question and the confirmation wait as long as the person's "time to take action"**: Android's setting
+  arrives after the question is asked, and the window now starts again with it (before, the first window was always
+  15 s).
+- **A new device always gets a new key.** A key left by an earlier setup (the Keystore outlives the WebView's storage)
+  is removed first; the server refused it as known (409), and the device could not be set up again.
+- **Native code keeps who the device is until a real sign-out** (signing out, revocation, a missing key), not merely
+  because the WebView's storage is empty: helper alarms keep ringing and being confirmed meanwhile.
+- **The push soak** (`npm run push:soak -- <device id>`): core sends the device a silent heartbeat every 15 minutes for
+  48 hours as a job that survives restarts, and `push:soak-report` gives sent, confirmed, lost and the receipt times.
+  The rounds are ordinary heartbeats, so they keep the device's readiness too; an older heartbeat that went
+  unanswered no longer marks a device degraded when it answered a later one.
+- **`npm run test:docker` runs the whole suite in the image**, the ntfy tests included (at ntfy's internal address,
+  with the mounted secrets).
+- **Docs:** [operator.md](operator.md) (running a server), [helper-onboarding.md](helper-onboarding.md) (for helpers),
+  [acceptance.md](acceptance.md) (where each check of Appendix J and each step of the acceptance script stands).
+
+### Measured on the emulator and in the browser
+
+- **Accessibility (UI-01):** axe found no serious issue on the person's screens on the emulator (home, messages,
+  notes, settings, Helfer, Erinnerungen, Meine Geräte, Telegram, Stimmen, KI und Stimmen, Server und Konten, the help
+  request and its cancel question) or on the pages in Chrome (Hilferufe, Startseite, Einstellungen, Helfer, Gerät von
+  Clara). **UI-02:** the accessibility tree and the DOM of the home screen were identical with TalkBack off and on.
+- **Under the security policy**, no refusal on the emulator: every settings page, the messages and notes screens, a
+  voice turn (the microphone's worklet loaded as a TrustedScriptURL), answers and samples in server voices, a help
+  request and its cancellation; in Chrome, the built app with no refusal.
+- **CR-03:** Enter and Space on the focused help area, and TalkBack's tap then double tap (real touches through the
+  emulator console, `adb emu event mouse`; `sendevent` is refused on this image), sent help and cancelled it.
+- **UI-06:** with "time to take action" at one minute, the help question asked again after 62 s; "Nein" sent nothing.
+- **AN-03:** a re-alert 136 s after the first alarm rang again (a new alarm-usage sound) in the same notification;
+  Bob's cancel moved it to the quiet channel. **AN-08:** earcons and the device voice play with accessibility usage.
+- **AN-06:** after `pm clear`, the not-set-up screen with "Notruf 112", the key and permissions gone. With only the
+  WebView's storage cleared: before the fixes, the app cleared the native record at start (the next alarm reached the
+  phone and did not ring), and recovery with the words was refused (409); after them, the device signed in again with
+  its key, no words, and Bob's next alarm was delivered with its receipt.
+- **The database restarted** with core and the assistant running: both stayed ready (before the fix, core exited).
+- **Backup check:** 50 tables, 2314 rows, all equal after the restore; 14 migrations; 23 files.
+- **Push soak, six minutes on the emulator** (a heartbeat a minute, through ntfy and the push stand-in): each one sent
+  while the stand-in forwarded was confirmed, median 0.9 s, the slowest 3.7 s.
+- **Still open:** the 48-hour push soak on a real phone, and the other checks on real phones (see acceptance.md); the
+  ntfy app on the emulator (AN-01, AN-07).

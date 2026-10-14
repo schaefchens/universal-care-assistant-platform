@@ -8,12 +8,13 @@ import { type Db, ping } from '../lib/db.ts';
 import { createFileStore, registerFileRoutes } from '../lib/files.ts';
 import { createHttp } from '../lib/http.ts';
 import { createJobRunner, enqueue, type Handler } from '../lib/jobs.ts';
+import { pruneCore } from '../lib/retention.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
 import { CLOSE } from '@ucap/shared';
 import { createIdentityService } from '../domain/identity/service.ts';
 import { createNotes } from '../domain/notes/service.ts';
 import { createPeopleService } from '../domain/people/service.ts';
-import { createHeartbeats } from '../domain/care/heartbeat.ts';
+import { createHeartbeats, type Soak } from '../domain/care/heartbeat.ts';
 import { createPush } from '../domain/care/push.ts';
 import { createCareService } from '../domain/care/service.ts';
 import { createReminderService } from '../domain/reminders/service.ts';
@@ -28,6 +29,7 @@ import { registerCareRoutes } from './routes/care.ts';
 import { registerNoteRoutes } from './routes/notes.ts';
 import { registerReminderRoutes } from './routes/reminders.ts';
 import { registerConfigRoutes } from './routes/configs.ts';
+import { registerAdminRoutes } from './routes/admin.ts';
 import { createConfigs } from '../domain/configs/service.ts';
 import { createSignedCheck } from './signed.ts';
 import { ensureServerId, registerServerInfo } from './server-info.ts';
@@ -110,6 +112,7 @@ export async function buildCore(o: {
     'events.prune': async () => {
       await pruneEvents(o.db, o.clock);
       await pruneLimits(o.db, o.clock);
+      await pruneCore(o.db, o.clock);
       await enqueue(o.db, { queue: 'core', kind: 'events.prune', key: 'events.prune', runAt: o.clock() + 86_400_000 });
     },
     'care.tick': async (job) => care.tick(String(job.payload.requestId)),
@@ -117,6 +120,7 @@ export async function buildCore(o: {
     'push.send': async (job) => push.deliver(String(job.payload.deliveryId), job.attempts),
     'heartbeat.round': async () => heartbeats.round(),
     'heartbeat.check': async (job) => heartbeats.check(String(job.payload.deliveryId)),
+    'push.soak': async (job) => void (await heartbeats.soak(job.payload as unknown as Soak)),
     'reminders.materialise': async () => reminders.materialiseAll(),
     'reminder.prompt': async (job) => reminders.tick(String(job.payload.occurrenceId)),
   };
@@ -139,6 +143,7 @@ export async function buildCore(o: {
   registerNoteRoutes(app, { notes });
   const configs = createConfigs({ db: o.db, clock: o.clock, people });
   registerConfigRoutes(app, { configs });
+  registerAdminRoutes(app, { db: o.db, clock: o.clock, identity, filesDir: o.config.filesDir, dispatcherActive: () => dispatcher.active, connected: () => hub.connected });
 
   return {
     app,

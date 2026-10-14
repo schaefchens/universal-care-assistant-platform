@@ -21,7 +21,8 @@ import type { Db } from '../src/lib/db.ts';
 import { type Account, accountClient, ORG } from './accounts.ts';
 import { fakeClock, SECRETS, testConfig, testDb } from './helpers.ts';
 
-const NTFY = 'http://127.0.0.1:8811';
+// The dev stack's ntfy: on this computer at its port, inside the image (npm run test:docker) at its internal address.
+const NTFY = process.env.NTFY_INTERNAL_URL ?? 'http://127.0.0.1:8811';
 const tokenFile = join(process.env.UCAP_SECRETS_DIR ?? join(homedir(), '.config', 'ucap', 'dev-secrets'), 'ntfy_token');
 const token = existsSync(tokenFile) ? readFileSync(tokenFile, 'utf8').trim() : null;
 const ntfyUp = token ? await fetch(`${NTFY}/v1/health`).then((r) => r.ok, () => false) : false;

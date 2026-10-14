@@ -6,6 +6,7 @@
  * Care and system speech never come here: they are always the device's own voice.
  */
 import type { Session } from '../identity/account.ts';
+import { ceremony } from '../identity/ceremony.ts';
 
 export interface VoiceOption {
   ref: string;
@@ -78,7 +79,8 @@ const said = new Set<string>();
  * caller does). `notice` is told once per session why the chosen voice could not speak.
  */
 export async function speakAs(o: { session: Session; text: string; purpose: 'reply' | 'reading' | 'reminder'; player: ClipPlayer; screenReader: boolean; notice: (reason: string) => void }): Promise<boolean> {
-  if (o.screenReader) return false;
+  // While recovery words are shown, nothing goes to a server voice (Appendix C: the ceremony is isolated).
+  if (o.screenReader || ceremony.active) return false;
   let r: Rendered;
   try {
     r = await voicesApi(o.session).render(o.text, o.purpose);

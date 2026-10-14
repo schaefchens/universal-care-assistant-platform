@@ -10,12 +10,15 @@
  */
 import websocket from '@fastify/websocket';
 import { CLOSE, DEAD_AFTER_MS, DeviceFrame, HELLO_TIMEOUT_MS, PING_EVERY_MS, type ServerEvent } from '@ucap/shared';
+import type { FastifyRequest } from 'fastify';
 import { sql } from 'kysely';
 import Value from 'typebox/value';
 import type { RawData, WebSocket } from 'ws';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
+import { AppError } from '../lib/errors.ts';
 import type { AnyApp } from '../lib/http.ts';
+import { checkLimit, countFailure } from '../lib/rate-limit.ts';
 import type { Delivered } from './dispatcher.ts';
 
 export interface Authenticated {
@@ -44,6 +47,16 @@ interface Conn {
 }
 
 const REPLAY_LIMIT = 1000;
+/** Failed hellos (a token nobody knows) per address: 50 in five minutes. */
+const wsLimit = (ip: string) => ({ bucket: `ws:ip:${ip}`, windowS: 300, max: 50 });
+/** The caller's address; a socket made in a test has none. */
+const ipOf = (req: FastifyRequest) => {
+  try {
+    return req.ip ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+};
 
 export async function registerRealtime(
   app: AnyApp,
@@ -114,9 +127,16 @@ export async function registerRealtime(
       onRequest: async (req, reply) => {
         const origin = req.headers.origin;
         if (origin && !o.allowedOrigins.includes(origin)) return reply.code(403).send({ error: { code: 'forbidden' } });
+        // Many connections from one address that never proved themselves: refused for a while (Appendix C).
+        try {
+          await checkLimit(o.db, o.clock, wsLimit(ipOf(req)));
+        } catch (e) {
+          if (!(e instanceof AppError)) throw e;
+          return reply.code(429).send({ error: { code: 'rate_limited' } });
+        }
       },
     },
-    (socket: WebSocket) => {
+    (socket: WebSocket, req: FastifyRequest) => {
       const c: Conn = { socket, auth: null, buffer: null, lastSent: 0, lastSeen: o.clock() };
       connected++;
       const helloTimer = setTimeout(() => socket.close(CLOSE.noHello, 'hello expected'), HELLO_TIMEOUT_MS);
@@ -144,6 +164,7 @@ export async function registerRealtime(
           void (async () => {
             const auth = await o.authenticate(frame.token).catch(() => null);
             if (!auth) {
+              await countFailure(o.db, o.clock, wsLimit(ipOf(req))).catch(() => {});
               socket.close(CLOSE.badToken, 'bad token');
               return;
             }

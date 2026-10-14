@@ -9,8 +9,10 @@ import { uuidv7 } from '@ucap/shared';
 import ece from 'http_ece';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { reportSoak, startSoak } from '../src/cli.ts';
 import { buildCore } from '../src/core/app.ts';
 import { dispatchOnce } from '../src/core/dispatcher.ts';
+import { soakReport } from '../src/domain/care/heartbeat.ts';
 import type { Db } from '../src/lib/db.ts';
 import { type Account, accountClient, ORG } from './accounts.ts';
 import { fakeClock, SECRETS, testConfig, testDb } from './helpers.ts';
@@ -135,6 +137,20 @@ describe('help requests', () => {
     const other = await anna.dev.sign('req', signedRequestPayload({ srv: 'another-server', org: ORG, method: 'POST', path: '/api/v1/care/requests', body, idem }));
     expect((await core.app.inject({ method: 'POST', url: '/api/v1/care/requests', payload: body, headers: { 'ucap-sig': formatSigHeader({ did: anna.deviceId, org: ORG, sig: other }), 'idempotency-key': idem } })).statusCode).toBe(401);
     expect(await sql`select 1 from care_requests where client_request_id = ${body.clientRequestId}`.execute(db).then((r) => r.rows.length)).toBe(0);
+  });
+
+  it('CR-05: a press that waited on the device is dated by the wait it measured, whatever its clock says', async () => {
+    // The device counted eight minutes between the press and this send on its own clock; what time that clock shows
+    // never reaches the server (the signed statement carries no time), so a wrong clock cannot misdate the request.
+    const r = (await press(anna, uuidv7(), { delayMs: 8 * 60_000 })).json() as { request: { id: string; receivedAt: string; pressedAt: string; delayMs: number } };
+    expect(r.request.delayMs).toBe(8 * 60_000);
+    expect(Date.parse(r.request.receivedAt)).toBe(clock());
+    expect(Date.parse(r.request.receivedAt) - Date.parse(r.request.pressedAt)).toBe(8 * 60_000);
+    await closeOpen();
+    // A wait beyond a week is not believed.
+    const odd = (await press(anna, uuidv7(), { delayMs: 30 * 86_400_000 })).json() as { request: { delayMs: number } };
+    expect(odd.request.delayMs).toBe(7 * 86_400_000);
+    await closeOpen();
   });
 
   it('CR-06/07: the same press is one request; a new press while one is open joins it; twenty at once make one', async () => {
@@ -377,6 +393,46 @@ describe('help requests', () => {
     await signedPost(maria, '/api/v1/push/receipts', { dlv: again.dlv, n: again.n });
     const told2 = await sql<{ payload: { reachable: boolean } }>`select payload from outbox_events where kind = 'care.readiness' and ${anna.userId} = any(recipients) order by id`.execute(db);
     expect(told2.rows.map((x) => x.payload.reachable)).toEqual([false, true]);
+  });
+
+  it('a push soak sends a heartbeat every round until it ends, and times each receipt', async () => {
+    const start = clock();
+    await startSoak({ db, clock, deviceId: maria.deviceId, everyMin: 15, hours: 1 });
+    let seen = pushed.length;
+    for (let round = 0; round < 6; round++) {
+      await run();
+      let waited = 0;
+      for (const p of pushed.slice(seen).filter((x) => x.endpoint === mariaBrowser.sub.endpoint)) {
+        const hb = mariaBrowser.open(p.body);
+        if (hb.t !== 'hb') continue;
+        clock.advance(2_000); // the browser answers two seconds later
+        waited += 2_000;
+        expect((await signedPost(maria, '/api/v1/push/receipts', { dlv: hb.dlv, n: hb.n })).statusCode).toBe(204);
+      }
+      seen = pushed.length;
+      clock.advance(15 * 60_000 - waited);
+    }
+    const r = await soakReport(db, new Date(clock()), maria.deviceId, new Date(start));
+    // Rounds at 0, 15, 30 and 45 minutes, none at the hour, when the soak ended; the six-hourly heartbeat counts too.
+    expect(r.sent).toBeGreaterThanOrEqual(4);
+    expect(r).toMatchObject({ received: r.sent, lost: 0, waiting: 0, p50: 2_000, p95: 2_000 });
+    expect(await sql`select 1 from jobs where key = ${`soak:${maria.deviceId}`} and done_at is null`.execute(db).then((x) => x.rows.length)).toBe(0);
+    expect((await reportSoak({ db, clock, deviceId: maria.deviceId, hours: 2 })).join(' ')).toContain(`${r.sent} sent, ${r.sent} confirmed`);
+    await advance(0); // fresh tokens for the tests after this one
+  });
+
+  it('a missed heartbeat does not count against a device that answered a later one', async () => {
+    await core.heartbeats.round(); // never answered
+    await run();
+    await advance(5 * 60_000);
+    pushed.length = 0;
+    await core.heartbeats.round(); // answered at once
+    await run();
+    const hb = mariaBrowser.open(pushed.find((p) => p.endpoint === mariaBrowser.sub.endpoint)!.body);
+    expect((await signedPost(maria, '/api/v1/push/receipts', { dlv: hb.dlv, n: hb.n })).statusCode).toBe(204);
+    await advance(26 * 60_000); // the first one's half hour is over
+    const h = await sql<{ readiness: string }>`select readiness from device_health where device_id = ${maria.deviceId}`.execute(db);
+    expect(h.rows[0]!.readiness).toBe('ready');
   });
 
   it('keeps push endpoints to known push services, and their keys sealed', async () => {

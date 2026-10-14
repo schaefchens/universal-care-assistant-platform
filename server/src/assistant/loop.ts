@@ -17,6 +17,7 @@ import type { Notes } from '../domain/notes/service.ts';
 import type { ReminderService } from '../domain/reminders/service.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
+import { CONVERSATION_MS } from '../lib/retention.ts';
 import { CAPTIONED, type Messaging } from '../messaging/service.ts';
 import type { Actions } from './actions.ts';
 import { dataBlock, systemPrompt } from './prompt.ts';
@@ -24,7 +25,8 @@ import { toolsFor } from './registry.ts';
 import { type Focus, type ToolContext, ToolError } from './tools.ts';
 
 export const MAX_ROUNDS = 4;
-const HISTORY_MS = 30 * 60_000;
+/** The same as the retention's (lib/retention.ts): after that, the exchanges' words are cleared. */
+const HISTORY_MS = CONVERSATION_MS;
 const HISTORY_TURNS = 6;
 
 export type AssistantEvent =

@@ -15,6 +15,45 @@ import { mac } from '../identity/crypto.ts';
 export const HEARTBEAT_EVERY_MS = 6 * 3600_000;
 export const HEARTBEAT_ANSWER_MS = 30 * 60_000;
 
+export interface Soak {
+  deviceId: string;
+  everyMs: number;
+  until: number;
+}
+
+/** Receipt times of the heartbeats a device got (soak rounds and the six-hourly ones), in milliseconds. */
+export interface SoakReport {
+  sent: number;
+  received: number;
+  silenced: number;
+  /** No receipt within the 30 minutes a heartbeat waits. */
+  lost: number;
+  waiting: number;
+  p50: number | null;
+  p95: number | null;
+  max: number | null;
+}
+
+/** The heartbeats one device got since a time: how many came back, and how fast. */
+export async function soakReport(db: Exec, now: Date, deviceId: string, since: Date): Promise<SoakReport> {
+  const r = await sql<{ status: string; ms: number | null; open: boolean }>`
+    select status, (extract(epoch from (receipt_at - created_at)) * 1000)::int as ms, expires_at > ${now} as open
+    from deliveries where device_id = ${deviceId} and purpose = 'heartbeat' and created_at >= ${since}`.execute(db);
+  const times = r.rows.filter((x) => x.ms !== null).map((x) => x.ms!).sort((a, b) => a - b);
+  const at = (q: number) => (times.length ? times[Math.min(times.length - 1, Math.ceil(q * times.length) - 1)]! : null);
+  const got = (x: { status: string }) => x.status === 'delivered' || x.status === 'delivered_silenced';
+  return {
+    sent: r.rows.length,
+    received: r.rows.filter(got).length,
+    silenced: r.rows.filter((x) => x.status === 'delivered_silenced').length,
+    lost: r.rows.filter((x) => !got(x) && !x.open).length,
+    waiting: r.rows.filter((x) => !got(x) && x.open).length,
+    p50: at(0.5),
+    p95: at(0.95),
+    max: times.at(-1) ?? null,
+  };
+}
+
 export function createHeartbeats(d: { db: Db; clock: Clock; pepper: Uint8Array; nonceFor: (deliveryId: string) => string }) {
   const now = () => new Date(d.clock());
 
@@ -43,6 +82,20 @@ export function createHeartbeats(d: { db: Db; clock: Clock; pepper: Uint8Array; 
     await emit(exec, { kind: 'care.readiness', recipients: [personId], payload: { reachable: ok } });
   }
 
+  /** One silent push to a device, with its receipt awaited for 30 minutes. */
+  async function send(trx: Exec, dv: { id: string; user_id: string; kind: string }) {
+    const id = uuidv7(d.clock());
+    await sql`
+      insert into deliveries (id, purpose, recipient, device_id, channel, kind, nonce_hash, status, created_at, expires_at)
+      values (${id}, 'heartbeat', ${dv.user_id}, ${dv.id}, ${dv.kind}, 'hb', ${mac(d.pepper, 'delivery', d.nonceFor(id))}, 'queued', ${now()},
+              ${new Date(d.clock() + HEARTBEAT_ANSWER_MS)})`.execute(trx);
+    await sql`
+      insert into device_health (device_id, hb_sent_at, updated_at) values (${dv.id}, ${now()}, ${now()})
+      on conflict (device_id) do update set hb_sent_at = excluded.hb_sent_at, updated_at = excluded.updated_at`.execute(trx);
+    await enqueue(trx, { queue: 'core', kind: 'push.send', key: `push:${id}`, runAt: d.clock(), payload: { deliveryId: id }, maxAttempts: 4 });
+    await enqueue(trx, { queue: 'core', kind: 'heartbeat.check', key: `hb:${id}`, runAt: d.clock() + HEARTBEAT_ANSWER_MS, payload: { deliveryId: id } });
+  }
+
   async function personsServedBy(exec: Exec, deviceId: string): Promise<string[]> {
     const r = await sql<{ person_id: string }>`
       select distinct rel.person_id from devices dv join relationships rel on rel.helper_id = dv.user_id and rel.state = 'active'
@@ -64,19 +117,27 @@ export function createHeartbeats(d: { db: Db; clock: Clock; pepper: Uint8Array; 
           join relationships rel on rel.helper_id = dv.user_id and rel.state = 'active'
           join grants g on g.relationship_id = rel.id and g.scope = 'care.respond' and g.revoked_at is null
           order by dv.id, (pe.kind = 'unifiedpush') desc`.execute(trx);
-        for (const dv of devices.rows) {
-          const id = uuidv7(d.clock());
-          await sql`
-            insert into deliveries (id, purpose, recipient, device_id, channel, kind, nonce_hash, status, created_at, expires_at)
-            values (${id}, 'heartbeat', ${dv.user_id}, ${dv.id}, ${dv.kind}, 'hb', ${mac(d.pepper, 'delivery', d.nonceFor(id))}, 'queued', ${now()},
-                    ${new Date(d.clock() + HEARTBEAT_ANSWER_MS)})`.execute(trx);
-          await sql`
-            insert into device_health (device_id, hb_sent_at, updated_at) values (${dv.id}, ${now()}, ${now()})
-            on conflict (device_id) do update set hb_sent_at = excluded.hb_sent_at, updated_at = excluded.updated_at`.execute(trx);
-          await enqueue(trx, { queue: 'core', kind: 'push.send', key: `push:${id}`, runAt: d.clock(), payload: { deliveryId: id }, maxAttempts: 4 });
-          await enqueue(trx, { queue: 'core', kind: 'heartbeat.check', key: `hb:${id}`, runAt: d.clock() + HEARTBEAT_ANSWER_MS, payload: { deliveryId: id } });
-        }
+        for (const dv of devices.rows) await send(trx, dv);
         await enqueue(trx, { queue: 'core', kind: 'heartbeat.round', key: 'heartbeat.round', runAt: d.clock() + HEARTBEAT_EVERY_MS });
+      });
+    },
+
+    /**
+     * A push soak (docs/plan.md, S12: "a 48 h push soak", lookup's alerting harness's run mode): a heartbeat to one
+     * device every `everyMs` until `until`, each timed from sending to the device's signed receipt. The rounds are
+     * heartbeats like any other, so they also keep the device's readiness. False when the device has no endpoint.
+     */
+    async soak(p: Soak): Promise<boolean> {
+      if (d.clock() >= p.until) return true;
+      return d.db.transaction().execute(async (trx) => {
+        const r = await sql<{ id: string; user_id: string; kind: string }>`
+          select dv.id, dv.user_id, pe.kind from push_endpoints pe join devices dv on dv.id = pe.device_id and dv.revoked_at is null
+          where dv.id = ${p.deviceId} order by (pe.kind = 'unifiedpush') desc limit 1`.execute(trx);
+        const dv = r.rows[0];
+        if (!dv) return false;
+        await send(trx, dv);
+        if (d.clock() + p.everyMs < p.until) await enqueue(trx, { queue: 'core', kind: 'push.soak', key: `soak:${p.deviceId}`, runAt: d.clock() + p.everyMs, payload: { ...p } });
+        return true;
       });
     },
 
@@ -88,16 +149,20 @@ export function createHeartbeats(d: { db: Db; clock: Clock; pepper: Uint8Array; 
       for (const p of await personsServedBy(exec, deviceId)) await evaluate(exec, p);
     },
 
-    /** Thirty minutes after a heartbeat: no receipt means degraded, then unreachable. */
+    /**
+     * Thirty minutes after a heartbeat: no receipt means degraded, then unreachable, unless the device answered a
+     * later heartbeat meanwhile (a soak sends them minutes apart; the latest answer is what counts).
+     */
     async check(deliveryId: string) {
       await d.db.transaction().execute(async (trx) => {
-        const r = await sql<{ device_id: string; status: string }>`select device_id, status from deliveries where id = ${deliveryId}`.execute(trx);
+        const r = await sql<{ device_id: string; status: string; created_at: Date }>`select device_id, status, created_at from deliveries where id = ${deliveryId}`.execute(trx);
         const dl = r.rows[0];
         if (!dl || dl.status === 'delivered' || dl.status === 'delivered_silenced') return;
         await sql`update deliveries set status = 'expired' where id = ${deliveryId} and status in ('queued', 'sending', 'handed_off', 'push_failed')`.execute(trx);
-        await sql`
+        const changed = await sql`
           update device_health set readiness = case when readiness = 'ready' then 'degraded' else 'unreachable' end, updated_at = ${now()}
-          where device_id = ${dl.device_id}`.execute(trx);
+          where device_id = ${dl.device_id} and (hb_received_at is null or hb_received_at <= ${dl.created_at})`.execute(trx);
+        if (!changed.numAffectedRows) return;
         for (const p of await personsServedBy(trx, dl.device_id)) await evaluate(trx, p);
       });
     },

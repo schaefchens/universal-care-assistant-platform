@@ -10,7 +10,8 @@ const ADB = process.env.ADB ?? `${process.env.HOME}/Library/Android/sdk/platform
 const APP = 'de.schaefchens.ucap';
 const PORT = 9334;
 
-export async function evaluate(expression: string): Promise<unknown> {
+/** One DevTools method on the app's page (a fresh socket each time), e.g. `Accessibility.getFullAXTree`. */
+export async function call(method: string, params: Record<string, unknown> = {}, enable: string[] = []): Promise<Record<string, unknown>> {
   const pid = execFileSync(ADB, ['shell', 'pidof', APP]).toString().trim();
   if (!pid) throw new Error('the app is not running');
   execFileSync(ADB, ['forward', `tcp:${PORT}`, `localabstract:webview_devtools_remote_${pid}`]);
@@ -19,12 +20,27 @@ export async function evaluate(expression: string): Promise<unknown> {
   if (!page) throw new Error('no page at https://localhost');
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((r) => ws.addEventListener('open', r, { once: true }));
-  ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, awaitPromise: true, returnByValue: true } }));
-  const msg = await new Promise<string>((r) => ws.addEventListener('message', (e) => r(String(e.data)), { once: true }));
+  const calls = [...enable.map((m) => ({ method: m, params: {} })), { method, params }];
+  const answers = new Map<number, Record<string, unknown>>();
+  const done = new Promise<void>((resolve) =>
+    ws.addEventListener('message', (e) => {
+      const m = JSON.parse(String(e.data)) as { id?: number };
+      if (m.id) answers.set(m.id, m as Record<string, unknown>);
+      if (answers.has(calls.length)) resolve();
+    }),
+  );
+  calls.forEach((c, i) => ws.send(JSON.stringify({ id: i + 1, ...c })));
+  await done;
   ws.close();
-  const res = JSON.parse(msg) as { result?: { result?: { value?: unknown }; exceptionDetails?: { text: string } } };
-  if (res.result?.exceptionDetails) throw new Error(res.result.exceptionDetails.text);
-  return res.result?.result?.value;
+  const res = answers.get(calls.length)! as { result?: Record<string, unknown>; error?: { message: string } };
+  if (res.error) throw new Error(res.error.message);
+  return res.result ?? {};
+}
+
+export async function evaluate(expression: string): Promise<unknown> {
+  const res = (await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })) as { result?: { value?: unknown }; exceptionDetails?: { text: string } };
+  if (res.exceptionDetails) throw new Error(res.exceptionDetails.text);
+  return res.result?.value;
 }
 
 if (import.meta.main) {

@@ -20,6 +20,9 @@ export function createDb(url: string, opts: { max?: number; searchPath?: string;
     application_name: opts.name ?? 'ucap',
     ...(opts.searchPath ? { options: `-c search_path=${opts.searchPath}` } : {}),
   });
+  // An idle connection the database ends (a restart, a failover) is an event, not a crash: the pool drops it and opens
+  // a new one at the next query. Unhandled, it ended the whole process, the help path's with it.
+  pool.on('error', (err) => console.warn(`${opts.name ?? 'ucap'}: database connection lost (${(err as { code?: string }).code ?? err.name})`));
   return new Kysely({ dialect: new PostgresDialect({ pool }) });
 }
 

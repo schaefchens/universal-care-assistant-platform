@@ -10,7 +10,7 @@ import { createLlm } from '../ai/llm/service.ts';
 import { createProviders } from '../ai/providers.ts';
 import { createStt } from '../ai/stt/service.ts';
 import { createSpeech } from '../ai/tts/service.ts';
-import { registerAuth } from '../core/auth.ts';
+import { registerAuth, requireAdmin } from '../core/auth.ts';
 import { ensureServerId } from '../core/server-info.ts';
 import { deliveryNonce } from '../domain/care/service.ts';
 import { createIdentityService } from '../domain/identity/service.ts';
@@ -23,6 +23,7 @@ import { type Db, ping } from '../lib/db.ts';
 import { createFileStore } from '../lib/files.ts';
 import { createHttp } from '../lib/http.ts';
 import { createJobRunner, enqueue, type Handler } from '../lib/jobs.ts';
+import { pruneAssistant } from '../lib/retention.ts';
 import { createSealer } from '../lib/sealed.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
 import { registerConnectorHub } from '../messaging/hub.ts';
@@ -142,6 +143,7 @@ export async function buildAssistant(o: {
     'assistant.sweep': async () => {
       await actions.sweep();
       await messaging.sweep();
+      await pruneAssistant(o.db, o.clock);
       await enqueue(o.db, { queue: 'assistant', kind: 'assistant.sweep', key: 'assistant.sweep', runAt: o.clock() + 60_000 });
     },
     'messaging.transcribe': async (job) => messaging.transcribe(String(job.payload.messageId)),
@@ -158,6 +160,15 @@ export async function buildAssistant(o: {
     const db = await ping(o.db);
     return reply.code(db ? 200 : 503).send({ ok: db, db });
   });
+  // The admin's view of what this process depends on: the connectors, Telegram's credentials, the engines.
+  app.get('/api/v1/ai-admin/status', { preHandler: requireAdmin(identity) }, async () => ({
+    messaging: await messaging.status(),
+    engines: {
+      ollama: await reachable(o.config.ollamaUrl && `${o.config.ollamaUrl}/api/tags`),
+      stt: await reachable(o.config.sttUrl && `${o.config.sttUrl}/health`),
+    },
+    herdeWorkers: (await sql<{ n: number }>`select count(*)::int as n from herde_workers where active`.execute(o.db).catch(() => ({ rows: [{ n: 0 }] }))).rows[0]!.n,
+  }));
   app.get('/healthz/engines', async () => ({
     ollama: await reachable(o.config.ollamaUrl && `${o.config.ollamaUrl}/api/tags`),
     stt: await reachable(o.config.sttUrl && `${o.config.sttUrl}/health`),

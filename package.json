@@ -13,13 +13,18 @@
     "dev": "docker compose up -d --wait",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tools && tsc -p app",
     "test": "vitest run",
-    "test:docker": "docker compose run --rm --no-deps -e DATABASE_URL=postgres://ucap:ucap@db:5432/ucap_test core npm test",
+    "test:docker": "docker compose run --rm --no-deps -e DATABASE_URL=postgres://ucap:ucap@db:5432/ucap_test -e UCAP_SECRETS_DIR=/run/secrets core npm test",
     "admin:invite": "docker compose exec core node server/src/cli.ts admin-invite",
     "test:android": "sh tools/android/unit-test.sh",
-    "evals": "node tools/assistant-evals/run.ts"
+    "evals": "node tools/assistant-evals/run.ts",
+    "backup": "node tools/backup/backup.ts backup",
+    "backup:check": "node tools/backup/backup.ts check",
+    "push:soak": "docker compose exec core node server/src/cli.ts push-soak",
+    "push:soak-report": "docker compose exec core node server/src/cli.ts push-soak-report"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",
+    "axe-core": "^4.11.0",
     "fast-check": "^4.10.2",
     "typescript": "~6.0.3",
     "vitest": "^5.0.4"

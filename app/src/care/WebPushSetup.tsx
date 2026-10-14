@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { Button } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
 import { isNative } from '../native/plugins.ts';
+import { scriptUrl } from '../trusted.ts';
 import { useUi } from '../ui.tsx';
 
 const SW_URL = import.meta.env.DEV ? '/src/sw.ts' : './sw.js';
@@ -44,7 +45,7 @@ export function WebPushSetup(p: { session: Session }) {
         say(tr('care.helper.notify.denied'), 'system');
         return;
       }
-      const reg = await navigator.serviceWorker.register(SW_URL, { type: 'module' });
+      const reg = await navigator.serviceWorker.register(scriptUrl(SW_URL), { type: 'module' });
       await navigator.serviceWorker.ready;
       const { publicKey } = await p.session.call<{ publicKey: string }>('/api/v1/push/vapid');
       const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlKey(publicKey) }));

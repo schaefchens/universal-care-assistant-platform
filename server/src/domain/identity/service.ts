@@ -257,19 +257,34 @@ export function createIdentityService(d: IdentityDeps) {
       });
     },
 
-    async createSession(input: { org: string; deviceId: string; challengeId: string; nonce: string; proof: string }) {
+    /** Challenges asked for without a session: at most 200 per address in ten minutes. */
+    async limitChallenges(ip: string) {
+      const limit = { bucket: `challenge:ip:${ip}`, windowS: 600, max: 200 };
+      await checkLimit(d.db, d.clock, limit);
+      await countFailure(d.db, d.clock, limit);
+    },
+
+    async createSession(input: { org: string; deviceId: string; challengeId: string; nonce: string; proof: string; ip?: string }) {
       checkOrigin(input.org);
-      return d.db.transaction().execute(async (trx) => {
-        const ch = await consumeChallenge(trx, input.challengeId, input.nonce, 'session');
-        if (ch.device_id !== input.deviceId) throw bad();
-        const dev = await sql<{ user_id: string; public_jwk: P256Jwk }>`
-          select dv.user_id, dv.public_jwk from devices dv join users u on u.id = dv.user_id
-          where dv.id = ${input.deviceId} and dv.revoked_at is null and u.deleted_at is null`.execute(trx);
-        const row = dev.rows[0];
-        if (!row) throw new AppError('unauthorised', { params: { reason: 'device_revoked' } });
-        if (!verifyDevice(row.public_jwk, 'session', { srv: d.serverId, org: input.org, nonce: input.nonce, did: input.deviceId }, input.proof)) throw bad();
-        return newSession(trx, row.user_id, input.deviceId);
-      });
+      // Failed proofs are counted per address; a device that proves itself is never held up.
+      const limit = { bucket: `session:ip:${input.ip ?? 'unknown'}`, windowS: 3600, max: 50 };
+      await checkLimit(d.db, d.clock, limit);
+      try {
+        return await d.db.transaction().execute(async (trx) => {
+          const ch = await consumeChallenge(trx, input.challengeId, input.nonce, 'session');
+          if (ch.device_id !== input.deviceId) throw bad();
+          const dev = await sql<{ user_id: string; public_jwk: P256Jwk }>`
+            select dv.user_id, dv.public_jwk from devices dv join users u on u.id = dv.user_id
+            where dv.id = ${input.deviceId} and dv.revoked_at is null and u.deleted_at is null`.execute(trx);
+          const row = dev.rows[0];
+          if (!row) throw new AppError('unauthorised', { params: { reason: 'device_revoked' } });
+          if (!verifyDevice(row.public_jwk, 'session', { srv: d.serverId, org: input.org, nonce: input.nonce, did: input.deviceId }, input.proof)) throw bad();
+          return newSession(trx, row.user_id, input.deviceId);
+        });
+      } catch (e) {
+        if (e instanceof AppError && e.code === 'unauthorised' && e.params?.reason !== 'device_revoked') await countFailure(d.db, d.clock, limit);
+        throw e;
+      }
     },
 
     async authenticate(token: string): Promise<Authenticated | null> {

@@ -4,8 +4,10 @@
  * lives in memory only and is renewed by the device key two minutes before it expires.
  */
 import { b64url, deriveIdentity, inviteDigest, signIdentity, wipe } from '@ucap/identity';
+import { Alerts, has } from '../native/plugins.ts';
 import { api, ApiError } from '../net/api.ts';
 import { startEventsAt } from '../net/realtime.ts';
+import { fetchServerInfo } from '../net/server.ts';
 import type { ServerRef } from '../state/store.ts';
 import { deviceKey, thumbprint } from './device-key.ts';
 
@@ -45,7 +47,12 @@ export interface DeviceInfo {
 
 const org = (s: ServerRef) => new URL(s.url).origin;
 
+/**
+ * A new device for the account, with a key of its own. A key left from an earlier setup is removed first: the Keystore
+ * outlives the WebView's storage (AN-06), and a key the server already knows would be refused.
+ */
 async function deviceProof(server: ServerRef, nonce: string) {
+  await deviceKey.remove().catch(() => {});
   const jwk = await deviceKey.ensure();
   const djkt = await thumbprint(jwk);
   const proof = await deviceKey.sign('device.proof', { srv: server.serverId, org: org(server), nonce, djkt });
@@ -109,6 +116,35 @@ export async function recoverAccount(o: { server: ServerRef; entropy: Uint8Array
   } finally {
     wipe(id.seed);
   }
+}
+
+/**
+ * The WebView's storage was lost, but Android kept this device's key and who it is (AN-06: the Keystore survives
+ * WebView storage loss): the device signs in again with its key, without the words. Null when there is nothing to
+ * restore; 'later' when the server cannot be reached now (native code keeps ringing alarms meanwhile). A server that
+ * no longer knows the device has it forgotten, as on sign-out.
+ */
+export async function restoreDevice(): Promise<{ server: ServerRef; session: Session; lang?: string; form?: string } | 'later' | null> {
+  if (!has('Alerts')) return null;
+  const n = await Alerts.getRef().catch(() => ({}) as { serverUrl?: string; serverId?: string; deviceId?: string; lang?: string; form?: string });
+  if (!n.serverUrl || !n.serverId || !n.deviceId || !(await deviceKey.exists().catch(() => false))) return null;
+  const info = await fetchServerInfo(n.serverUrl);
+  if (info === 'unreachable') return 'later';
+  if (typeof info === 'string' || info.serverId !== n.serverId) return null;
+  const probe = new Session({ serverUrl: n.serverUrl, serverId: n.serverId, deviceId: n.deviceId, userId: '' });
+  let me: Me;
+  try {
+    me = await probe.call<Me>('/api/v1/me');
+  } catch (e) {
+    if (!(e instanceof ApiError)) return 'later';
+    if (e.status === 401) await probe.forget();
+    return null;
+  }
+  const ref = { serverUrl: n.serverUrl, serverId: n.serverId, userId: me.id, deviceId: n.deviceId };
+  saveDeviceRef(ref);
+  // Beyond any head: the server answers with a resync, and the device fetches what is now instead of a month's events.
+  startEventsAt(ref.deviceId, Number.MAX_SAFE_INTEGER);
+  return { server: { url: n.serverUrl, serverId: info.serverId, name: info.name, development: info.development }, session: new Session(ref), lang: n.lang, form: n.form };
 }
 
 /** After the verification quiz: the identity key signs that the person has their words. */
@@ -224,9 +260,10 @@ export class Session {
     }
   }
 
-  /** This device was revoked or the person signed out: forget it, and its key. */
+  /** This device was revoked or the person signed out: forget it, and its key; nothing may ring for it any more. */
   async forget(): Promise<void> {
     saveDeviceRef(null);
     await deviceKey.remove().catch(() => {});
+    if (has('Alerts')) await Alerts.setRef({}).catch(() => {});
   }
 }

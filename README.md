@@ -7,12 +7,17 @@ An AI-powered assistive and care platform for disabled people and people who nee
 
 ## Status
 
-Milestone 1, step S11 done: identity and devices, people and permissions, help requests with helpers' browsers and the
-Android app's alarm, interactive reminders, speech providers and each person's voices, push-to-talk with commands and
-the help question, the assistant (notes, reminders, confirmed actions, help it proposes), Telegram (reading, voice
-messages, replies confirmed by the person and by Telegram), and remote configuration (helpers set up a person's device;
-it changes only when nobody uses it, and says what changed). Next: S12, hardening.
-Departures from the plan are in [docs/decisions.md](docs/decisions.md).
+Milestone 1, steps S0 to S12 built: identity and devices, people and permissions, help requests with helpers'
+browsers and the Android app's alarm, interactive reminders, speech providers and each person's voices, push-to-talk
+with commands and the help question, the assistant (notes, reminders, confirmed actions, help it proposes), Telegram
+(reading, voice messages, replies confirmed by the person and by Telegram), remote configuration, and the hardening
+(retention, limits, backups with a tested restore, administration, the security policy, accessibility audits).
+
+What remains of the milestone's acceptance needs the owner: real phones (Doze, the lock screen, TalkBack with real
+fingers, the 48-hour push soak), the ntfy app, joining herde, and Telegram's API credentials.
+[docs/acceptance.md](docs/acceptance.md) says where each check stands; departures from the plan are in
+[docs/decisions.md](docs/decisions.md). Running a server: [docs/operator.md](docs/operator.md); for helpers:
+[docs/helper-onboarding.md](docs/helper-onboarding.md).
 
 ## Running the development stack
 
@@ -24,8 +29,14 @@ npm install
 docker compose up -d --wait   # Postgres, ntfy, Caddy, and the core, assistant and connectors processes
 curl -s localhost:8810/healthz
 npm test
+npm run test:docker           # the same tests inside the image
 npm run evals                 # the assistant against the dialogue model on Ollama (60 German utterances)
+npm run backup -- <dir>       # the database and the files (add --with-secrets for a backup that opens everything)
+npm run backup:check          # a backup restored into a scratch database and compared, table by table
 ```
+
+Administrators see the server's state and its accounts in the app (Einstellungen → Server und Konten) and set up
+providers there (KI und Stimmen verwalten).
 
 `npm run setup` keeps existing secrets and adds missing ones: run it again after an update that needs a new one
 (S5 added `ntfy_token`, which lets the server publish alarms to ntfy).
@@ -35,6 +46,8 @@ npm run evals                 # the assistant against the dialogue model on Olla
 ```sh
 sh tools/android/install.sh                    # build, install, adb reverse to the stack, start
 npm run test:android                           # the app's JVM unit tests
+node tools/android/axe.ts                      # accessibility audit of the screen in front
+node tools/android/a11y-tree.ts --dom          # its accessibility tree (compare TalkBack on and off)
 node tools/android/fake-distributor.ts register  # without the ntfy app: stand in for it (debug builds)
 node tools/android/fake-distributor.ts forward 600
 ```

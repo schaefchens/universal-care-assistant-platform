@@ -3,6 +3,7 @@
  * echo canceller, noise suppression and gain control, one utterance at a time. M2's native capture (a foreground
  * service, for LIVE mode) replaces it behind the same interface. The microphone is open only while recording.
  */
+import { scriptUrl } from '../trusted.ts';
 import { Endpointer, type EndpointOptions, type EndReason, encodeWav, resample } from './audio.ts';
 
 export interface Recording {
@@ -87,7 +88,7 @@ export function micInput(): AudioInput {
             if (ep.push(resample(block, rate))) end();
           };
           try {
-            await ctx.audioWorklet.addModule('capture-worklet.js');
+            await ctx.audioWorklet.addModule(scriptUrl('capture-worklet.js'));
             const node = new AudioWorkletNode(ctx, 'ucap-capture');
             node.port.onmessage = (m: MessageEvent<Float32Array>) => take(m.data);
             source.connect(node);

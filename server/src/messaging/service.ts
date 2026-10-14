@@ -414,6 +414,12 @@ export function createMessaging(d: {
       return { loggedOut };
     },
 
+    /** For the admin's page: whether the connectors process is connected, and the connections by state (no names). */
+    async status() {
+      const r = await sql<{ state: string; n: number }>`select state, count(*)::int as n from messaging_connections group by state`.execute(d.db);
+      return { running: hub()?.connected === true, configured: (await settings()) !== null, connections: Object.fromEntries(r.rows.map((x) => [x.state, x.n])) };
+    },
+
     /** Whether the person's messaging works now (the assistant offers its tools only then). */
     async ready(userId: string): Promise<boolean> {
       const c = await connRow({ userId });

@@ -128,6 +128,8 @@ export type SettingsScreen = 'app' | 'channel' | 'fullscreen' | 'dnd' | 'battery
 export interface AlertsPlugin {
   /** Who this device is, for native code (receipts, the alarm's answers); `{}` when signed out. */
   setRef(o: { serverUrl: string; serverId: string; deviceId: string; lang: string; form: string } | Record<string, never>): Promise<void>;
+  /** What native code keeps of it, which outlives the WebView's storage (AN-06); `{}` when not set up. */
+  getRef(): Promise<{ serverUrl?: string; serverId?: string; deviceId?: string; lang?: string; form?: string }>;
   status(): Promise<AlertsStatus>;
   requestNotifications(): Promise<{ granted: boolean }>;
   /** UnifiedPush through ntfy; rejects with code no_distributor when ntfy is missing. */

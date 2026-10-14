@@ -59,6 +59,8 @@ export function Settings(p: {
   onTelegram: () => void;
   /** Administrators only: providers, keys, usage, herde. */
   onAiAdmin?: () => void;
+  /** Administrators only: the server's state, the accounts, account invitations. */
+  onServerAdmin?: () => void;
   onNewWords: () => void;
   onClose: () => void;
   /** Sections that need the session or the native app: the alarm checklist, the help key. */
@@ -139,6 +141,11 @@ export function Settings(p: {
           <Button className="button" onPress={p.onAiAdmin}>
             {tr('admin.open')}
           </Button>
+          {p.onServerAdmin && (
+            <Button className="button" onPress={p.onServerAdmin}>
+              {tr('admin.server.open')}
+            </Button>
+          )}
         </Section>
       )}
       {p.children}

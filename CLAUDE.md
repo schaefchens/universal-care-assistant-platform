@@ -24,6 +24,8 @@ npm install                       # host node_modules (macOS) for tests, tsc and
 docker compose up -d --wait       # db :55440, ntfy :8811, caddy :8810, core :8816, assistant :8817, connectors
 npm test                          # vitest: herde-project, server, tools (needs the db service)
 npm run typecheck
+npm run test:docker               # the same suite inside the image
+npm run backup:check              # backup, restore into a scratch database, compare every table
 docker compose logs -f core       # core restarts on save (node --watch); connectors: docker compose restart connectors
 services/stt-mlx/run.sh           # native whisper on 127.0.0.1:8813 (Docker cannot reach the Mac's GPU)
 ```
@@ -52,6 +54,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 **Docker and databases**
 - Databases live on named volumes, never bind mounts (SIGBUS on Docker Desktop).
 - herde-project's events and long-poll wakes are in-process only. Everything that enqueues or waits on herde runs in the assistant process.
+- node-postgres's pool emits `error` when the database ends an idle connection (a restart); without a listener the
+  process exits, the help path with it. `createDb` listens.
+- With Fastify's `trustProxy`, `req.ip` throws for a socket made by `injectWS` (tests): read it guarded.
 
 **Claude Code's tools**
 - Write and Edit decode `\uXXXX` escapes into literal characters. Copy files that contain them (`stt-eval/text.ts`, `phrases.ts`) with `cp`, or double the backslash.
@@ -93,5 +98,13 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   answer) may wait on speech without a bound.
 - On a busy emulator, `adb shell input text` key events pile up behind a slow WebView and freeze input to the app
   ("isn't responding"); insert text over DevTools (`Input.insertText`) instead, and tap with `adb shell input tap`.
+- The Keystore outlives the WebView's storage: a new enrolment removes any old key first (the server refuses a key it
+  knows), and native code keeps who the device is until a real sign-out, so the app can sign in again with it.
+- The app's security policy is in the built index.html only (Vite's dev server runs React refresh inline): check
+  features in a build. A library's inline style is refused unless its hash is in `app/src/csp.ts`; script URLs
+  (workers, worklets) go through `scriptUrl()` (Trusted Types).
+- A setting that arrives after a timer started (Android's recommended timeout) must restart the timer.
+- TalkBack gestures on the emulator: `adb emu event mouse <x> <y> 0 1|0` is a real finger to TalkBack; `sendevent` is
+  refused on this image.
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.
 - `dl.google.com` needs the HTTP/2 relay on this network (`tools/google-maven-relay.ts`).

@@ -63,7 +63,12 @@ export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop';
   }
 
   useEffect(() => {
-    if (has('A11y')) void A11y.recommendedTimeout({ ms: WINDOW_MS, controls: true, text: true }).then((r) => (windowMs.current = Math.max(WINDOW_MS, r.ms)), () => {});
+    // The person's "time to take action" arrives after the question was asked: the window then starts again with it.
+    if (has('A11y'))
+      void A11y.recommendedTimeout({ ms: WINDOW_MS, controls: true, text: true }).then((r) => {
+        windowMs.current = Math.max(WINDOW_MS, r.ms);
+        if (!over.current && timer.current) arm();
+      }, () => {});
     // Asked once, also where an effect runs twice (React's development checks): the second run only re-arms.
     over.current = false;
     if (asks.current === 0) ask();

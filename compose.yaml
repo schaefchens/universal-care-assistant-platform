@@ -23,6 +23,8 @@ x-node: &node
 services:
   db:
     image: pgvector/pgvector:pg17
+    # No statements and no parameter values in Postgres's own log (docs/plan.md, Appendix I "Logging").
+    command: ["postgres", "-c", "log_statement=none", "-c", "log_min_duration_statement=-1", "-c", "log_parameter_max_length_on_error=0"]
     environment:
       POSTGRES_USER: ucap
       POSTGRES_PASSWORD: ucap
