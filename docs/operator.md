@@ -30,6 +30,9 @@ docker compose up -d --wait
 npm run admin:invite           # the first administrator: an invitation valid for one hour, shown once
 ```
 
+Further accounts are invited by an administrator in the app (Server und Konten), or with
+`docker compose exec core node server/src/cli.ts account-invite` (an ordinary account, valid for a day).
+
 - **The secrets** (`~/.config/ucap/dev-secrets`, or `UCAP_SECRETS_DIR`): `master_key` seals every stored credential
   (provider keys, Telegram's credentials and TDLib's keys, the push keys), `pepper` keys every code and token,
   `connectors_token` lets the connectors process in, `ntfy_token` lets core publish alarms. They are made once and never

@@ -11,8 +11,9 @@
   "scripts": {
     "setup": "node tools/dev/setup-secrets.ts",
     "dev": "docker compose up -d --wait",
-    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tools && tsc -p app",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tools && tsc -p app && tsc -p e2e",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:docker": "docker compose run --rm --no-deps -e DATABASE_URL=postgres://ucap:ucap@db:5432/ucap_test -e UCAP_SECRETS_DIR=/run/secrets core npm test",
     "admin:invite": "docker compose exec core node server/src/cli.ts admin-invite",
     "test:android": "sh tools/android/unit-test.sh",
@@ -23,6 +24,7 @@
     "push:soak-report": "docker compose exec core node server/src/cli.ts push-soak-report"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "^24.13.6",
     "axe-core": "^4.11.0",
     "fast-check": "^4.10.2",

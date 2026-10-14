@@ -30,6 +30,7 @@ docker compose up -d --wait   # Postgres, ntfy, Caddy, and the core, assistant a
 curl -s localhost:8810/healthz
 npm test
 npm run test:docker           # the same tests inside the image
+npm run test:e2e              # a person and a helper in two browsers (Playwright), against the running stack
 npm run evals                 # the assistant against the dialogue model on Ollama (60 German utterances)
 npm run backup -- <dir>       # the database and the files (add --with-secrets for a backup that opens everything)
 npm run backup:check          # a backup restored into a scratch database and compared, table by table

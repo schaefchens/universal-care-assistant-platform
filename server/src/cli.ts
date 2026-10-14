@@ -2,12 +2,14 @@
  * Operator commands, run where the server runs:
  *
  *   npm run admin:invite             # docker compose exec core node server/src/cli.ts admin-invite
+ *   docker compose exec core node server/src/cli.ts account-invite [--label <text>]
  *   docker compose exec core node server/src/cli.ts push-soak <device id> [--every <minutes>] [--hours <hours>]
  *   docker compose exec core node server/src/cli.ts push-soak-report <device id> [--hours <hours>]
  *
  * `admin-invite` makes the first administrator (or another one): an account invitation that grants admin rights,
  * valid for one hour, used once (docs/plan.md, Appendix C). The codes are printed here once and never logged; the
- * server keeps only their HMACs. Admin rights give no access to anyone's data (CONCEPT §7).
+ * server keeps only their HMACs. Admin rights give no access to anyone's data (CONCEPT §7). `account-invite` makes
+ * an invitation for an ordinary account, valid for a day.
  *
  * `push-soak` starts the push soak of S12 for one device (every 15 minutes for 48 hours unless told otherwise): core
  * sends it a silent heartbeat each round and times the signed receipt; a new soak for the device replaces the old.
@@ -26,12 +28,13 @@ import { enqueue } from './lib/jobs.ts';
 import { migrate } from './lib/migrate.ts';
 import { loadSecrets } from './lib/secrets.ts';
 
-/** The admin invitation and the lines that tell the operator how to use it. */
-export async function adminInvite(o: { identity: IdentityService; db: Db; clock: Clock; publicUrl: string; label?: string }) {
-  const inv = await o.identity.createInvite(o.db, { kind: 'account', createdBy: null, grantsAdmin: true, label: o.label ?? 'bootstrap', ttlS: BOOTSTRAP_TTL_S, spoken: true });
-  await audit(o.db, o.clock, { action: 'invite.created', targetType: 'invite', targetId: inv.id, detail: { kind: 'account', admin: true, via: 'cli' } });
+/** The admin invitation (or, with `admin: false`, an ordinary one) and the lines that tell the operator how to use it. */
+export async function adminInvite(o: { identity: IdentityService; db: Db; clock: Clock; publicUrl: string; label?: string; admin?: boolean }) {
+  const admin = o.admin ?? true;
+  const inv = await o.identity.createInvite(o.db, { kind: 'account', createdBy: null, grantsAdmin: admin, label: o.label ?? (admin ? 'bootstrap' : 'cli'), ttlS: admin ? BOOTSTRAP_TTL_S : 86_400, spoken: true });
+  await audit(o.db, o.clock, { action: 'invite.created', targetType: 'invite', targetId: inv.id, detail: { kind: 'account', admin, via: 'cli' } });
   const lines = [
-    'An administrator invitation for this server, valid for one hour, usable once.',
+    admin ? 'An administrator invitation for this server, valid for one hour, usable once.' : 'An account invitation for this server, valid for a day, usable once.',
     '',
     `  Server:      ${o.publicUrl}`,
     `  Code:        ${groupCode(inv.code)}`,
@@ -73,8 +76,8 @@ async function main(argv: string[]) {
     return Number.isFinite(v) && v > 0 ? v : fallback;
   };
   const soak = command === 'push-soak' || command === 'push-soak-report';
-  if (command !== 'admin-invite' && !(soak && arg)) {
-    console.error('usage: node server/src/cli.ts admin-invite [--label <text>]');
+  if (command !== 'admin-invite' && command !== 'account-invite' && !(soak && arg)) {
+    console.error('usage: node server/src/cli.ts admin-invite|account-invite [--label <text>]');
     console.error('       node server/src/cli.ts push-soak <device id> [--every <minutes>] [--hours <hours>]');
     console.error('       node server/src/cli.ts push-soak-report <device id> [--hours <hours>]');
     process.exit(2);
@@ -91,7 +94,7 @@ async function main(argv: string[]) {
     else {
       const serverId = await ensureServerId(db);
       const identity = createIdentityService({ db, clock: systemClock, pepper: secrets.pepper, serverId, publicOrigins: config.publicOrigins });
-      ({ lines } = await adminInvite({ identity, db, clock: systemClock, publicUrl: config.publicUrl, label: labelAt > 0 ? argv[labelAt + 1] : undefined }));
+      ({ lines } = await adminInvite({ identity, db, clock: systemClock, publicUrl: config.publicUrl, label: labelAt > 0 ? argv[labelAt + 1] : undefined, admin: command === 'admin-invite' }));
     }
     process.stdout.write(lines.join('\n') + '\n');
   } finally {

@@ -576,6 +576,9 @@ then they stay as built, and nothing here is frozen.
 2. **A device whose app storage was lost signs in again by itself** when Android kept its key and who it is (the
    WebView's storage alone was lost; `pm clear` loses both, and then the words are needed). No words are asked: the
    key never left the device. Appendix C: "On Android the Keystore survives WebView eviction."
+3. **The end-to-end tests run on the dev stack with its real clock and no fakes.** The plan's Verification: "Playwright
+   with person and helper contexts, the fake providers and the fake clock." The help path they cover uses no
+   provider; the fakes come when the e2e covers the assistant and timed escalation.
 
 ### Decided (within the plan)
 
@@ -616,6 +619,13 @@ then they stay as built, and nothing here is frozen.
   48 hours as a job that survives restarts, and `push:soak-report` gives sent, confirmed, lost and the receipt times.
   The rounds are ordinary heartbeats, so they keep the device's readiness too; an older heartbeat that went
   unanswered no longer marks a device degraded when it answered a later one.
+- **`npm run test:e2e`** (Playwright 1.63, its Chromium from the cache): "E2E Person" and "E2E Helfer", each in a
+  browser profile of their own that keeps the device key, so their accounts are made once through the app's own
+  onboarding (an invitation from the new `account-invite` CLI command, the twelve words and their check) and the
+  helper is invited and approved through the app; then a help request from one browser is accepted and resolved in
+  the other, and the person hears A1, A2 (or, within the reopen window, that the helpers are asked again), A6 and
+  A12. It runs on the dev stack with its real clock: the plan's fake clock and fake providers are not built, since
+  the help path uses no provider; they come when the e2e covers the assistant.
 - **`npm run test:docker` runs the whole suite in the image**, the ntfy tests included (at ntfy's internal address,
   with the mounted secrets).
 - **Docs:** [operator.md](operator.md) (running a server), [helper-onboarding.md](helper-onboarding.md) (for helpers),
