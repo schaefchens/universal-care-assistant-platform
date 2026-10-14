@@ -27,6 +27,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'shared',
+          root: 'packages/shared',
+          include: ['test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'repo',
           root: 'tools',
           include: ['test/**/*.test.ts'],

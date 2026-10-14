@@ -1,0 +1,22 @@
+{
+  "name": "@ucap/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contracts shared by UCAP's server and app: schemas, scopes, states, message catalogs, ids.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./i18n/*": "./i18n/*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "intl-messageformat": "^12.1.3",
+    "typebox": "^1.3.37"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "~6.0.3"
+  }
+}

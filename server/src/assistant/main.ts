@@ -1,34 +1,29 @@
 /**
- * The assistant process: voice turns, AI and speech providers, assistant actions, messaging, and herde-project
- * (whose events and long-poll wakes are in-process only, so everything that enqueues or waits on herde lives here).
- *
- * S0 placeholder: health, and whether the native engines on the host answer. S1 builds the real server.
+ * The assistant process: voice turns, AI and speech providers, assistant actions, messaging, and herde-project.
+ * Stopping it never touches the help path, which lives in core.
  */
-import Fastify from 'fastify';
+import { systemClock } from '../lib/clock.ts';
+import { loadConfig } from '../lib/config.ts';
+import { createDb } from '../lib/db.ts';
+import { migrate } from '../lib/migrate.ts';
+import { loadSecrets } from '../lib/secrets.ts';
+import { buildAssistant } from './app.ts';
 
-const port = Number(process.env.PORT ?? 8821);
-const app = Fastify({ logger: false });
+const config = loadConfig('assistant');
+const secrets = loadSecrets({ connectors: true });
+const db = createDb(config.databaseUrl, { name: 'ucap-assistant', max: 10 });
+await migrate(db, (m) => console.log(`assistant: ${m}`));
 
-/** Reachability of the engines that run natively beside Docker (the Mac's GPU is out of Docker's reach). */
-async function reachable(url: string | undefined): Promise<boolean | null> {
-  if (!url) return null;
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-app.get('/healthz', async () => ({ ok: true, service: 'assistant' }));
-app.get('/healthz/engines', async () => ({
-  ollama: await reachable(process.env.OLLAMA_URL && `${process.env.OLLAMA_URL}/api/tags`),
-  stt: await reachable(process.env.STT_URL && `${process.env.STT_URL}/health`),
-}));
-
-await app.listen({ host: '0.0.0.0', port });
-console.log(`assistant: listening on :${port}`);
+const assistant = await buildAssistant({ config, db, clock: systemClock, secrets });
+await assistant.app.listen({ host: '0.0.0.0', port: config.port });
+await assistant.start();
+console.log(`assistant: listening on :${config.port}`);
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.once(signal, () => void app.close().then(() => process.exit(0)));
+  process.once(signal, () => {
+    void assistant
+      .stop()
+      .then(() => db.destroy())
+      .finally(() => process.exit(0));
+  });
 }
