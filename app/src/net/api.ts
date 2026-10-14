@@ -15,12 +15,12 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(base: string, path: string, o: { method?: string; body?: unknown; token?: string; signal?: AbortSignal } = {}): Promise<T> {
+export async function api<T>(base: string, path: string, o: { method?: string; body?: unknown; token?: string; signal?: AbortSignal; headers?: Record<string, string> } = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {
       method: o.method ?? (o.body === undefined ? 'GET' : 'POST'),
-      headers: { ...(o.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(o.token ? { authorization: `Bearer ${o.token}` } : {}) },
+      headers: { ...(o.body !== undefined ? { 'content-type': 'application/json' } : {}), ...(o.token ? { authorization: `Bearer ${o.token}` } : {}), ...o.headers },
       body: o.body === undefined ? undefined : JSON.stringify(o.body),
       signal: o.signal ?? AbortSignal.timeout(15_000),
     });

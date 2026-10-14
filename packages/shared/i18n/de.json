@@ -436,5 +436,17 @@
   "quick.on_the_way": "Ich bin unterwegs.",
   "quick.will_call": "Ich rufe dich an.",
   "quick.will_call@Sie": "Ich rufe Sie an.",
-  "quick.minutes": "Ich bin in {n} Minuten da."
+  "quick.minutes": "Ich bin in {n} Minuten da.",
+  "care.A8.short": "{name} kann gerade nicht helfen.",
+  "care.A4b.short": "Das Gerät von {name} hat deinen Hilferuf erhalten, ist aber stummgeschaltet.",
+  "care.A4b.short@Sie": "Das Gerät von {name} hat Ihren Hilferuf erhalten, ist aber stummgeschaltet.",
+  "care.readiness.title": "Erreichbarkeit",
+  "care.readiness.ready": "Dieses Gerät hat zuletzt am {time, date, short} um {time, time, short} auf eine Prüfung geantwortet.",
+  "care.readiness.unknown": "Dieses Gerät wurde noch nicht geprüft. Die Prüfung läuft alle sechs Stunden.",
+  "care.readiness.degraded": "Dieses Gerät hat auf die letzte Prüfung nicht geantwortet.",
+  "care.readiness.unreachable": "Dieses Gerät ist gerade nicht erreichbar.",
+  "care.readiness.person.ok": "Deine Hilferufe erreichen mindestens einen Helfer.",
+  "care.readiness.person.ok@Sie": "Ihre Hilferufe erreichen mindestens einen Helfer.",
+  "care.readiness.person.none": "Deine Hilferufe erreichen gerade niemanden.",
+  "care.readiness.person.none@Sie": "Ihre Hilferufe erreichen gerade niemanden."
 }

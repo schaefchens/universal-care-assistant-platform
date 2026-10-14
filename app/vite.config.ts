@@ -8,7 +8,16 @@ export default defineConfig({
   // Debug builds keep a record of what the app spoke and did (src/debug.ts); release builds drop it.
   define: { __UCAP_DEBUG__: JSON.stringify(process.env.UCAP_RELEASE !== '1') },
   // The oldest WebView UCAP supports (lookup measured the shell down to Chromium 111).
-  build: { target: 'chrome111', outDir: 'dist', emptyOutDir: true },
+  build: {
+    target: 'chrome111',
+    outDir: 'dist',
+    emptyOutDir: true,
+    // The browser's service worker (src/sw.ts) is its own entry, at a fixed name next to index.html.
+    rollupOptions: {
+      input: { main: 'index.html', sw: 'src/sw.ts' },
+      output: { entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js') },
+    },
+  },
   server: {
     port: 8812,
     host: '127.0.0.1',

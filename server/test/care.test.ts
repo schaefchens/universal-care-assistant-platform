@@ -180,6 +180,15 @@ describe('help requests', () => {
     expect((await post(maria, `/api/v1/care/requests/${request.id}/decline`, { episode: 1 })).statusCode).toBe(204);
     await run();
     expect(await types(request.id)).toEqual(['created', 'alerted', 'declined', 'escalated']);
+    // The person is told someone else is asked only when someone is left.
+    const declined = ((await get(anna, `/api/v1/care/requests/${request.id}`)).json() as { events: { type: string; data: { more?: boolean } }[] }).events.find((e) => e.type === 'declined')!;
+    expect(declined.data.more).toBe(true);
+    await closeOpen();
+    await plan([{ waitS: 300, helpers: [maria.userId, tom.userId] }]);
+    const only = ((await press(anna)).json() as { request: { id: string } }).request;
+    await post(maria, `/api/v1/care/requests/${only.id}/decline`, { episode: 1 });
+    const last = ((await get(anna, `/api/v1/care/requests/${only.id}`)).json() as { events: { type: string; data: { more?: boolean } }[] }).events.find((e) => e.type === 'declined')!;
+    expect(last.data.more).toBe(false);
     await closeOpen();
 
     await plan([{ waitS: 60, helpers: [maria.userId] }, { waitS: 60, helpers: [tom.userId] }]);

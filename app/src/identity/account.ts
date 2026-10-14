@@ -211,7 +211,7 @@ export class Session {
     this.token = null;
   }
 
-  async call<T>(path: string, o: { method?: string; body?: unknown } = {}): Promise<T> {
+  async call<T>(path: string, o: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
     try {
       return await api<T>(this.ref.serverUrl, path, { ...o, token: await this.accessToken() });
     } catch (e) {

@@ -62,6 +62,7 @@ export function Helpers(p: { session: Session; server: ServerRef; onApprove: (re
   const [rels, setRels] = useState<{ asPerson: Relationship[]; asHelper: Relationship[] } | null>(null);
   const [history, setHistory] = useState<AuditEvent[]>([]);
   const [open, setOpen] = useState<{ id: string; proposedScopes: Scope[]; createdAt: string }[]>([]);
+  const [reach, setReach] = useState<boolean | null>(null);
   const [status, setStatus] = useState('');
   const [inviteScopes, setInviteScopes] = useState<Scope[]>(DEFAULT_HELPER_SCOPES);
   const [invitation, setInvitation] = useState<Invitation | null>(null);
@@ -81,6 +82,7 @@ export function Helpers(p: { session: Session; server: ServerRef; onApprove: (re
       setRels(await api.relationships());
       setHistory((await api.audit()).events);
       setOpen((await api.openInvites()).invites.filter((i) => i.kind === 'helper'));
+      setReach((await p.session.call<{ reachable: boolean | null }>('/api/v1/care/readiness')).reachable);
     } catch (e) {
       fail(e);
     }
@@ -221,6 +223,7 @@ export function Helpers(p: { session: Session; server: ServerRef; onApprove: (re
             </li>
           ))}
         </ul>
+        {reach !== null && <p className={reach ? 'status' : 'status warning'}>{tr(reach ? 'care.readiness.person.ok' : 'care.readiness.person.none')}</p>}
         <Button className="button" onPress={readOverview}>
           {tr('people.overview.read')}
         </Button>

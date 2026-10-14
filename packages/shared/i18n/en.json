@@ -344,5 +344,14 @@
   "care.helper.notify.android": "On Android phones, help requests in the browser do not arrive reliably while the phone rests. Please use the app.",
   "quick.on_the_way": "I'm on my way.",
   "quick.will_call": "I'll call you.",
-  "quick.minutes": "I'll be there in {n} minutes."
+  "quick.minutes": "I'll be there in {n} minutes.",
+  "care.A8.short": "{name} can't help right now.",
+  "care.A4b.short": "{name}'s device received your request but is on silent.",
+  "care.readiness.title": "Reachability",
+  "care.readiness.ready": "This device last answered a check on {time, date, short} at {time, time, short}.",
+  "care.readiness.unknown": "This device has not been checked yet. The check runs every six hours.",
+  "care.readiness.degraded": "This device did not answer the last check.",
+  "care.readiness.unreachable": "This device cannot be reached right now.",
+  "care.readiness.person.ok": "Your help requests reach at least one helper.",
+  "care.readiness.person.none": "Your help requests reach nobody right now."
 }

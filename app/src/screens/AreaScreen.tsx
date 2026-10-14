@@ -34,7 +34,19 @@ export function whatCanIDo(s: ScreenDef, tr: (key: string, params?: Record<strin
   return parts.join(' ');
 }
 
-export function AreaScreen(p: { config: DeviceConfig; stack: string[]; onNavigate: (stack: string[]) => void; onSettings: () => void }) {
+export function AreaScreen(p: {
+  config: DeviceConfig;
+  stack: string[];
+  onNavigate: (stack: string[]) => void;
+  onSettings: () => void;
+  /** The help area, the same on every screen (Appendix H). */
+  onHelp: () => void;
+  /** A help request is open: the top bar leads back to it. */
+  careOpen?: boolean;
+  onCare?: () => void;
+  /** This user helps someone: the top bar leads to their help requests. */
+  onInbox?: () => void;
+}) {
   const ui = useUi();
   const { tr, say, earcons, speech, assistive } = ui;
   const screen = p.config.screens[p.stack.at(-1)!] ?? p.config.screens[p.config.home]!;
@@ -59,8 +71,7 @@ export function AreaScreen(p: { config: DeviceConfig; stack: string[]; onNavigat
       const act = a.action;
       switch (act.type) {
         case 'help':
-          // S4 brings help requests. Until then the area says so honestly, never pretending to send.
-          say(tr('notyet.help', { sos: '112' }), 'care');
+          p.onHelp();
           return;
         case 'assistant':
           say(tr('notyet.feature'), 'system');
@@ -114,6 +125,16 @@ export function AreaScreen(p: { config: DeviceConfig; stack: string[]; onNavigat
         <button type="button" className="topbar-button" onClick={() => say(whatCanIDo(screen, tr), 'system')} aria-label={tr('app.whatcan')}>
           ?
         </button>
+        {p.careOpen && p.onCare && (
+          <button type="button" className="topbar-button care-open" onClick={p.onCare}>
+            {tr('care.screen.title')}
+          </button>
+        )}
+        {p.onInbox && (
+          <button type="button" className="topbar-button" onClick={p.onInbox}>
+            {tr('care.helper.inbox')}
+          </button>
+        )}
         <button type="button" className="topbar-button" onClick={p.onSettings}>
           {tr('app.settings')}
         </button>

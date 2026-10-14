@@ -102,3 +102,28 @@ then they stay as built, and nothing here is frozen.
   that were not given are not listed: read aloud, a long list with commas inside its items was hard to follow. The
   sentences use the helper's name, never a pronoun.
 - **Relationship events carry who acted**, so whoever acted is not told again what they just did.
+
+## S4: help requests (2026-10-14)
+
+### To confirm
+
+1. **A12 points to the help area until voice input exists.** The plan's text ends “Wenn du noch Hilfe brauchst, sag:
+   Ich brauche noch Hilfe.” Until S8 nobody can say it, so A12 ends “… tippe zweimal auf das Hilfe-Feld” (in the
+   person's gesture), and **a press within the reopen window reopens the request** (a new episode, the last accepter
+   asked first), as the spoken phrase will.
+2. **Browsers show a quiet notice for heartbeats.** Browsers require a visible notification for every push, so a
+   heartbeat to a browser shows a silent “Hilferufe erreichen diesen Browser.” under one tag, replaced each time.
+   Without it the browser drops the subscription.
+
+### Decided (within the plan)
+
+- **“Ich frage weitere Helfer” only when someone is left.** A8 and A4b have short forms (“Maria kann gerade nicht
+  helfen.”) when the server records that no further tier remains, so the person is never promised helpers that do
+  not exist.
+- **A new alert always takes the helper's screen** (Annehmen, Kann nicht, Zur Liste); seeing it, or the request in the
+  list, tells the person (A5).
+- **Browser notifications carry no buttons**; tapping one opens the inbox. Signed accept and decline from a
+  notification come with the Android alarm (S5).
+- **After a restart with an open request**, the person hears “Dein Hilferuf ist offen.”, then only what is new.
+- **Not tried live:** Web Push in a real browser needs the notification permission granted in that browser. The
+  sending, encryption, receipts and heartbeats are tested against a fake push service and a simulated browser.

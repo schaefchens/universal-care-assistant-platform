@@ -72,6 +72,12 @@ function webKey(): DeviceKeyStore {
   };
 }
 
+/** For the browser's service worker, which signs push receipts and has no localStorage: who this device is. */
+export async function shareRefWithWorker(ref: { serverUrl: string; serverId: string; deviceId: string; lang: string } | null): Promise<void> {
+  if (has('DeviceKey') || typeof indexedDB === 'undefined') return;
+  await (ref ? idb<IDBValidKey>('readwrite', (s) => s.put(ref, 'ref')) : idb<undefined>('readwrite', (s) => s.delete('ref'))).catch(() => {});
+}
+
 export async function thumbprint(jwk: Jwk): Promise<string> {
   const json = `{"crv":"P-256","kty":"EC","x":"${jwk.x}","y":"${jwk.y}"}`;
   return b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json))));

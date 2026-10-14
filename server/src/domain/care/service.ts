@@ -102,7 +102,7 @@ export function createCareService(d: CareDeps) {
   async function changed(exec: Exec, r: Pick<Row, 'id' | 'person_id' | 'episode'>) {
     const alerted = await sql<{ recipient: string }>`
       select distinct recipient from deliveries where ref = ${r.id} and episode = ${r.episode} and purpose = 'care'`.execute(exec);
-    await emit(exec, { kind: 'care.changed', recipients: [r.person_id, ...alerted.rows.map((x) => x.recipient)], payload: { requestId: r.id, episode: r.episode } });
+    await emit(exec, { kind: 'care.changed', recipients: [r.person_id, ...alerted.rows.map((x) => x.recipient)], payload: { requestId: r.id, episode: r.episode, personId: r.person_id } });
   }
 
   /** The tiers for an episode: after a reopen, whoever accepted last is asked first. */
@@ -428,7 +428,9 @@ export function createCareService(d: CareDeps) {
     async decline(helperId: string, id: string, episode: number) {
       await d.db.transaction().execute(async (trx) => {
         const r = await forHelper(trx, id, helperId, episode);
-        if (!(await event(trx, r, 'declined', { actor: helperId, idem: `declined:${r.id}:${episode}:${helperId}` }))) return;
+        // Whether anyone is left to ask after this tier, so the person is not promised more helpers than there are.
+        const { tiers } = await tiersFor(trx, r);
+        if (!(await event(trx, r, 'declined', { actor: helperId, data: { more: !r.exhausted && r.tier < tiers.length }, idem: `declined:${r.id}:${episode}:${helperId}` }))) return;
         await escalateIfTierOut(trx, r);
         await changed(trx, r);
       });
@@ -443,7 +445,7 @@ export function createCareService(d: CareDeps) {
         r.status = 'open';
         r.accepted_by = null;
         r.accepted_at = null;
-        await event(trx, r, 'released', { actor: helperId });
+        await event(trx, r, 'released', { actor: helperId, data: { more: alertedSoFar(tiers, r.tier).some((h) => h !== helperId) || r.tier < tiers.length } });
         const others = alertedSoFar(tiers, r.tier).filter((h) => h !== helperId);
         await alert(trx, r, others, 'care.alert', 2);
         r.next_action_at = new Date(d.clock() + (tiers[r.tier - 1]?.waitS ?? 120) * 1000);
@@ -534,7 +536,8 @@ export function createCareService(d: CareDeps) {
           if (dl.purpose !== 'care' || !dl.ref || dl.kind !== 'care.alert') continue;
           const r = await lock(trx, dl.ref);
           if (!r || r.episode !== dl.episode) continue;
-          const first = await event(trx, r, 'delivered', { actor: dl.recipient, data: { device: dl.device_id, silenced: o.silenced }, idem: `delivered:${r.id}:${r.episode}:${dl.recipient}` });
+          const { tiers } = await tiersFor(trx, r);
+          const first = await event(trx, r, 'delivered', { actor: dl.recipient, data: { device: dl.device_id, silenced: o.silenced, more: !r.exhausted && r.tier < tiers.length }, idem: `delivered:${r.id}:${r.episode}:${dl.recipient}` });
           if (o.silenced) await escalateIfTierOut(trx, r);
           if (first) await changed(trx, r);
         }

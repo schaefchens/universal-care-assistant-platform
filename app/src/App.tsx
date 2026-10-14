@@ -15,7 +15,10 @@ import { createEarcons } from './audio/earcons.ts';
 import { pickBackend, SpeechOut } from './audio/speech.ts';
 import { loadDeviceRef, type Me, Session } from './identity/account.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
-import { deviceKey } from './identity/device-key.ts';
+import { CareClient, type CareState } from './care/client.ts';
+import { helperCare } from './care/helper.ts';
+import { WebPushSetup } from './care/WebPushSetup.tsx';
+import { deviceKey, shareRefWithWorker } from './identity/device-key.ts';
 import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
 import { has, Info } from './native/plugins.ts';
@@ -24,6 +27,8 @@ import { Realtime } from './net/realtime.ts';
 import { defaultServerUrl, fetchServerInfo } from './net/server.ts';
 import { AreaScreen } from './screens/AreaScreen.tsx';
 import { Approve } from './screens/Approve.tsx';
+import { CareScreen } from './screens/CareScreen.tsx';
+import { HelperAlert, HelperInbox } from './screens/HelperInbox.tsx';
 import { Devices } from './screens/Devices.tsx';
 import { Helpers } from './screens/Helpers.tsx';
 import { NewWords } from './screens/NewWords.tsx';
@@ -36,7 +41,8 @@ import { applyTheme, platformPrefs } from './theme/apply.ts';
 import { resolveTheme } from './theme/themes.ts';
 import { makeUi, UiProvider } from './ui.tsx';
 
-type Page = 'areas' | 'settings' | 'devices' | 'newWords' | 'helpers' | { approve: string };
+type Page = 'areas' | 'settings' | 'devices' | 'newWords' | 'helpers' | 'care' | 'inbox' | { approve: string } | { alert: string };
+const pageKey = (p: Page) => (typeof p === 'string' ? p : 'approve' in p ? 'approve' : 'alert');
 
 /** An invitation opened as a link in the browser (`…/#invite=CODE`): taken once and removed from the address bar
  *  and history. The code sits in the fragment, so it never reaches a server's access log. */
@@ -66,6 +72,10 @@ export function App() {
   const [page, setPage] = useState<Page>('areas');
   /** Bumped by realtime events, so open pages fetch again. */
   const [peopleRev, setPeopleRev] = useState(0);
+  const [careRev, setCareRev] = useState(0);
+  const [careState, setCareState] = useState<CareState>({ pending: false, request: null });
+  const [isHelper, setIsHelper] = useState(false);
+  const careRef = useRef<CareClient | null>(null);
 
   const assistive: AssistiveMode = modeFrom(a11y, prefs.assistive);
   const earcons = useMemo(() => createEarcons(), []);
@@ -154,9 +164,15 @@ export function App() {
           setPeopleRev((n) => n + 1);
           // Whoever acted already heard what they did.
           if (e.data.by !== session.ref.userId) void relationshipNews(String(e.data.relationshipId), String(e.data.state));
+          void people(session)
+            .relationships()
+            .then((r) => setIsHelper(r.asHelper.some((x) => x.state === 'active' && x.scopes.includes('care.respond'))), () => {});
+        } else if (e.type.startsWith('care.')) {
+          void careNews(e.type, e.data);
         }
       },
       onRevoked: () => void session.forget().then(() => signedOut(ui.tr('devices.signedOut'))),
+      onState: (st) => careRef.current?.setRealtimeOpen(st === 'open'),
     });
     rt.start();
     const resume = has('App') ? CapApp.addListener('resume', () => rt.nudge()) : null;
@@ -185,18 +201,108 @@ export function App() {
     () => makeUi({ lang: prefs.lang, form: prefs.addressForm, speech, earcons, assistive, haptics: config.touch.haptics }),
     [prefs.lang, prefs.addressForm, speech, earcons, assistive, config.touch.haptics],
   );
+  // Long-lived clients (care, realtime) speak with the current words and voice, whatever changed since they started.
+  const uiRef = useRef(ui);
+  uiRef.current = ui;
+  const gestureRef = useRef('');
+  gestureRef.current = ui.tr(`care.gesture.${config.touch.mode === 'hold' ? 'hold' : config.touch.mode === 'direct' || assistive === 'gesture-at' ? 'direct' : 'explore'}`);
+
+  // Help requests of this person: the outbox and the announcements (docs/plan.md, Appendix D).
+  useEffect(() => {
+    if (!session) return;
+    const care = new CareClient({
+      ref: session.ref,
+      session,
+      lang: prefs.lang,
+      tr: (k, params) => uiRef.current.tr(k, params),
+      gesture: () => gestureRef.current,
+      say: (text) => uiRef.current.say(text, 'care'),
+      onState: setCareState,
+      onRevoked: () => void session.forget().then(() => signedOut(uiRef.current.tr('devices.signedOut'))),
+    });
+    careRef.current = care;
+    void care.start();
+    void people(session)
+      .relationships()
+      .then((r) => setIsHelper(r.asHelper.some((x) => x.state === 'active' && x.scopes.includes('care.respond'))), () => {});
+    return () => {
+      care.stop();
+      careRef.current = null;
+    };
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The browser's service worker signs push receipts: it needs to know who this device is, and in which language.
+  useEffect(() => {
+    void shareRefWithWorker(session ? { ...session.ref, lang: prefs.lang } : null);
+  }, [session, prefs.lang]);
+
+  // A notification click opens the inbox (sw.ts), as does a link to #inbox.
+  useEffect(() => {
+    if (typeof location !== 'undefined' && location.hash === '#inbox') setPage('inbox');
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onMessage = (m: MessageEvent) => (m.data?.type === 'ucap.inbox' ? setPage('inbox') : undefined);
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, []);
+
+  // While a help request is open the screen stays on (docs/plan.md, Appendix D), where the platform allows it.
+  const careOpen = careState.pending || careState.request?.status === 'open' || careState.request?.status === 'accepted';
+  useEffect(() => {
+    if (!careOpen || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    void navigator.wakeLock.request('screen').then((l) => (lock = l), () => {});
+    return () => void lock?.release().catch(() => {});
+  }, [careOpen]);
 
   useEffect(() => {
     if (!has('App')) return;
     const handle = CapApp.addListener('backButton', () => {
       if (page === 'devices' || page === 'newWords' || page === 'helpers') setPage('settings');
-      else if (typeof page === 'object') setPage('areas');
-      else if (page === 'settings') setPage('areas');
+      else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
+      else if (typeof page === 'object' || page === 'settings' || page === 'care' || page === 'inbox') setPage('areas');
       else if (stack.length > 1) setStack((s) => s.slice(0, -1));
       else ui.say(ui.tr('where.home'), 'system');
     });
     return () => void handle.then((h) => h.remove());
   }, [page, stack.length, ui]);
+
+  /** Help-request events: the person's own requests go to the care client; a helper hears alerts and their outcome. */
+  async function careNews(type: string, data: Record<string, unknown>) {
+    if (!session) return;
+    const u = uiRef.current;
+    const id = String(data.requestId ?? '');
+    if (type === 'care.readiness') {
+      if (data.reachable === false) u.say(u.tr('care.A21', { sos: '112' }), 'care');
+      return;
+    }
+    if (type === 'care.changed') {
+      setCareRev((n) => n + 1);
+      if (data.personId === session.ref.userId || careRef.current?.state.request?.id === id) await careRef.current?.refresh(id);
+      else {
+        // A request of this person made on another of their devices, or one this device has not seen yet.
+        const v = await helperCare(session).get(id).catch(() => null);
+        if (v && v.person.id === session.ref.userId) await careRef.current?.refresh(id);
+      }
+      return;
+    }
+    if (data.personId === session.ref.userId) return; // the person's own devices learn from care.changed
+    setCareRev((n) => n + 1);
+    if (type === 'care.alert') {
+      // A new alert always takes the screen, wherever the helper is; "Zur Liste" goes back.
+      setPage({ alert: id });
+      return;
+    }
+    const v = await helperCare(session).get(id).catch(() => null);
+    if (!v) return;
+    if (type === 'care.cancel') u.say(u.tr('care.helper.cancelled', { person: v.person.displayName }), 'care');
+    else if (type === 'care.watchdog') u.say(u.tr('care.helper.watchdog', { person: v.person.displayName }), 'care');
+    else if (type === 'care.update') {
+      if (v.status === 'accepted' && v.acceptedBy && v.acceptedBy.id !== session.ref.userId) u.say(u.tr('care.helper.acceptedBy', { helper: v.acceptedBy.displayName ?? '', person: v.person.displayName }), 'system');
+      else if (v.status === 'resolved') u.say(u.tr('care.helper.resolved', { person: v.person.displayName }), 'system');
+    }
+    // An alert screen for a request someone else took, or that ended, closes.
+    setPage((pg) => (typeof pg === 'object' && 'alert' in pg && pg.alert === id ? 'inbox' : pg));
+  }
 
   /** What a change in a relationship means for this person, said once (the event carries ids only). */
   async function relationshipNews(id: string, state: string) {
@@ -269,7 +375,15 @@ export function App() {
     );
   else if (page === 'devices') content = <Devices session={session} onSignedOut={() => signedOut(ui.tr('devices.signedOut'))} onClose={() => setPage('settings')} />;
   else if (page === 'helpers') content = <Helpers session={session} server={server} refresh={peopleRev} onApprove={(id) => setPage({ approve: id })} onClose={() => setPage('settings')} />;
-  else if (typeof page === 'object') content = <Approve session={session} relationshipId={page.approve} config={config} onDone={() => setPage('helpers')} />;
+  else if (typeof page === 'object' && 'approve' in page) content = <Approve session={session} relationshipId={page.approve} config={config} onDone={() => setPage('helpers')} />;
+  else if (typeof page === 'object') content = <HelperAlert session={session} requestId={page.alert} config={config} onDone={() => setPage('inbox')} />;
+  else if (page === 'care' && careRef.current) content = <CareScreen care={careRef.current} state={careState} config={config} onHome={() => setPage('areas')} />;
+  else if (page === 'inbox')
+    content = (
+      <HelperInbox session={session} userId={session.ref.userId} refresh={careRev} onClose={() => setPage('areas')}>
+        <WebPushSetup session={session} />
+      </HelperInbox>
+    );
   else if (page === 'newWords' && me)
     content = (
       <NewWords
@@ -300,11 +414,26 @@ export function App() {
         onClose={() => setPage('areas')}
       />
     );
-  else content = <AreaScreen config={config} stack={stack} onNavigate={setStack} onSettings={() => setPage('settings')} />;
+  else
+    content = (
+      <AreaScreen
+        config={config}
+        stack={stack}
+        onNavigate={setStack}
+        onSettings={() => setPage('settings')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+        careOpen={careOpen}
+        onCare={() => setPage('care')}
+        onInbox={isHelper ? () => setPage('inbox') : undefined}
+      />
+    );
 
   return (
     <UiProvider value={ui}>
-      <ErrorBoundary key={typeof page === 'object' ? 'approve' : page} text={{ title: ui.tr('app.failed'), restart: ui.tr('app.restart') }}>
+      <ErrorBoundary key={pageKey(page)} text={{ title: ui.tr('app.failed'), restart: ui.tr('app.restart') }}>
         {content}
       </ErrorBoundary>
     </UiProvider>
