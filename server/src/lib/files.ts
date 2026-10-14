@@ -5,7 +5,7 @@
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
@@ -25,6 +25,8 @@ export interface FileStore {
   /** A path with query (`/api/v1/files/<id>?e=…&s=…`), valid for `ttlS` seconds. */
   url(id: string, ttlS?: number): string;
   verify(id: string, e: string | undefined, s: string | undefined): boolean;
+  /** Deletes the files of this kind past their expiry, rows and bytes; how many. */
+  sweep(exec: Exec, kind: string): Promise<number>;
 }
 
 export function createFileStore(o: { dir: string; key: Buffer; clock: Clock }): FileStore {
@@ -53,6 +55,11 @@ export function createFileStore(o: { dir: string; key: Buffer; clock: Clock }): 
       const want = Buffer.from(sign(id, exp));
       const got = Buffer.from(s);
       return want.length === got.length && timingSafeEqual(want, got);
+    },
+    async sweep(exec, kind) {
+      const gone = await sql<{ path: string }>`delete from files where kind = ${kind} and expires_at < ${new Date(o.clock())} returning path`.execute(exec);
+      for (const f of gone.rows) await rm(join(o.dir, f.path), { force: true });
+      return gone.rows.length;
     },
   };
 }

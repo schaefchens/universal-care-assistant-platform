@@ -15,6 +15,7 @@
     "@fastify/websocket": "^11.3.4",
     "@ucap/identity": "*",
     "@ucap/shared": "*",
+    "@ucap/speech-text": "*",
     "fastify": "^5.12.7",
     "herde-project": "*",
     "intl-messageformat": "^12.1.3",

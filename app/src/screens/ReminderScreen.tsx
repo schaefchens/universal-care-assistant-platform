@@ -12,7 +12,16 @@ import { type Answer, answer, type Occurrence, reminders } from '../reminders/ap
 import { afterAnswer, promptOf, question, titleOf } from '../reminders/words.ts';
 import { useUi } from '../ui.tsx';
 
-export function ReminderScreen(p: { session: Session; occurrenceId: string; config: DeviceConfig; care: CareClient | null; onDone: () => void; onHelp: () => void }) {
+export function ReminderScreen(p: {
+  session: Session;
+  occurrenceId: string;
+  config: DeviceConfig;
+  care: CareClient | null;
+  /** The question in the person's voice for answers; the device voice when that one cannot speak. */
+  ask: (text: string) => void;
+  onDone: () => void;
+  onHelp: () => void;
+}) {
   const ui = useUi();
   const { tr, say } = ui;
   const [o, setO] = useState<Occurrence | null>(null);
@@ -31,7 +40,7 @@ export function ReminderScreen(p: { session: Session; occurrenceId: string; conf
           if (asked.current === `${x.id}:${x.prompts}`) return;
           asked.current = `${x.id}:${x.prompts}`;
           ui.earcons.play('screen');
-          say(question(tr, x), 'system');
+          p.ask(question(tr, x));
         },
         () => p.onDone(),
       );

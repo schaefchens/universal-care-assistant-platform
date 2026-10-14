@@ -7,9 +7,9 @@ An AI-powered assistive and care platform for disabled people and people who nee
 
 ## Status
 
-Milestone 1, step S6 done: identity and devices, people and permissions, help requests with helpers' browsers and the
-Android app's alarm, interactive reminders. Next: S7, providers and speech output. Departures from the plan are in
-[docs/decisions.md](docs/decisions.md).
+Milestone 1, step S7 done: identity and devices, people and permissions, help requests with helpers' browsers and the
+Android app's alarm, interactive reminders, speech providers and each person's voices. Next: S8, voice input and
+commands. Departures from the plan are in [docs/decisions.md](docs/decisions.md).
 
 ## Running the development stack
 
@@ -39,6 +39,11 @@ On a Mac the AI engines run natively beside Docker, because Docker cannot use th
 - **Ollama** (the app): language models.
 - **`services/stt-mlx`**: speech recognition.
 - **herde**: speech output, optional.
+
+Speech providers are set up by an administrator in the app (Einstellungen → KI und Stimmen verwalten): OpenAI's
+speech API or a local server that speaks it, ElevenLabs, and herde workers, joined with the command the page shows.
+Keys are stored encrypted and never shown again. A provider outside the server receives personal speech only when
+the page allows its data classes and the person agreed when choosing its voice.
 
 ## Licence
 

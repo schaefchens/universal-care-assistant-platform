@@ -4,13 +4,28 @@
  */
 import { hkdfSync } from 'node:crypto';
 import { createHerdeProject } from 'herde-project';
+import { createProviders } from '../ai/providers.ts';
+import { createSpeech } from '../ai/tts/service.ts';
+import { registerAuth } from '../core/auth.ts';
+import { ensureServerId } from '../core/server-info.ts';
+import { createIdentityService } from '../domain/identity/service.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Config } from '../lib/config.ts';
 import { type Db, ping } from '../lib/db.ts';
+import { createFileStore } from '../lib/files.ts';
 import { createHttp } from '../lib/http.ts';
-import { createJobRunner, type Handler } from '../lib/jobs.ts';
-import type { Secrets } from '../lib/secrets.ts';
+import { createJobRunner, enqueue, type Handler } from '../lib/jobs.ts';
+import { createSealer } from '../lib/sealed.ts';
+import { deriveKey, type Secrets } from '../lib/secrets.ts';
+import { registerAiAdminRoutes } from './routes/ai-admin.ts';
+import { registerSpeechRoutes } from './routes/speech.ts';
 import { createVoiceActivity } from './voice-activity.ts';
+
+/** How often speech providers are checked (their health on the admin pages; a failing one is not used). */
+const HEALTH_EVERY_MS = 15 * 60_000;
+
+/** How often speech clips past their week are deleted. */
+const SWEEP_EVERY_MS = 6 * 3_600_000;
 
 /** How often herde's housekeeping runs: lapsed leases, late tasks, old inputs (herde-project's README: every few seconds). */
 const HERDE_MAINTAIN_MS = 5_000;
@@ -24,9 +39,25 @@ async function reachable(url: string | null): Promise<boolean | null> {
   }
 }
 
-export async function buildAssistant(o: { config: Config; db: Db; clock: Clock; secrets: Secrets; logger?: boolean }) {
-  const app = createHttp(o.config, { logger: o.logger });
+export async function buildAssistant(o: {
+  config: Config;
+  db: Db;
+  clock: Clock;
+  secrets: Secrets;
+  logger?: boolean;
+  logStream?: { write(line: string): void };
+  /** Tests: the fetch that reaches fake speech providers. */
+  providerFetch?: typeof fetch;
+  claimTimeoutMs?: number;
+}) {
+  const app = createHttp(o.config, { logger: o.logger, logStream: o.logStream });
   const log = (msg: string) => app.log.warn(msg);
+  // The same sessions as core: the person's 15-minute token works on both processes.
+  const serverId = await ensureServerId(o.db);
+  const identity = createIdentityService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, serverId, publicOrigins: o.config.publicOrigins });
+  registerAuth(app, identity);
+  // Clips go to the shared files volume and are served by core: both sign URLs with the same derived key.
+  const files = createFileStore({ dir: o.config.filesDir, key: deriveKey(o.secrets.masterKey, 'files'), clock: o.clock });
 
   // herde's HMACs of worker keys and invites get their own key, derived from the pepper; like the pepper, it must
   // never change, or every joined worker has to join again.
@@ -43,8 +74,21 @@ export async function buildAssistant(o: { config: Config; db: Db; clock: Clock; 
   // Never behind a redirect, and outside UCAP's /api/v1 (herde treats a 3xx as a project error).
   await app.register(herde.routes, { prefix: '/api/worker/v2' });
   const voice = createVoiceActivity((active) => herde.setVoiceActivity(active));
+  const providers = createProviders({ db: o.db, clock: o.clock, sealer: createSealer(o.secrets.masterKey) });
+  const speech = createSpeech({ db: o.db, clock: o.clock, providers, herde, files, fetch: o.providerFetch, log, claimTimeoutMs: o.claimTimeoutMs });
+  registerSpeechRoutes(app, { speech, providers });
+  registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, herde, publicUrl: o.config.publicUrl });
 
-  const handlers: Record<string, Handler> = {};
+  const handlers: Record<string, Handler> = {
+    'providers.health': async () => {
+      await speech.checkHealth();
+      await enqueue(o.db, { queue: 'assistant', kind: 'providers.health', key: 'providers.health', runAt: o.clock() + HEALTH_EVERY_MS });
+    },
+    'speech.sweep': async () => {
+      await speech.sweep();
+      await enqueue(o.db, { queue: 'assistant', kind: 'speech.sweep', key: 'speech.sweep', runAt: o.clock() + SWEEP_EVERY_MS });
+    },
+  };
   const jobs = createJobRunner({ db: o.db, queue: 'assistant', handlers, clock: o.clock, log });
 
   app.get('/healthz', async () => ({ ok: true, service: 'assistant' }));
@@ -64,7 +108,13 @@ export async function buildAssistant(o: { config: Config; db: Db; clock: Clock; 
     herde,
     voice,
     jobs,
+    providers,
+    speech,
+    identity,
+    files,
     async start() {
+      await enqueue(o.db, { queue: 'assistant', kind: 'providers.health', key: 'providers.health', runAt: o.clock() + 60_000, onConflict: 'keep' });
+      await enqueue(o.db, { queue: 'assistant', kind: 'speech.sweep', key: 'speech.sweep', runAt: o.clock() + 120_000, onConflict: 'keep' });
       jobs.start();
       maintainTimer = setInterval(() => void herde.maintain().catch(() => log('herde maintain failed')), HERDE_MAINTAIN_MS);
     },

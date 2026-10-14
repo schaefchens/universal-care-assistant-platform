@@ -55,6 +55,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'speech-text',
+          root: 'packages/speech-text',
+          include: ['test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'repo',
           root: 'tools',
           include: ['test/**/*.test.ts'],

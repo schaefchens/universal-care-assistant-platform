@@ -243,3 +243,70 @@ then they stay as built, and nothing here is frozen.
 - In Maria's browser: Clara's reminders and answers ("Clara reported: taken"), a reminder made for Clara; left
   unanswered, it was missed after its last question, Maria heard "Clara has not answered the reminder …", and no
   help request was made.
+
+## S7: providers and speech output (2026-10-14)
+
+### To confirm
+
+1. **The device voice is the only fallback for speech.** Appendix A has `routing_rules` with "ordered chain of
+   explicit fallbacks". For speech, the person's chosen voice is the route: when it may not or cannot speak (no
+   consent, over the cap, failing, herde not claiming within 1.5 s), the device voice speaks, and the app says why
+   once per session. Speech never moves to another provider the person did not choose. Chains may come for speech
+   recognition and language models (S8, S9).
+2. **The first start offers one voice for both answers and reading aloud.** The owner: "this should be configurable
+   by users"; the plan: "Chosen during onboarding by listening to samples". The voice heard and taken at the first
+   start speaks both, as far as the operator allows it to; the settings page chooses them separately. The first
+   start is offered once per person, not per device: who has chosen (or said "Später", which keeps the device voice)
+   is not asked again on the next device.
+
+### Decided (within the plan)
+
+- **Consent is asked when an external voice is chosen**, for what that choice sends: answers (with reminder
+  questions) hold personal, communication and health data; reading aloud communication and personal data. The person
+  gives it on their own device, in the settings or, in large areas, at the first start; it is withdrawn in the
+  settings, and every voice that needed it goes back to the device voice. A sample needs none: its sentence is the
+  same for everyone.
+- **What the operator allows decides what a voice is offered for**: a voice whose provider may not receive all of a
+  purpose's data classes is not offered for it ("dafür nicht erlaubt"); one that may receive none is for listening
+  only.
+- **"On this server" and "on own machines" need an address there** (loopback, private, Tailscale's 100.64/10,
+  `host.docker.internal`, one-label and `.local`/`.lan`/`.internal` names). These locations skip the consent question,
+  so a misclicked location would otherwise send personal speech outside unasked. A provider pointed at another address
+  or location loses the consents given to it, and people are asked again.
+- **Reminder questions are said in the voice for answers**, rendered ahead for the next ten reminders. Help requests,
+  their announcements and system speech stay with the device voice.
+- **One adapter for OpenAI and local servers**: speaches with Piper voices or Kokoro speak OpenAI's speech API; on
+  this server or the operator's machines they need no consent.
+- **A provider refused for its key or its credits** (401, 402, 403, ElevenLabs below 500 characters left) is marked
+  failing and no longer offered until a check finds it working; a passing failure (timeout, 5xx) keeps it offered.
+  The admin page says why in words ("Guthaben aufgebraucht").
+- **Retries against stalls**: four seconds to the first byte, three attempts. Measured on 2026-10-14: OpenAI's
+  gpt-4o-mini-tts never answered six of ten requests while the others took one to two seconds; tts-1 answered five of
+  five, and the dev stack uses tts-1.
+- **Prices per 1000 characters in euros**, kept in millionths of a euro; caps per calendar month. A voice over its cap
+  is refused out loud, never replaced.
+- **herde: only the operator's own workers** (trust own, active, profile ok) get personal speech; a lender may say a
+  sample's fixed sentence. The admin page creates the invitation and shows `herde join …` once.
+- **The cache keeps a sentence in a voice for seven days** (Retention), keyed by a hash; older clips are deleted from
+  the database and the disk every six hours.
+
+### Measured on the emulator and in the browser
+
+- Clara (admin): the admin page listed OpenAI (working, 0.0016 € of 2.00 €) and ElevenLabs ("funktioniert nicht
+  (Guthaben aufgebraucht)", the free tier used up); "Prüfen" said the result; a herde invitation showed
+  `herde join http://localhost:8810/api/worker/v2 <code>`; a provider "on this server" without an address was refused
+  with the reason shown at the form.
+- Signed out and recovered with the English rendering of her words: the first start offered the device voice and the
+  four OpenAI voices (ElevenLabs hidden while failing); samples played (4 s), again from the cache; with her consent on
+  file, Onyx was taken for both purposes; without it, the consent question came in areas and Shimmer was taken after
+  "Ja, einverstanden" (consent recorded as given by Clara herself). Recovered again: not asked again. With no voice
+  chosen: "Später" kept the device voice and said where the voices are.
+- A reminder's question rendered ahead in Nova (two sentences, 0.66 ct) and played from the cache when it was due.
+- After the recovery: push registered for the new device; a help request reached Maria's device and was cancelled.
+- Settings: consent withdrawn (both voices back to the device voice); choosing an external voice asks in place, next
+  to the choice, focused.
+- Maria in Chrome: the voices listed, a sample played, the consent question asked in place, "Nein" gave the focus
+  back, "Ja, einverstanden" chose Alloy for reading; withdrawn again.
+- Still open: herde joined by the owner and a reminder spoken by Sohee (the fake herde worker passes the real
+  protocol in the tests); the admin page in a browser (needs an administrator signed in there).
+

@@ -56,6 +56,8 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 **Claude Code's tools**
 - Write and Edit decode `\uXXXX` escapes into literal characters. Copy files that contain them (`stt-eval/text.ts`, `phrases.ts`) with `cp`, or double the backslash.
 - `rm` with variable expansion is blocked: use literal paths.
+- There is no linter: the checks are `npm run typecheck` and `npm test`. `npx <name>` for a tool that is not
+  installed downloads whatever npm package has that name and runs it (`npx biome` once ran an unrelated old package).
 
 **Capacitor and Android**
 - Never `await` or return a Capacitor plugin object (it is a Proxy that answers `then`).

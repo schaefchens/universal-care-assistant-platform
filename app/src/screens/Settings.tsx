@@ -54,6 +54,9 @@ export function Settings(p: {
   onDevices: () => void;
   onPeople: () => void;
   onReminders: () => void;
+  onVoices: () => void;
+  /** Administrators only: providers, keys, usage, herde. */
+  onAiAdmin?: () => void;
   onNewWords: () => void;
   onClose: () => void;
   /** Sections that need the session or the native app: the alarm checklist, the help key. */
@@ -119,10 +122,20 @@ export function Settings(p: {
       </Section>
 
       <Section title={tr('settings.speech')}>
+        <Button className="button" onPress={p.onVoices}>
+          {tr('voices.title')}
+        </Button>
         <Choice label={tr('settings.language')} value={p.prefs.lang} options={['de', 'en'] as const} text={(v) => (v === 'de' ? 'Deutsch' : 'English')} onChange={(lang) => p.onPrefs({ ...p.prefs, lang })} />
         <Choice label={tr('settings.addressForm')} value={p.prefs.addressForm} options={['du', 'Sie'] as const} text={(v) => tr(`settings.addressForm.${v}`)} onChange={(addressForm) => p.onPrefs({ ...p.prefs, addressForm })} />
         <Range label={tr('settings.speechRate')} value={p.prefs.speechRate} min={0.5} max={2} step={0.1} format={(v) => `${v.toFixed(1)}×`} onChange={(speechRate) => p.onPrefs({ ...p.prefs, speechRate })} />
       </Section>
+      {p.onAiAdmin && (
+        <Section title={tr('admin.title')}>
+          <Button className="button" onPress={p.onAiAdmin}>
+            {tr('admin.open')}
+          </Button>
+        </Section>
+      )}
       {p.children}
     </main>
   );

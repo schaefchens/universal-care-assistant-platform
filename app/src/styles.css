@@ -448,6 +448,22 @@ body {
   background: var(--c-surface);
 }
 
+/* A question asked where the person acted (a consent before a voice is used): framed, and focused when it appears. */
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: max(2px, var(--border-px)) solid var(--c-focus);
+  border-radius: 0.75rem;
+  background: var(--c-surface);
+}
+
+.question h2 {
+  margin: 0;
+  font-size: calc(1.15rem * min(var(--text-scale), 1.6));
+}
+
 .device-name {
   margin: 0 0 0.25rem;
   font-size: calc(1.15rem * min(var(--text-scale), 1.6));
@@ -556,4 +572,15 @@ body {
 
 .checklist .advice .check-mark {
   color: var(--c-warn);
+}
+
+/* A command to copy (the herde invitation): monospace, wrapped, high contrast. */
+.command {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 0.75rem;
+  border: var(--border-px) solid var(--c-border);
+  background: var(--c-surface);
+  color: var(--c-text);
 }

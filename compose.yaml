@@ -80,6 +80,11 @@ services:
     <<: *node
     command: node --watch server/src/core/main.ts
     secrets: [master_key, pepper, ntfy_token]
+    # Speech clips and other files: written by the assistant, served by core (signed URLs).
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+      - ucap-files:/data/files
     environment:
       PORT: "8820"
       DATABASE_URL: postgres://ucap:ucap@db:5432/ucap
@@ -98,6 +103,10 @@ services:
     <<: *node
     command: node --watch server/src/assistant/main.ts
     secrets: [master_key, pepper, connectors_token]
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+      - ucap-files:/data/files
     environment:
       PORT: "8821"
       DATABASE_URL: postgres://ucap:ucap@db:5432/ucap
@@ -158,6 +167,7 @@ networks:
 
 volumes:
   pgdata:
+  ucap-files:
   ntfy-cache:
   node-modules:
   caddy-data:

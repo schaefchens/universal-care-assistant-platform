@@ -12,6 +12,7 @@ import type { DeviceConfig } from '@ucap/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type AssistiveMode, modeFrom, watchAssistive } from './a11y/assistive.ts';
 import { createEarcons } from './audio/earcons.ts';
+import { ClipPlayer, speakAs, voicesApi } from './audio/voices.ts';
 import { pickBackend, SpeechOut } from './audio/speech.ts';
 import { loadDeviceRef, type Me, Session } from './identity/account.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
@@ -37,7 +38,9 @@ import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
 import { NewWords } from './screens/NewWords.tsx';
 import { Onboarding } from './screens/Onboarding.tsx';
+import { AiAdmin } from './screens/AiAdmin.tsx';
 import { ReminderScreen } from './screens/ReminderScreen.tsx';
+import { VoiceIntro, VoicesPage } from './screens/Voices.tsx';
 import { RemindersPage } from './screens/Reminders.tsx';
 import { reminders as reminderApi } from './reminders/api.ts';
 import { syncDeviceAlarms as syncAlarms } from './reminders/sync.ts';
@@ -51,7 +54,22 @@ import { resolveTheme } from './theme/themes.ts';
 import { makeUi, UiProvider } from './ui.tsx';
 
 type RemindersOf = { id: string; displayName: string; canManage: boolean; canRead: boolean };
-type Page = 'areas' | 'settings' | 'devices' | 'newWords' | 'helpers' | 'care' | 'inbox' | 'reminders' | { approve: string } | { alert: string } | { reminder: string } | { remindersOf: RemindersOf };
+type Page =
+  | 'areas'
+  | 'settings'
+  | 'devices'
+  | 'newWords'
+  | 'helpers'
+  | 'care'
+  | 'inbox'
+  | 'reminders'
+  | 'voices'
+  | 'voiceIntro'
+  | 'aiAdmin'
+  | { approve: string }
+  | { alert: string }
+  | { reminder: string }
+  | { remindersOf: RemindersOf };
 const pageKey = (p: Page) => (typeof p === 'string' ? p : Object.keys(p)[0]!);
 /** Pages a due reminder does not interrupt: a help request in progress, a helper's alert. It waits for its next prompt. */
 const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p));
@@ -284,7 +302,27 @@ export function App() {
     };
   }, [session]);
 
-  const syncDeviceAlarms = (s: Session) => syncAlarms(s, (o) => promptOf(uiRef.current.tr, o), (o) => titleOf(uiRef.current.tr, o));
+  const player = useMemo(() => new ClipPlayer(), []);
+  /** Speech in the person's voice for this purpose, else the device voice (S7); never with a screen reader on. */
+  const speakVoice = (text: string, purpose: 'reply' | 'reading' | 'reminder') => {
+    if (!session) return uiRef.current.say(text, 'system');
+    void speakAs({ session, text, purpose, player, screenReader: assistive === 'screen-reader', notice: (reason) => uiRef.current.say(uiRef.current.tr(`voices.fallback.${reason}`), 'system') }).then(
+      (spoken) => !spoken && uiRef.current.say(text, 'system'),
+    );
+  };
+  const syncDeviceAlarms = async (s: Session) => {
+    const r = await syncAlarms(s, (o) => promptOf(uiRef.current.tr, o), (o) => titleOf(uiRef.current.tr, o));
+    // The questions of the next reminders, rendered ahead in the person's voice, so they need no waiting (S7).
+    void voicesApi(s)
+      .list(uiRef.current.lang)
+      .then(async ({ settings }) => {
+        if (settings.reply === 'device') return;
+        const { occurrences } = await reminderApi(s, s.ref.userId).upcoming();
+        for (const o of occurrences.slice(0, 10)) await voicesApi(s).render(`${uiRef.current.tr('reminder.announce', { title: titleOf(uiRef.current.tr, o) })} ${promptOf(uiRef.current.tr, o)}`, 'reminder', true).catch(() => {});
+      })
+      .catch(() => {});
+    return r;
+  };
 
   // Reminders ring on the device itself too (with the app closed, offline): its alarms follow the schedule. A local
   // alarm while the app is in front, and a tap on a reminder's notification, open its question here.
@@ -335,7 +373,7 @@ export function App() {
   useEffect(() => {
     if (!has('App')) return;
     const handle = CapApp.addListener('backButton', () => {
-      if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders') setPage('settings');
+      if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin') setPage('settings');
       else if (typeof page === 'object' && 'remindersOf' in page) setPage('helpers');
       else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
       else if (typeof page === 'object' || page === 'settings' || page === 'care' || page === 'inbox') setPage('areas');
@@ -466,6 +504,8 @@ export function App() {
           setNotice(null);
           setLinkInvite(null); // used: a later sign-out starts from the welcome screen
           setSession(s);
+          // The voices are offered by listening, once per person (S7); the screen steps aside if already chosen.
+          setPage('voiceIntro');
         }}
         onChangeServer={() => {
           saveServer(null);
@@ -487,6 +527,16 @@ export function App() {
         onClose={() => setPage('settings')}
       />
     );
+  else if (page === 'voices') content = <VoicesPage session={session} onClose={() => setPage('settings')} />;
+  else if (page === 'voiceIntro')
+    content = (
+      <VoiceIntro
+        session={session}
+        config={config}
+        onDone={() => setPage('areas')}
+      />
+    );
+  else if (page === 'aiAdmin' && me?.isAdmin) content = <AiAdmin session={session} onClose={() => setPage('settings')} />;
   else if (page === 'reminders')
     content = <RemindersPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} canManage canRead refresh={reminderRev} onClose={() => setPage('settings')} />;
   else if (typeof page === 'object' && 'remindersOf' in page)
@@ -502,7 +552,17 @@ export function App() {
       />
     );
   else if (typeof page === 'object' && 'reminder' in page)
-    content = <ReminderScreen session={session} occurrenceId={page.reminder} config={config} care={careRef.current} onDone={() => setPage('areas')} onHelp={() => setPage('care')} />;
+    content = (
+      <ReminderScreen
+        session={session}
+        occurrenceId={page.reminder}
+        config={config}
+        care={careRef.current}
+        ask={(text) => speakVoice(text, 'reminder')}
+        onDone={() => setPage('areas')}
+        onHelp={() => setPage('care')}
+      />
+    );
   else if (typeof page === 'object' && 'approve' in page) content = <Approve session={session} relationshipId={page.approve} config={config} onDone={() => setPage('helpers')} />;
   else if (typeof page === 'object') content = <HelperAlert session={session} requestId={page.alert} config={config} onDone={() => setPage('inbox')} />;
   else if (page === 'care' && careRef.current) content = <CareScreen care={careRef.current} state={careState} config={config} onHome={() => setPage('areas')} />;
@@ -540,6 +600,8 @@ export function App() {
         onDevices={() => setPage('devices')}
         onPeople={() => setPage('helpers')}
         onReminders={() => setPage('reminders')}
+        onVoices={() => setPage('voices')}
+        onAiAdmin={me?.isAdmin ? () => setPage('aiAdmin') : undefined}
         onNewWords={() => setPage('newWords')}
         onClose={() => setPage('areas')}
       >

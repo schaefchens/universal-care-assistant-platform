@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-const FORBIDDEN_DIRS = ['server/src/ai/', 'server/src/messaging/', 'server/src/assistant/', 'connectors/', 'packages/herde-project/'];
+const FORBIDDEN_DIRS = ['server/src/ai/', 'server/src/messaging/', 'server/src/assistant/', 'connectors/', 'packages/herde-project/', 'packages/speech-text/'];
 const FORBIDDEN_PACKAGES = ['herde-project', 'tdl', 'prebuilt-tdlib', 'openai', '@anthropic-ai/sdk', 'ollama', '@elevenlabs/elevenlabs-js'];
 
 const IMPORT = /(?:^|[\s;])(?:import|export)\s[^'"`]*?from\s*['"]([^'"]+)['"]|(?:^|[\s;(])import\s*\(\s*['"]([^'"]+)['"]\s*\)|^\s*import\s*['"]([^'"]+)['"]/gm;
