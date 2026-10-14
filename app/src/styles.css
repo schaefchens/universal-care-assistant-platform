@@ -516,3 +516,44 @@ body {
   flex-direction: column;
   gap: 0.35rem;
 }
+
+/* --- The helper's readiness checklist (care/AndroidPushSetup.tsx) ------------------------------------------- */
+
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.checklist li {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  gap: 0.25rem 0.5rem;
+  align-items: start;
+}
+
+.checklist li > .button {
+  grid-column: 2;
+  justify-self: start;
+}
+
+/* The state is also said in words (visually hidden for screen readers) and by the mark's shape: never colour alone. */
+.check-mark {
+  font-size: 1.4em;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.checklist .ok .check-mark {
+  color: var(--c-ok);
+}
+
+.checklist .missing .check-mark {
+  color: var(--c-danger);
+}
+
+.checklist .advice .check-mark {
+  color: var(--c-warn);
+}

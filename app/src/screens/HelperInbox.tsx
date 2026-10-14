@@ -24,8 +24,9 @@ export function HelperAlert(p: { session: Session; requestId: string; config: De
   useEffect(() => {
     void api.get(p.requestId).then(
       (x) => {
+        // Accepted from the alarm itself, or over: the inbox has its replies and "Erledigt".
+        if (x.status !== 'open') return p.onDone();
         setR(x);
-        if (x.status !== 'open') return;
         ui.earcons.play('care-press');
         say(`${tr('care.helper.alert', { person: x.person.displayName })}${x.unconfirmed ? ` ${tr('care.helper.unconfirmed')}` : ''}`, 'care');
         void api.act(x.id, 'seen', x.episode).catch(() => {});

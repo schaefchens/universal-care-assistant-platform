@@ -39,11 +39,12 @@ services:
       timeout: 3s
       retries: 30
 
-  # The UnifiedPush distributor for Android devices (measured in lookup: 6 of 6 alarms in deep Doze).
-  # S4 adds access control (only UCAP may publish); until then it listens on loopback only.
+  # The UnifiedPush distributor's server for Android devices (measured in lookup: 6 of 6 alarms in deep Doze).
+  # Only UCAP's server may publish (docker/ntfy-start.sh); phones subscribe to their own up* topics.
   ntfy:
     image: binwiederhier/ntfy:v2.29.0
-    command: serve
+    entrypoint: ["/bin/sh", "/etc/ucap/ntfy-start.sh"]
+    secrets: [ntfy_token]
     environment:
       NTFY_BASE_URL: ${NTFY_PUBLIC_URL:-http://localhost:8811}
       NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
@@ -55,6 +56,7 @@ services:
       - "127.0.0.1:8811:80"
     volumes:
       - ntfy-cache:/var/cache/ntfy
+      - ./docker/ntfy-start.sh:/etc/ucap/ntfy-start.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://localhost/v1/health | grep -q true"]
       interval: 5s
@@ -77,10 +79,13 @@ services:
   core:
     <<: *node
     command: node --watch server/src/core/main.ts
-    secrets: [master_key, pepper]
+    secrets: [master_key, pepper, ntfy_token]
     environment:
       PORT: "8820"
       DATABASE_URL: postgres://ucap:ucap@db:5432/ucap
+      # Phones get endpoints under the public address; core publishes to the same topics inside the network.
+      NTFY_PUBLIC_URL: ${NTFY_PUBLIC_URL:-http://localhost:8811}
+      NTFY_INTERNAL_URL: http://ntfy
     ports:
       - "127.0.0.1:8816:8820"
     healthcheck:
@@ -142,6 +147,8 @@ secrets:
     file: ${UCAP_SECRETS_DIR:?run npm run setup first}/pepper
   connectors_token:
     file: ${UCAP_SECRETS_DIR:?run npm run setup first}/connectors_token
+  ntfy_token:
+    file: ${UCAP_SECRETS_DIR:?run npm run setup first}/ntfy_token
 
 networks:
   default:

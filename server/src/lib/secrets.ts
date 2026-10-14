@@ -14,6 +14,8 @@ export interface Secrets {
   pepper: Uint8Array;
   /** Authenticates the connectors process to the assistant; absent in core. */
   connectorsToken: string | null;
+  /** Lets core publish to ntfy, which refuses everyone else (docker/ntfy-start.sh). Without it, UnifiedPush is off. */
+  ntfyToken?: string | null;
 }
 
 function readSecret(name: string): string | null {
@@ -39,6 +41,7 @@ export function loadSecrets(opts: { connectors: boolean }): Secrets {
     masterKey: new Uint8Array(masterKey),
     pepper: new Uint8Array(pepper),
     connectorsToken: opts.connectors ? required('connectors_token') : null,
+    ntfyToken: readSecret('ntfy_token'),
   };
 }
 

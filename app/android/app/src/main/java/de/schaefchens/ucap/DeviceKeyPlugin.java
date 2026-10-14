@@ -1,8 +1,8 @@
 package de.schaefchens.ucap;
 
+import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
-import android.security.keystore.StrongBoxUnavailableException;
 import android.util.Base64;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -11,8 +11,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
-import java.security.PrivateKey;
-import java.security.Signature;
 import java.security.cert.Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
@@ -28,13 +26,11 @@ import java.security.spec.ECGenParameterSpec;
  */
 @CapacitorPlugin(name = "DeviceKey")
 public class DeviceKeyPlugin extends Plugin {
-    private static final String ALIAS = "ucap-device-key-v1";
+    private static final String ALIAS = DeviceSigner.ALIAS;
     private static final int FLAGS = Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING;
 
     private static KeyStore store() throws Exception {
-        KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-        ks.load(null);
-        return ks;
+        return DeviceSigner.store();
     }
 
     private static void generate(boolean strongBox) throws Exception {
@@ -63,9 +59,11 @@ public class DeviceKeyPlugin extends Plugin {
             KeyStore ks = store();
             boolean created = false;
             if (!ks.containsAlias(ALIAS)) {
+                // StrongBox exists from Android 9; where it is missing or refuses, the Keystore's usual hardware.
                 try {
-                    generate(true);
-                } catch (StrongBoxUnavailableException e) {
+                    if (Build.VERSION.SDK_INT >= 28) generate(true);
+                    else generate(false);
+                } catch (Exception e) {
                     generate(false);
                 }
                 created = true;
@@ -100,16 +98,12 @@ public class DeviceKeyPlugin extends Plugin {
             return;
         }
         try {
-            KeyStore ks = store();
-            if (!ks.containsAlias(ALIAS)) {
+            if (!store().containsAlias(ALIAS)) {
                 call.reject("this device has no key", "no_key");
                 return;
             }
-            Signature sig = Signature.getInstance("SHA256withECDSA");
-            sig.initSign((PrivateKey) ks.getKey(ALIAS, null));
-            sig.update(Base64.decode(data, FLAGS));
             JSObject r = new JSObject();
-            r.put("signature", Base64.encodeToString(SigFormat.derToP1363(sig.sign()), FLAGS));
+            r.put("signature", Base64.encodeToString(DeviceSigner.signRaw(Base64.decode(data, FLAGS)), FLAGS));
             call.resolve(r);
         } catch (Exception e) {
             call.reject("signing failed", "sign_failed", e);

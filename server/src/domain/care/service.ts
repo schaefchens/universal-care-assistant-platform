@@ -123,18 +123,20 @@ export function createCareService(d: CareDeps) {
    *  push delivery where the device registered an endpoint (sent after commit by a job). */
   async function alert(trx: Trx, r: Row, helpers: string[], kind: 'care.alert' | 'care.update' | 'care.cancel' | 'care.watchdog', attempt = 1) {
     if (helpers.length === 0) return 0;
-    const devices = await sql<{ id: string; user_id: string; push: string | null }>`
-      select dv.id, dv.user_id, (select pe.kind from push_endpoints pe where pe.device_id = dv.id and pe.kind = 'webpush') as push
+    // One push channel per device: the app's UnifiedPush where it registered one, else the browser's Web Push.
+    const devices = await sql<{ id: string; user_id: string; push: 'webpush' | 'unifiedpush' | null }>`
+      select dv.id, dv.user_id,
+             (select pe.kind from push_endpoints pe where pe.device_id = dv.id order by (pe.kind = 'unifiedpush') desc limit 1) as push
       from devices dv where dv.user_id = any(${helpers}::uuid[]) and dv.revoked_at is null`.execute(trx);
     const expires = new Date(d.clock() + DELIVERY_TTL_S * 1000);
     for (const dev of devices.rows) {
-      for (const channel of dev.push ? (['ws', 'webpush'] as const) : (['ws'] as const)) {
+      for (const channel of dev.push ? (['ws', dev.push] as const) : (['ws'] as const)) {
         const id = uuidv7(d.clock());
         await sql`
           insert into deliveries (id, purpose, ref, episode, recipient, device_id, channel, kind, attempt, nonce_hash, status, created_at, expires_at)
           values (${id}, 'care', ${r.id}, ${r.episode}, ${dev.user_id}, ${dev.id}, ${channel}, ${kind}, ${attempt}, ${mac(d.pepper, 'delivery', nonceFor(id))},
                   'queued', ${now()}, ${expires})`.execute(trx);
-        if (channel === 'webpush') await enqueue(trx, { queue: 'core', kind: 'push.send', key: `push:${id}`, runAt: d.clock(), payload: { deliveryId: id }, maxAttempts: 4 });
+        if (channel !== 'ws') await enqueue(trx, { queue: 'core', kind: 'push.send', key: `push:${id}`, runAt: d.clock(), payload: { deliveryId: id }, maxAttempts: 4 });
       }
     }
     await emit(trx, { kind, recipients: helpers, payload: { requestId: r.id, episode: r.episode, personId: r.person_id } });
@@ -256,9 +258,11 @@ export function createCareService(d: CareDeps) {
     return userId === personId || (await d.people.can(userId, 'care.respond', personId));
   }
 
+  /** A helper's action on a request. The person is never a helper of their own request (I1: only a helper with
+   *  care.respond accepts), although `can` grants a person every scope for themselves. */
   async function forHelper(trx: Trx, id: string, helperId: string, episode: number) {
     const r = await lock(trx, id);
-    if (!r || !(await d.people.can(helperId, 'care.respond', r.person_id))) throw new AppError('not_found');
+    if (!r || helperId === r.person_id || !(await d.people.can(helperId, 'care.respond', r.person_id))) throw new AppError('not_found');
     if (r.episode !== episode) throw new AppError('conflict', { params: { reason: 'episode', episode: r.episode } });
     return r;
   }
@@ -533,9 +537,15 @@ export function createCareService(d: CareDeps) {
           returning id, ref, episode, recipient, device_id, purpose, kind`.execute(trx);
         for (const dl of r0.rows) {
           if (dl.purpose === 'heartbeat') await onHeartbeat?.(trx, dl.device_id);
+          // A test alarm's receipt goes back to whoever asked for it (the readiness checklist), nowhere else.
+          if (dl.purpose === 'test') await emit(trx, { kind: 'push.test', recipients: [dl.recipient], payload: { deliveryId: dl.id, silenced: o.silenced } });
           if (dl.purpose !== 'care' || !dl.ref || dl.kind !== 'care.alert') continue;
+          // Late (the phone got it after its time to live, so it showed it without ringing): the device is
+          // reachable, but nobody was alerted by it. Kept, not announced.
+          if (o.state?.late === true) continue;
           const r = await lock(trx, dl.ref);
-          if (!r || r.episode !== dl.episode) continue;
+          // A receipt that arrives after the request ended (a phone that was off for hours) is kept, not announced.
+          if (!r || r.episode !== dl.episode || (r.status !== 'open' && r.status !== 'accepted')) continue;
           const { tiers } = await tiersFor(trx, r);
           const first = await event(trx, r, 'delivered', { actor: dl.recipient, data: { device: dl.device_id, silenced: o.silenced, more: !r.exhausted && r.tier < tiers.length }, idem: `delivered:${r.id}:${r.episode}:${dl.recipient}` });
           if (o.silenced) await escalateIfTierOut(trx, r);
@@ -547,7 +557,9 @@ export function createCareService(d: CareDeps) {
     /** A push send failed for good or its endpoint is gone: the tier may now be out. */
     async pushFailed(deliveryId: string) {
       await d.db.transaction().execute(async (trx) => {
-        const dl = await sql<{ ref: string | null }>`update deliveries set status = 'push_failed' where id = ${deliveryId} and status in ('queued', 'sending') returning ref`.execute(trx);
+        const dl = await sql<{ ref: string | null; purpose: string; recipient: string }>`
+          update deliveries set status = 'push_failed' where id = ${deliveryId} and status in ('queued', 'sending') returning ref, purpose, recipient`.execute(trx);
+        if (dl.rows[0]?.purpose === 'test') await emit(trx, { kind: 'push.test', recipients: [dl.rows[0].recipient], payload: { deliveryId, failed: true } });
         const ref = dl.rows[0]?.ref;
         if (!ref) return;
         const r = await lock(trx, ref);

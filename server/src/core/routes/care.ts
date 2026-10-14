@@ -111,9 +111,12 @@ export function registerCareRoutes(
         params: ById,
         body: Type.Object({
           version: Type.Integer({ minimum: 0 }),
-          tiers: Type.Array(Type.Object({ waitS: Type.Integer({ minimum: 30, maximum: 3600 }), helpers: Type.Array(Uuid, { minItems: 1, maxItems: 20 }) }), { minItems: 1, maxItems: 6 }),
+          tiers: Type.Array(Type.Object({ waitS: Type.Integer({ minimum: 30, maximum: 3600 }), helpers: Type.Array(Uuid, { minItems: 1, maxItems: 20 }) }), { maxItems: 6 }),
           realertS: Type.Optional(Type.Integer({ minimum: 120, maximum: 3600 })),
           sosNumber: Type.Optional(Type.String({ pattern: '^[0-9+]{2,15}$' })),
+          phoneFallback: Type.Optional(
+            Type.Union([Type.Null(), Type.Object({ name: Type.String({ minLength: 1, maxLength: 40 }), number: Type.String({ pattern: '^\\+?[0-9]{3,15}$' }), direct: Type.Boolean() })]),
+          ),
         }),
       },
     },
@@ -125,19 +128,43 @@ export function registerCareRoutes(
     },
   );
 
-  // Push endpoints of the calling device.
-  app.put(
-    '/api/v1/devices/current/push-endpoints/webpush',
-    { preHandler: requireAuth, schema: { body: Type.Object({ endpoint: Type.String({ maxLength: 1000 }), keys: Type.Object({ p256dh: Type.String({ maxLength: 200 }), auth: Type.String({ maxLength: 100 }) }) }) } },
-    async (req, reply) => {
-      await o.push.register(auth(req).deviceId, 'webpush', req.body as { endpoint: string; keys: { p256dh: string; auth: string } });
-      return reply.code(204).send();
-    },
-  );
+  // Push endpoints of the calling device. A browser registers Web Push with its session; the app's native code
+  // registers UnifiedPush whenever the distributor hands it an endpoint, also while the app is closed, so it signs.
+  const Subscription = Type.Object({ endpoint: Type.String({ maxLength: 1000 }), keys: Type.Object({ p256dh: Type.String({ maxLength: 200 }), auth: Type.String({ maxLength: 100 }) }) });
+  type Sub = { endpoint: string; keys: { p256dh: string; auth: string } };
+  app.put('/api/v1/devices/current/push-endpoints/webpush', { preHandler: requireAuth, schema: { body: Subscription } }, async (req, reply) => {
+    await o.push.register(auth(req).deviceId, 'webpush', req.body as Sub);
+    return reply.code(204).send();
+  });
   app.delete('/api/v1/devices/current/push-endpoints/webpush', { preHandler: requireAuth }, async (req, reply) => {
     await o.push.unregister(auth(req).deviceId, 'webpush');
     return reply.code(204).send();
   });
+  app.put('/api/v1/devices/current/push-endpoints/unifiedpush', { preHandler: o.requireSigned, schema: { body: Subscription } }, async (req, reply) => {
+    await o.push.register(signed(req).deviceId, 'unifiedpush', req.body as Sub);
+    return reply.code(204).send();
+  });
+  app.delete('/api/v1/devices/current/push-endpoints/unifiedpush', { preHandler: o.requireSigned }, async (req, reply) => {
+    await o.push.unregister(signed(req).deviceId, 'unifiedpush');
+    return reply.code(204).send();
+  });
+
+  // A test alarm to this device, the readiness checklist's last step; its receipt comes back as the event push.test.
+  app.post('/api/v1/devices/current/push-test', { preHandler: requireAuth }, async (req) => o.push.test(auth(req).userId, auth(req).deviceId));
+
+  // "Annehmen" / "Kann nicht" on the alarm itself, sent by the app's native code without opening the app.
+  app.post(
+    '/api/v1/push/actions',
+    {
+      preHandler: o.requireSigned,
+      schema: { body: Type.Object({ rid: Uuid, ep: Type.Integer({ minimum: 1 }), action: Type.Union([Type.Literal('accept'), Type.Literal('decline')]) }) },
+    },
+    async (req, reply) => {
+      const b = req.body as { rid: string; ep: number; action: 'accept' | 'decline' };
+      await care[b.action](signed(req).userId, b.rid, b.ep);
+      return reply.code(204).send();
+    },
+  );
 
   app.get('/api/v1/push/vapid', async () => ({ publicKey: o.push.publicKey }));
 
@@ -154,7 +181,19 @@ export function registerCareRoutes(
           dlv: Uuid,
           n: Type.String({ minLength: 10, maxLength: 40 }),
           silenced: Type.Optional(Type.Boolean()),
-          state: Type.Optional(Type.Object({ permission: Type.Optional(Type.String({ maxLength: 20 })), dnd: Type.Optional(Type.String({ maxLength: 20 })) })),
+          // What made the device silent, if it was: operational facts only, for the helper's readiness view.
+          state: Type.Optional(
+            Type.Object(
+              {
+                permission: Type.Optional(Type.String({ maxLength: 20 })),
+                dnd: Type.Optional(Type.String({ maxLength: 20 })),
+                channel: Type.Optional(Type.String({ maxLength: 20 })),
+                volume: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 })),
+                late: Type.Optional(Type.Boolean()),
+              },
+              { additionalProperties: false },
+            ),
+          ),
         }),
       },
     },

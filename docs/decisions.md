@@ -127,3 +127,70 @@ then they stay as built, and nothing here is frozen.
 - **After a restart with an open request**, the person hears “Dein Hilferuf ist offen.”, then only what is new.
 - **Not tried live:** Web Push in a real browser needs the notification permission granted in that browser. The
   sending, encryption, receipts and heartbeats are tested against a fake push service and a simulated browser.
+
+## S5: help requests on Android (2026-10-14)
+
+### To confirm
+
+1. **JobScheduler instead of WorkManager.** The plan names WorkManager for the native retries of receipts and the
+   alarm's answers. WorkManager is not in the offline Gradle cache here, and the framework's JobScheduler does the
+   same job without a dependency. Measured on the emulator (Android 16): an ordinary job was still not run four
+   minutes after its 10 s backoff had passed. So the native outbox first tries again within the process (2, 4, 8,
+   15, 30, 60 s), and the job is expedited where Android has it (12+). An offline "Annehmen" reached the server
+   29 s after the tap, with the server back after 21 s.
+2. **No VAPID key at UnifiedPush registration.** The plan says "registration with VAPID". The server publishes only
+   to its own ntfy, with a token in the Authorization header; the token, not VAPID, is what lets it publish (ntfy's
+   access control). Measured with ntfy 2.29: a request with a VAPID header and no token is refused; with the token,
+   ntfy does not check VAPID at all. A key passed at registration would let a later ntfy start to require VAPID
+   while UCAP's pushes carry none, and alarms would stop.
+
+### Decided (within the plan)
+
+- **ntfy's access control as planned**, declared in docker/ntfy-start.sh: deny-all, everyone may read `up*`, the
+  `ucap` user (a token in the new secret `ntfy_token`, made by `npm run setup`) may only write `up*`. Checked against
+  the dev stack's ntfy in server/test/unifiedpush.test.ts (CR-20).
+- **Endpoints only on this server's ntfy.** An endpoint elsewhere is refused and the server named (the ntfy app starts
+  with ntfy.sh), so the checklist can say what to change. The server publishes to the same topic at ntfy's internal
+  address.
+- **The alarm over the lock screen is a native screen** (AlarmActivity), not the WebView: nothing of the app shows on
+  a locked phone. "Annehmen" asks Android to unlock first (on the notification itself from Android 12, through the
+  alarm screen before); "Kann nicht" works locked. After "Annehmen" the app opens at the inbox.
+- **A ringing alarm that changes state is removed and posted again on a quiet channel** ("Wird übermittelt…",
+  "Maria kümmert sich um den Hilferuf von Anna.", "Anna hat den Hilferuf abgebrochen."): certain to stop the sound.
+  Updates now say who took over (`st`, `by` in the encrypted payload).
+- **Late alarms:** ntfy keeps messages for hours, so a phone that was off can get an alarm long after it was sent. One
+  older than its time to live (15 min, plus a minute for clocks) is shown without sound, marked "verspätet
+  empfangen"; its receipt shows the device is reachable but is not told to the person.
+- **Silenced** means: notifications off, the alarm channel turned below "high", Do Not Disturb in total silence,
+  priority-only DND that lets neither alarms nor the channel through, or the alarm volume at zero. On the emulator:
+  total silence gave `delivered_silenced` and the request escalated. With the app open in front, its realtime
+  acknowledgement counts first: the app itself alerts with accessibility-usage sound.
+- **The person is never a helper of their own request** (I1). `can()` grants a person every scope for themselves; the
+  helper actions now refuse the person. This was open in S4 through the session routes too.
+- **The test alarm** rings like a real one (same channel and screen) with "Beenden", stops after a minute, and its
+  receipt comes back to the device that asked ("Der Test-Alarm ist angekommen, nach einer Sekunde.").
+- **The help key** may be any key that means nothing else: not the volume keys (TalkBack's shortcut), not the keys
+  that move between areas (arrows, Enter, Space, Tab, Escape, F1), not system keys, not keys that type. It is learned
+  by pressing it, works while the app is in front, and sends at once (source `key`).
+- **The phone fallback is part of the escalation plan** (Appendix A), set by the person on the Helfer page, kept on
+  the device for offline use. A3b comes 15 s after an unanswered press; the next activation of help calls, while the
+  press keeps being sent. Direct calls ask for Android's phone permission when they are chosen; an emergency number
+  always opens the dialler, without asking anything.
+- **A plan may name no tiers**: everyone with care.respond is then one tier, as without a plan. So a fallback can be
+  saved before tiers are.
+- **Not set up:** the setup and welcome screens say that no help request can leave this device yet, with "Notruf 112"
+  opening the dialler.
+
+### Measured on the emulator, and what is still open
+
+- Through the dev stack's real ntfy, with the phone's side simulated (tools/android/fake-distributor.ts, debug builds
+  only): alarm 180 ms after the press, native signed receipt accepted, insistent alarm on the alarm channel with
+  alarm-usage sound, the full-screen alarm waking the phone from sleep, "Kann nicht" and "Annehmen" from the
+  notification and the alarm screen, quiet updates on cancel and resolve, a push that did not decrypt dropped
+  (AN-14), the server's test alarm, the help key (learned, a reserved key refused, one press sends), A3b and the
+  dialler, A22 after the server came back, one request after a kill during an offline press (AN-05).
+- **Needs the ntfy app on the emulator** (a download from F-Droid, which the owner has not yet allowed): the real
+  distributor, its decryption, deep Doze (AN-01), standby buckets (AN-07).
+- **Needs a phone with a screen lock**: that "Annehmen" asks for the unlock (the emulator has no lock screen).
+- **Not yet run:** re-alerts two minutes apart are not quietened (AN-03, second half); `pm clear` (AN-06); the voice
+  data checks AN-13/AN-15 (the bundled clips come with S7).

@@ -5,6 +5,8 @@
  *   device: no session, no token renewal on the way. Retries back off 0, 1, 2, 4, 8 s, then every 10 s; A3 after
  *   5 s without an answer, a short A3 every minute after that. Nothing that implies the server has it is said before
  *   it answers (I2): then A2, or A22 when the press waited more than 30 s.
+ * - With a phone fallback set up (opt-in), A3b after 15 s offers a call; the next deliberate activation of help places
+ *   it, and the press keeps being sent meanwhile.
  * - What happens next comes from the server's events for the request, each said once, on the care channel (never
  *   cut by exploring): delivered (A4/A4b), seen (A5), accepted (A6), a helper's words (A7), declined or released
  *   (A8), the next tier (A9), nobody yet (A10), unreachable (A11), nobody set up (A11b), resolved (A12), cancelled.
@@ -12,6 +14,7 @@
  */
 import { uuidv7 } from '@ucap/shared';
 import type { DeviceRef, Session } from '../identity/account.ts';
+import type { PhoneFallback } from './phone.ts';
 import { ApiError } from '../net/api.ts';
 import { signedCall } from '../net/signed.ts';
 
@@ -90,7 +93,19 @@ function setAnnounced(id: string, eventId: number) {
 const BACKOFF_MS = [0, 1000, 2000, 4000, 8000];
 
 export class CareClient {
-  private readonly o: { ref: DeviceRef; session: Session; lang: string; tr: Tr; gesture: () => string; say: (text: string) => void; onState: (s: CareState) => void; onRevoked: () => void };
+  private readonly o: {
+    ref: DeviceRef;
+    session: Session;
+    lang: string;
+    tr: Tr;
+    gesture: () => string;
+    say: (text: string) => void;
+    onState: (s: CareState) => void;
+    onRevoked: () => void;
+    /** Whom to call without the server (A3b), if anyone. */
+    fallback?: () => PhoneFallback | null;
+    dial?: (f: PhoneFallback) => void;
+  };
   private pending: Pending | null = null;
   private request: CareView | null = null;
   private attempt = 0;
@@ -101,6 +116,9 @@ export class CareClient {
   private selfCancelled = new Set<string>();
   /** A3 five seconds after a press still unanswered, a short A3 every minute after that, whatever the network does. */
   private unsentTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A3b fifteen seconds after a press still unanswered; once said, the next activation of help calls. */
+  private callTimer: ReturnType<typeof setTimeout> | null = null;
+  private callOffered: PhoneFallback | null = null;
 
   constructor(o: CareClient['o']) {
     this.o = o;
@@ -118,18 +136,23 @@ export class CareClient {
   /** At start: an unsent press is sent again; an open request is picked up without repeating its old news. */
   async start() {
     this.pending = (await loadPending()) ?? null;
+    // A press left unsent is sent again; its answer (A2 or A22) speaks for the request, not the line below.
+    const resending = !!this.pending;
     if (this.pending) {
       this.remindUnsent(true);
+      this.offerCallLater();
       void this.send();
     }
     try {
       const r = await this.o.session.call<{ requests: CareView[] }>('/api/v1/care/requests?role=person');
       const cur = r.requests.find((x) => x.status === 'open' || x.status === 'accepted') ?? null;
       if (cur && lastAnnounced(cur.id) === null) setAnnounced(cur.id, Math.max(0, ...cur.events.map((e) => e.id)));
+      // The resend may have answered first and already holds the request.
+      if (this.request && cur?.id === this.request.id) return this.publish();
       this.request = cur;
       if (cur) {
         // After a restart: the person hears that their request is still open, then whatever is new.
-        if (!this.pending) this.o.say(this.o.tr('care.status.open'));
+        if (!resending) this.o.say(this.o.tr('care.status.open'));
         this.announceNew(cur);
       }
     } catch {
@@ -143,6 +166,29 @@ export class CareClient {
     if (this.timer) clearTimeout(this.timer);
     if (this.poller) clearInterval(this.poller);
     if (this.unsentTimer) clearTimeout(this.unsentTimer);
+    this.withdrawCall();
+  }
+
+  /** A3b: "Keine Verbindung zum Server. Tippe zweimal auf das Hilfe-Feld, um Maria anzurufen." */
+  private offerCallLater() {
+    this.withdrawCall();
+    const f = this.o.fallback?.();
+    if (!f || !this.o.dial || !this.pending) return;
+    this.callTimer = setTimeout(
+      () => {
+        if (!this.pending || this.stopped) return;
+        const g = this.o.gesture();
+        this.callOffered = f;
+        this.o.say(this.o.tr('care.A3b', { name: f.name, gesture: g.charAt(0).toLocaleUpperCase(this.o.lang) + g.slice(1) }));
+      },
+      Math.max(0, 15_000 - (Date.now() - this.pending.createdAt)),
+    );
+  }
+
+  private withdrawCall() {
+    if (this.callTimer) clearTimeout(this.callTimer);
+    this.callTimer = null;
+    this.callOffered = null;
   }
 
   private remindUnsent(first: boolean) {
@@ -164,12 +210,20 @@ export class CareClient {
 
   /** The help area, the help key, an exact phrase: one press. */
   async press(source: 'touch' | 'key' | 'voice_exact' | 'voice_confirmed' | 'voice_unconfirmed' | 'assistant' | 'reminder' = 'touch') {
+    if (this.pending && this.callOffered && this.o.dial) {
+      // A3b offered the call: this deliberate activation places it. The press itself keeps being sent.
+      const f = this.callOffered;
+      this.o.say(this.o.tr(f.direct ? 'care.calling.direct' : 'care.calling.dialer', { name: f.name }));
+      this.o.dial(f);
+      return;
+    }
     this.o.say(this.o.tr('care.A1'));
     if (this.pending) return; // still sending the first press: this one is the same request
     this.pending = { cid: uuidv7(), createdAt: Date.now(), source };
     await savePending(this.pending);
     this.attempt = 0;
     this.remindUnsent(true);
+    this.offerCallLater();
     this.publish();
     void this.send();
   }
@@ -187,6 +241,7 @@ export class CareClient {
       if (this.pending?.cid !== p.cid) return;
       this.pending = null;
       if (this.unsentTimer) clearTimeout(this.unsentTimer);
+      this.withdrawCall();
       await savePending(null);
       const delayMin = Math.round((Date.now() - p.createdAt) / 60_000);
       const first = r.coalesced ? (r.realerted ? 'care.A16' : 'care.A16b') : r.reopened ? 'care.reopened' : Date.now() - p.createdAt > 30_000 ? 'care.A22' : 'care.A2';
@@ -228,6 +283,7 @@ export class CareClient {
       await savePending(null);
       if (this.timer) clearTimeout(this.timer);
       if (this.unsentTimer) clearTimeout(this.unsentTimer);
+      this.withdrawCall();
       this.o.say(this.o.tr('care.A14b'));
       this.publish();
       return;

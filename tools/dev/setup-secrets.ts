@@ -5,7 +5,7 @@
  * - a new master key would make the stored provider and TDLib keys unreadable.
  * The values are never printed.
  */
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -19,11 +19,13 @@ if (!relative(REPO, dir).startsWith('..')) {
   process.exit(1);
 }
 
-/** 32 random bytes each. */
+/** 32 random bytes each; ntfy's token has ntfy's own format (tk_ and 29 lowercase letters or digits, about 150 bits). */
+const ALNUM = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const SECRETS: Record<string, () => string> = {
   master_key: () => randomBytes(32).toString('base64'),
   pepper: () => randomBytes(32).toString('base64'),
   connectors_token: () => randomBytes(32).toString('base64url'),
+  ntfy_token: () => 'tk_' + Array.from({ length: 29 }, () => ALNUM[randomInt(36)]).join(''),
 };
 
 mkdirSync(dir, { recursive: true, mode: 0o700 });

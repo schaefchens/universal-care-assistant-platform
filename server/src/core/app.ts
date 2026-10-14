@@ -58,7 +58,21 @@ export async function buildCore(o: {
   const requireSigned = createSignedCheck({ db: o.db, serverId, publicOrigins: o.config.publicOrigins });
   let jobsRef: { wake(): void } | null = null;
   const care = createCareService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, people, wake: () => jobsRef?.wake() });
-  const push = await createPush({ db: o.db, clock: o.clock, sealer: createSealer(o.secrets.masterKey), care, publicUrl: o.config.publicUrl, allowHosts: o.pushAllowHosts, fetch: o.pushFetch });
+  const ntfy = o.config.ntfyPublicUrl && o.config.ntfyInternalUrl && o.secrets.ntfyToken ? { publicUrl: o.config.ntfyPublicUrl, internalUrl: o.config.ntfyInternalUrl, token: o.secrets.ntfyToken } : null;
+  if (!ntfy) log('UnifiedPush is off: NTFY_PUBLIC_URL, NTFY_INTERNAL_URL or the ntfy_token secret is missing');
+  const push = await createPush({
+    db: o.db,
+    clock: o.clock,
+    sealer: createSealer(o.secrets.masterKey),
+    pepper: o.secrets.pepper,
+    care,
+    publicUrl: o.config.publicUrl,
+    ntfy,
+    allowHosts: o.pushAllowHosts,
+    fetch: o.pushFetch,
+    wake: () => jobsRef?.wake(),
+    log,
+  });
   const heartbeats = createHeartbeats({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, nonceFor: care.nonceFor });
   care.setHeartbeatHook((exec, deviceId) => heartbeats.answered(exec, deviceId));
   const hub = await registerRealtime(app, {

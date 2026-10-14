@@ -58,16 +58,17 @@ export function createHeartbeats(d: { db: Db; clock: Clock; pepper: Uint8Array; 
     /** The six-hourly round: a silent push to every helper device that has an endpoint. */
     async round() {
       await d.db.transaction().execute(async (trx) => {
-        const devices = await sql<{ id: string; user_id: string }>`
-          select distinct dv.id, dv.user_id from push_endpoints pe join devices dv on dv.id = pe.device_id and dv.revoked_at is null
+        // On the channel the device's alerts use: the app's UnifiedPush where it has one, else the browser's Web Push.
+        const devices = await sql<{ id: string; user_id: string; kind: string }>`
+          select distinct on (dv.id) dv.id, dv.user_id, pe.kind from push_endpoints pe join devices dv on dv.id = pe.device_id and dv.revoked_at is null
           join relationships rel on rel.helper_id = dv.user_id and rel.state = 'active'
           join grants g on g.relationship_id = rel.id and g.scope = 'care.respond' and g.revoked_at is null
-          where pe.kind = 'webpush'`.execute(trx);
+          order by dv.id, (pe.kind = 'unifiedpush') desc`.execute(trx);
         for (const dv of devices.rows) {
           const id = uuidv7(d.clock());
           await sql`
             insert into deliveries (id, purpose, recipient, device_id, channel, kind, nonce_hash, status, created_at, expires_at)
-            values (${id}, 'heartbeat', ${dv.user_id}, ${dv.id}, 'webpush', 'hb', ${mac(d.pepper, 'delivery', d.nonceFor(id))}, 'queued', ${now()},
+            values (${id}, 'heartbeat', ${dv.user_id}, ${dv.id}, ${dv.kind}, 'hb', ${mac(d.pepper, 'delivery', d.nonceFor(id))}, 'queued', ${now()},
                     ${new Date(d.clock() + HEARTBEAT_ANSWER_MS)})`.execute(trx);
           await sql`
             insert into device_health (device_id, hb_sent_at, updated_at) values (${dv.id}, ${now()}, ${now()})

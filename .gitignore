@@ -10,6 +10,9 @@ test-results/
 .env
 .env.*
 !.env.example
+# The owner's API keys for development (YouTube, OpenAI, …), kept locally.
+.secrets
+.secrets.*
 
 # Android build output and files that `cap sync` generates.
 app/android/.gradle/

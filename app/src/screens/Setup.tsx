@@ -4,6 +4,7 @@
  */
 import { type FormEvent, useState } from 'react';
 import { Button, FieldError, Form, Input, Label, TextField } from 'react-aria-components';
+import { call } from '../care/phone.ts';
 import { fetchServerInfo, normaliseServerUrl } from '../net/server.ts';
 import type { ServerRef } from '../state/store.ts';
 import { useUi } from '../ui.tsx';
@@ -51,6 +52,13 @@ export function Setup(p: { onConnected: (s: ServerRef) => void }) {
           {status.text ?? ''}
         </p>
       </Form>
+      {/* Not set up: no help request can leave this device yet (docs/plan.md, S5). */}
+      <section className="settings-section">
+        <p className="status warning">{tr('onboard.notSetUp', { sos: '112' })}</p>
+        <Button className="button" onPress={() => void call('112')}>
+          {tr('onboard.choice.sos', { sos: '112' })}
+        </Button>
+      </section>
     </main>
   );
 }

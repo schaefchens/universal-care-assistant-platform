@@ -88,8 +88,77 @@ export interface DeviceKeyPlugin {
   remove(): Promise<void>;
 }
 
+/** What decides whether this phone rings for a help request (the helper's readiness checklist). */
+export interface AlertsStatus {
+  /** An alarm now would go unheard (notifications off, channel turned down, total silence, alarm volume zero). */
+  silenced: boolean;
+  notifications: boolean;
+  permission: boolean;
+  channelImportance?: number;
+  channelBypassDnd?: boolean;
+  channelSound?: boolean;
+  dnd: 'off' | 'priority' | 'none' | 'alarms';
+  /** Percent of the alarm stream's maximum. */
+  alarmVolume: number;
+  fullScreen: boolean;
+  batteryExempt: boolean;
+  ntfyInstalled: boolean;
+  ntfyBatteryExempt: boolean;
+  callPhone: boolean;
+  distributors: string[];
+  distributor: string | null;
+  /** ntfy handed this app an endpoint. */
+  endpoint: boolean;
+  /** The server accepted it for this device. */
+  registered: boolean;
+  /** Why not: push_server (ntfy uses another server, errorServer), unifiedpush_off, registration_…, refused_<status>. */
+  error: string | null;
+  errorServer: string | null;
+  /** Pushes dropped because they did not decrypt (AN-14). */
+  dropped: number;
+  /** Signed requests waiting for a network. */
+  waiting: number;
+  sdk: number;
+}
+
+export type SettingsScreen = 'app' | 'channel' | 'fullscreen' | 'dnd' | 'battery' | 'ntfy';
+
+export interface AlertsPlugin {
+  /** Who this device is, for native code (receipts, the alarm's answers); `{}` when signed out. */
+  setRef(o: { serverUrl: string; serverId: string; deviceId: string; lang: string; form: string } | Record<string, never>): Promise<void>;
+  status(): Promise<AlertsStatus>;
+  requestNotifications(): Promise<{ granted: boolean }>;
+  /** UnifiedPush through ntfy; rejects with code no_distributor when ntfy is missing. */
+  registerPush(): Promise<{ distributor: string }>;
+  unregisterPush(): Promise<void>;
+  /** The alarm a request rings, on this phone only. */
+  testLocal(): Promise<void>;
+  /** The request an alarm opened the app for (a cold start), once; `after: 'accept'` when it was accepted there. */
+  takeOpened(): Promise<{ rid?: string; after?: 'accept' }>;
+  open(o: { what: SettingsScreen }): Promise<void>;
+  /** The phone permission for direct calls, asked when the person chooses them. */
+  requestCallPermission(): Promise<{ granted: boolean }>;
+  /** A call without the server: direct where allowed (asks for the permission once), else the dialler. */
+  call(o: { number: string; direct?: boolean }): Promise<{ direct: boolean }>;
+  addListener(event: 'opened', fn: (e: { rid: string; after?: 'accept' }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'action', fn: (e: { rid: string; action: string; result: 'ok' | 'refused' | 'expired' }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'push', fn: () => void): Promise<PluginListenerHandle>;
+}
+
+export interface KeysPlugin {
+  get(): Promise<{ code?: number; name?: string }>;
+  /** null removes the help key; a reserved key is refused (code `reserved`). */
+  setHelpKey(o: { code: number | null }): Promise<void>;
+  /** The next key pressed, never acted on; `reserved` says why it cannot be the help key. */
+  learn(): Promise<{ code: number; name: string; reserved?: 'volume' | 'navigation' | 'system' | 'typing' }>;
+  cancelLearn(): Promise<void>;
+  addListener(event: 'help', fn: (e: { code: number }) => void): Promise<PluginListenerHandle>;
+}
+
 export const Earcons = registerPlugin<EarconsPlugin>('Earcons');
 export const DeviceTts = registerPlugin<DeviceTtsPlugin>('DeviceTts');
 export const A11y = registerPlugin<A11yPlugin>('A11y');
 export const Info = registerPlugin<InfoPlugin>('Info');
 export const DeviceKey = registerPlugin<DeviceKeyPlugin>('DeviceKey');
+export const Alerts = registerPlugin<AlertsPlugin>('Alerts');
+export const Keys = registerPlugin<KeysPlugin>('Keys');

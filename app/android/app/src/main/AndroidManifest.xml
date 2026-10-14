@@ -28,6 +28,31 @@
 
         </activity>
 
+        <!-- The help alarm (docs/plan.md, S5): the full-screen alarm over the lock screen, native, outside the
+             WebView. -->
+        <activity
+            android:name=".AlarmActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <!-- UnifiedPush messages through ntfy. -->
+        <service android:name=".UpService" android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- Signed requests that wait for a network: receipts, the alarm's answers, endpoint registrations. -->
+        <service
+            android:name=".OutboxJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver android:name=".ActionReceiver" android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -43,4 +68,14 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- The help alarm: notifications (asked for in the helper's checklist), the full-screen alarm (a user grant on
+         Android 14+, a Play Console declaration), and keeping retries across a restart (JobScheduler, persisted). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- JobScheduler refuses a job that waits for a network without it (Android 14+). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The phone fallback (A3b): asked for only when the person chose direct calls; otherwise the dialler opens. -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
 </manifest>

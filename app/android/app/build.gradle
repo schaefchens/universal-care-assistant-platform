@@ -36,7 +36,12 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // UnifiedPush, with ntfy as the distributor (lookup/findings/android.md: 6 of 6 alarms in deep Doze). The
+    // connector decrypts RFC 8291 payloads itself (Tink).
+    implementation 'org.unifiedpush.android:connector:3.3.5'
     testImplementation "junit:junit:$junitVersion"
+    // The JVM's tests have no Android framework: org.json from Maven Central for reading the shared fixtures.
+    testImplementation 'org.json:json:20250517'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

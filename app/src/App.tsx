@@ -17,12 +17,15 @@ import { loadDeviceRef, type Me, Session } from './identity/account.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { CareClient, type CareState } from './care/client.ts';
 import { helperCare } from './care/helper.ts';
+import { AndroidPushSetup } from './care/AndroidPushSetup.tsx';
+import { call, loadFallbacks, refreshFallbacks } from './care/phone.ts';
 import { WebPushSetup } from './care/WebPushSetup.tsx';
 import { deviceKey, shareRefWithWorker } from './identity/device-key.ts';
 import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
-import { has, Info } from './native/plugins.ts';
+import { Alerts, has, Info, Keys } from './native/plugins.ts';
 import { ApiError } from './net/api.ts';
+import { emitAppEvent } from './net/events.ts';
 import { Realtime } from './net/realtime.ts';
 import { defaultServerUrl, fetchServerInfo } from './net/server.ts';
 import { AreaScreen } from './screens/AreaScreen.tsx';
@@ -30,6 +33,7 @@ import { Approve } from './screens/Approve.tsx';
 import { CareScreen } from './screens/CareScreen.tsx';
 import { HelperAlert, HelperInbox } from './screens/HelperInbox.tsx';
 import { Devices } from './screens/Devices.tsx';
+import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
 import { NewWords } from './screens/NewWords.tsx';
 import { Onboarding } from './screens/Onboarding.tsx';
@@ -169,6 +173,8 @@ export function App() {
             .then((r) => setIsHelper(r.asHelper.some((x) => x.state === 'active' && x.scopes.includes('care.respond'))), () => {});
         } else if (e.type.startsWith('care.')) {
           void careNews(e.type, e.data);
+        } else if (e.type === 'push.test') {
+          emitAppEvent(e.type, e.data);
         }
       },
       onRevoked: () => void session.forget().then(() => signedOut(ui.tr('devices.signedOut'))),
@@ -219,9 +225,14 @@ export function App() {
       say: (text) => uiRef.current.say(text, 'care'),
       onState: setCareState,
       onRevoked: () => void session.forget().then(() => signedOut(uiRef.current.tr('devices.signedOut'))),
+      // A3b: whom to call when the server cannot be reached, kept on the device.
+      fallback: () => loadFallbacks().phoneFallback,
+      dial: (f) => void call(f.number, f.direct),
     });
     careRef.current = care;
     void care.start();
+    // What the device needs when the server is out of reach (A3b), fetched while it is not.
+    void refreshFallbacks(session).catch(() => {});
     void people(session)
       .relationships()
       .then((r) => setIsHelper(r.asHelper.some((x) => x.state === 'active' && x.scopes.includes('care.respond'))), () => {});
@@ -235,6 +246,43 @@ export function App() {
   useEffect(() => {
     void shareRefWithWorker(session ? { ...session.ref, lang: prefs.lang } : null);
   }, [session, prefs.lang]);
+
+  // In the app, native code does: receipts and the alarm's answers go out with the app closed. Signed out, nothing
+  // may ring for this account any more.
+  useEffect(() => {
+    if (!has('Alerts')) return;
+    const r = session?.ref;
+    void Alerts.setRef(r ? { serverUrl: r.serverUrl, serverId: r.serverId, deviceId: r.deviceId, lang: prefs.lang, form: prefs.addressForm } : {}).catch(() => {});
+  }, [session, prefs.lang, prefs.addressForm]);
+
+  // An alarm opened the app (a tap on it, or "Annehmen" on the alarm screen): straight to that request. An answer
+  // given on the alarm itself refreshes the lists, and its request's screen gives way to the inbox.
+  useEffect(() => {
+    if (!has('Alerts') || !session) return;
+    // Accepted on the alarm already: the inbox, with the request's replies; otherwise the alert itself.
+    const open = (e: { rid?: string; after?: 'accept' }) => e.rid && setPage(e.after === 'accept' ? 'inbox' : { alert: e.rid });
+    void Alerts.takeOpened().then(open, () => {});
+    const opened = Alerts.addListener('opened', open);
+    const answered = Alerts.addListener('action', (e) => {
+      setCareRev((n) => n + 1);
+      if (e.result === 'ok') setPage((pg) => (typeof pg === 'object' && 'alert' in pg && pg.alert === e.rid ? 'inbox' : pg));
+    });
+    return () => {
+      void opened.then((h) => h.remove());
+      void answered.then((h) => h.remove());
+    };
+  }, [session]);
+
+  // The hardware help key: one press sends help at once (docs/plan.md, Appendix D: "The hardware help key and exact
+  // help phrases act at once").
+  useEffect(() => {
+    if (!has('Keys') || !session) return;
+    const h = Keys.addListener('help', () => {
+      void careRef.current?.press('key');
+      setPage('care');
+    });
+    return () => void h.then((x) => x.remove());
+  }, [session]);
 
   // A notification click opens the inbox (sw.ts), as does a link to #inbox.
   useEffect(() => {
@@ -382,6 +430,7 @@ export function App() {
     content = (
       <HelperInbox session={session} userId={session.ref.userId} refresh={careRev} onClose={() => setPage('areas')}>
         <WebPushSetup session={session} />
+        <AndroidPushSetup session={session} server={server} />
       </HelperInbox>
     );
   else if (page === 'newWords' && me)
@@ -412,7 +461,10 @@ export function App() {
         onPeople={() => setPage('helpers')}
         onNewWords={() => setPage('newWords')}
         onClose={() => setPage('areas')}
-      />
+      >
+        <HelpKeySetting />
+        <AndroidPushSetup session={session} server={server} />
+      </Settings>
     );
   else
     content = (

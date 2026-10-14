@@ -55,6 +55,8 @@ export function Settings(p: {
   onPeople: () => void;
   onNewWords: () => void;
   onClose: () => void;
+  /** Sections that need the session or the native app: the alarm checklist, the help key. */
+  children?: ReactNode;
 }) {
   const { tr } = useUi();
   const visual = (patch: Partial<VisualConfig>) => p.onConfig({ ...p.config, visual: { ...p.config.visual, ...patch } });
@@ -117,6 +119,7 @@ export function Settings(p: {
         <Choice label={tr('settings.addressForm')} value={p.prefs.addressForm} options={['du', 'Sie'] as const} text={(v) => tr(`settings.addressForm.${v}`)} onChange={(addressForm) => p.onPrefs({ ...p.prefs, addressForm })} />
         <Range label={tr('settings.speechRate')} value={p.prefs.speechRate} min={0.5} max={2} step={0.1} format={(v) => `${v.toFixed(1)}×`} onChange={(speechRate) => p.onPrefs({ ...p.prefs, speechRate })} />
       </Section>
+      {p.children}
     </main>
   );
 }

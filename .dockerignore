@@ -1,0 +1,12 @@
+# The build context never carries secrets or local state into an image.
+.secrets
+.secrets.*
+.env
+.env.*
+.git
+node_modules
+data
+app/android
+tools/wordlist/out
+services/stt-mlx/.venv
+services/stt-mlx/data

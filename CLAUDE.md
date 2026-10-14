@@ -65,5 +65,10 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - `CapacitorHttp` stays off. The native build uses a hash router.
 - A `setTimeout` can fire early: tick at `Math.max(scheduled, performance.now())`.
 - Android 15 silences notification bursts: one alarm per request, updated in place, re-alerts at least 120 s apart.
+- JobScheduler refuses a job with a network constraint unless the app holds `ACCESS_NETWORK_STATE` (Android 14+), and
+  an ordinary job can wait minutes after its backoff: expedite what a person waits for, and retry in-process first.
+- A full-screen alarm over the lock screen is a native activity (`showWhenLocked`), never the WebView.
+- ntfy 2.29 declares users, tokens and access in its environment (`NTFY_AUTH_*`); a VAPID `Authorization` header
+  without UCAP's token is refused, so the token goes in that header and no VAPID is sent to ntfy.
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.
 - `dl.google.com` needs the HTTP/2 relay on this network (`tools/google-maven-relay.ts`).

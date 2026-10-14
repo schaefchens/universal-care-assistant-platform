@@ -22,6 +22,8 @@ export default defineConfig({
     port: 8812,
     host: '127.0.0.1',
     strictPort: true,
+    // Vite serves files from the whole workspace; its default deny list plus the owner's local API keys.
+    fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '.secrets', '.secrets.*'] },
     // In the browser the app talks to the stack through Vite (same origin); the Capacitor app uses its server address.
     proxy: { '/api': { target: 'http://localhost:8810', ws: true } },
   },

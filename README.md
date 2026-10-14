@@ -7,7 +7,9 @@ An AI-powered assistive and care platform for disabled people and people who nee
 
 ## Status
 
-Milestone 1, step S0: repository, development stack, risk spikes.
+Milestone 1, step S5 done: identity and devices, people and permissions, help requests with helpers' browsers and the
+Android app's alarm. Next: S6, interactive reminders. Departures from the plan are in
+[docs/decisions.md](docs/decisions.md).
 
 ## Running the development stack
 
@@ -19,6 +21,18 @@ npm install
 docker compose up -d --wait   # Postgres, ntfy, Caddy, and the core, assistant and connectors processes
 curl -s localhost:8810/healthz
 npm test
+```
+
+`npm run setup` keeps existing secrets and adds missing ones: run it again after an update that needs a new one
+(S5 added `ntfy_token`, which lets the server publish alarms to ntfy).
+
+**The Android app** (emulator or USB phone, JDK 21, Android SDK):
+
+```sh
+sh tools/android/install.sh                    # build, install, adb reverse to the stack, start
+npm run test:android                           # the app's JVM unit tests
+node tools/android/fake-distributor.ts register  # without the ntfy app: stand in for it (debug builds)
+node tools/android/fake-distributor.ts forward 600
 ```
 
 On a Mac the AI engines run natively beside Docker, because Docker cannot use the GPU:

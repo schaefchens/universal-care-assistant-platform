@@ -10,6 +10,7 @@ import { DEFAULT_HELPER_SCOPES, hasMessage, M1_SCOPES, type Scope } from '@ucap/
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
+import { PhoneFallbackSetting } from '../care/PhoneFallbackSetting.tsx';
 import { ApiError } from '../net/api.ts';
 import { type AuditEvent, type Invitation, type InvitePreview, people, previewInvite, type Relationship } from '../people/api.ts';
 import { overviewSummary, scopeLabel } from '../people/summary.ts';
@@ -228,6 +229,8 @@ export function Helpers(p: { session: Session; server: ServerRef; onApprove: (re
           {tr('people.overview.read')}
         </Button>
       </section>
+
+      <PhoneFallbackSetting session={p.session} />
 
       <section className="settings-section">
         <h2>{tr('people.invite')}</h2>

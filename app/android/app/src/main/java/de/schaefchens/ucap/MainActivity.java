@@ -1,6 +1,7 @@
 package de.schaefchens.ucap;
 
 import android.os.Bundle;
+import android.view.KeyEvent;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -12,9 +13,18 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(A11yPlugin.class);
         registerPlugin(InfoPlugin.class);
         registerPlugin(DeviceKeyPlugin.class);
+        registerPlugin(AlertsPlugin.class);
+        registerPlugin(KeysPlugin.class);
         super.onCreate(savedInstanceState);
         // The app scales its own text (the person's setting times the system font scale, from the Info plugin).
         // A WebView that scaled it again would make text unpredictable, so its own zoom stays at 100 %.
         getBridge().getWebView().getSettings().setTextZoom(100);
+    }
+
+    /** The help key is read here, before the WebView or TalkBack's key handling in the page sees it. */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (KeysPlugin.onKey(event)) return true;
+        return super.dispatchKeyEvent(event);
     }
 }
