@@ -13,14 +13,15 @@
  * The device voice and herde come later (they need the emulator and a joined herde worker); the owner's listening
  * pass is the final check.
  *
- *   services/stt-mlx/run.sh &            # whisper on 127.0.0.1:8813
- *   node tools/wordlist/stt-check.ts     # writes tools/wordlist/out/stt.jsonl and stt-rejects.json
+ *   services/stt-mlx/run.sh &                    # whisper on 127.0.0.1:8813
+ *   node tools/wordlist/stt-check.ts             # writes tools/wordlist/out/stt.jsonl and stt-rejects.json
+ *   node tools/wordlist/stt-check.ts --rescore   # scores the stored transcripts again (after a rule change)
  */
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { COMMAND_WORDS } from './rules.ts';
+import { COMMAND_WORDS, levenshtein } from './rules.ts';
 
 const COMMANDS = new Set(COMMAND_WORDS);
 
@@ -41,16 +42,25 @@ export function normalise(s: string): string {
     .trim();
 }
 
-/** The same word heard in another spelling: compounds joined, c and k alike. */
-const folded = (s: string) => s.replace(/\s+/g, '').replace(/c(?!h)/g, 'k');
+/** The same word heard in another spelling: compounds joined, c and k alike, double letters single ("Amulet",
+ *  "A Bild", "Ale" are Amulett, Abbild, Allee). */
+const folded = (s: string) => s.replace(/\s+/g, '').replace(/c(?!h)/g, 'k').replace(/(.)\1+/g, '$1');
 
-/** What was heard after the carrier word "Wort" (whisper also writes it "Wot", "Vot", "What", or joins it on). */
+/** What was heard after the carrier word "Wort" (whisper also writes it "Wot", "Vot", "Watt", "Dot", "Gott", or
+ *  joins it on): a first word within two edits of "wort" is the carrier. */
 export function afterCarrier(text: string): string {
   const n = normalise(text);
   const [first, ...rest] = n.split(' ');
-  if (rest.length > 0 && /^(wort|wot|vot|wat|what|vort|wo|wart)$/.test(first!)) return rest.join(' ');
+  if (rest.length > 0 && levenshtein(first!, 'wort') <= 2) return rest.join(' ');
   if (n.startsWith('wort')) return n.slice(4).trim();
   return n;
+}
+
+/** How a word fared: heard as itself, as another list word or a command (a real confusion), or as something else. */
+export function score(word: string, heardText: string, listSet: ReadonlySet<string>): 'ok' | 'conflict' | 'flagged' {
+  const heard = afterCarrier(heardText);
+  if (folded(heard) === folded(word)) return 'ok';
+  return listSet.has(heard) || COMMANDS.has(heard) ? 'conflict' : 'flagged';
 }
 
 async function transcribe(wav: Uint8Array): Promise<string> {
@@ -62,7 +72,20 @@ async function transcribe(wav: Uint8Array): Promise<string> {
   return ((await res.json()) as { text: string }).text;
 }
 
-if (import.meta.main) {
+/** --rescore: score every stored transcript again with the current rules, and rewrite the rejects (no recording). */
+function rescore() {
+  const list = JSON.parse(readFileSync(new URL('../../packages/identity/wordlists/de-dev.json', import.meta.url), 'utf8')) as { words: string[] };
+  const listSet = new Set(list.words);
+  const rows = readFileSync(new URL('stt.jsonl', OUT), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as { word: string; heard: string });
+  const kept = new Set<string>(existsSync(new URL('stt-rejects.json', OUT)) ? (JSON.parse(readFileSync(new URL('stt-rejects.json', OUT), 'utf8')) as string[]) : []);
+  for (const r of rows) if (listSet.has(r.word) && score(r.word, r.heard, listSet) === 'conflict') kept.add(r.word);
+  const rejects = [...kept].sort();
+  writeFileSync(new URL('stt-rejects.json', OUT), JSON.stringify(rejects, null, 1) + '\n');
+  console.log(`rescored ${rows.length} transcripts: ${rejects.length} words rejected (${rejects.join(', ')})`);
+}
+
+if (import.meta.main && process.argv.includes('--rescore')) rescore();
+else if (import.meta.main) {
   mkdirSync(OUT, { recursive: true });
   const list = JSON.parse(readFileSync(new URL('../../packages/identity/wordlists/de-dev.json', import.meta.url), 'utf8')) as { words: string[] };
   const candidates = JSON.parse(readFileSync(new URL('candidates.json', OUT), 'utf8')) as string[];
@@ -87,9 +110,7 @@ if (import.meta.main) {
     const spoken = `Wort: ${word[0]!.toUpperCase()}${word.slice(1)}.`;
     execFileSync('say', ['-v', VOICE, '--data-format=LEI16@16000', '-o', wavPath, spoken]);
     const text = await transcribe(readFileSync(wavPath));
-    const heard = afterCarrier(text);
-    const other = folded(heard) !== folded(word) && (listSet.has(heard) || COMMANDS.has(heard));
-    const status = folded(heard) === folded(word) ? 'ok' : other ? 'conflict' : 'flagged';
+    const status = score(word, text, listSet);
     done.set(word, status !== 'conflict');
     appendFileSync(log, JSON.stringify({ word, status, ok: status !== 'conflict', heard: text.trim() }) + '\n');
     if (i % 100 === 0) console.log(`${i}/${words.length} checked, ${[...done.values()].filter((v) => !v).length} conflicts`);

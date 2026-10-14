@@ -9,7 +9,6 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.math.BigInteger;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.PrivateKey;
@@ -48,40 +47,13 @@ public class DeviceKeyPlugin extends Plugin {
         g.generateKeyPair();
     }
 
-    private static byte[] fixed32(BigInteger v) {
-        byte[] b = v.toByteArray();
-        byte[] out = new byte[32];
-        int n = Math.min(32, b.length);
-        System.arraycopy(b, b.length - n, out, 32 - n, n);
-        return out;
-    }
-
     private static JSObject jwk(ECPublicKey key) {
         JSObject j = new JSObject();
         j.put("kty", "EC");
         j.put("crv", "P-256");
-        j.put("x", Base64.encodeToString(fixed32(key.getW().getAffineX()), FLAGS));
-        j.put("y", Base64.encodeToString(fixed32(key.getW().getAffineY()), FLAGS));
+        j.put("x", Base64.encodeToString(SigFormat.fixed32(key.getW().getAffineX()), FLAGS));
+        j.put("y", Base64.encodeToString(SigFormat.fixed32(key.getW().getAffineY()), FLAGS));
         return j;
-    }
-
-    /** DER SEQUENCE { INTEGER r, INTEGER s } → r || s, each 32 bytes. */
-    static byte[] derToP1363(byte[] der) {
-        int i = 2;
-        if ((der[1] & 0x80) != 0) i = 2 + (der[1] & 0x7f);
-        if (der[i] != 0x02) throw new IllegalArgumentException("not a DER signature");
-        int rLen = der[i + 1];
-        byte[] r = new byte[rLen];
-        System.arraycopy(der, i + 2, r, 0, rLen);
-        int j = i + 2 + rLen;
-        if (der[j] != 0x02) throw new IllegalArgumentException("not a DER signature");
-        int sLen = der[j + 1];
-        byte[] s = new byte[sLen];
-        System.arraycopy(der, j + 2, s, 0, sLen);
-        byte[] out = new byte[64];
-        System.arraycopy(fixed32(new BigInteger(1, r)), 0, out, 0, 32);
-        System.arraycopy(fixed32(new BigInteger(1, s)), 0, out, 32, 32);
-        return out;
     }
 
     /** The key's public half as a JWK; creates the key first if this device has none. */
@@ -137,7 +109,7 @@ public class DeviceKeyPlugin extends Plugin {
             sig.initSign((PrivateKey) ks.getKey(ALIAS, null));
             sig.update(Base64.decode(data, FLAGS));
             JSObject r = new JSObject();
-            r.put("signature", Base64.encodeToString(derToP1363(sig.sign()), FLAGS));
+            r.put("signature", Base64.encodeToString(SigFormat.derToP1363(sig.sign()), FLAGS));
             call.resolve(r);
         } catch (Exception e) {
             call.reject("signing failed", "sign_failed", e);

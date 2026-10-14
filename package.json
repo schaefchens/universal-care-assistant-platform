@@ -14,7 +14,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tools && tsc -p app",
     "test": "vitest run",
     "test:docker": "docker compose run --rm --no-deps -e DATABASE_URL=postgres://ucap:ucap@db:5432/ucap_test core npm test",
-    "admin:invite": "docker compose exec core node server/src/cli.ts admin-invite"
+    "admin:invite": "docker compose exec core node server/src/cli.ts admin-invite",
+    "test:android": "sh tools/android/unit-test.sh"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",

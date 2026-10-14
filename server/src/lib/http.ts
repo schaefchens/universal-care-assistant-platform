@@ -14,13 +14,15 @@ import Fastify, { type FastifyInstance, LogController } from 'fastify';
 import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
 
-export function createHttp(config: Pick<Config, 'allowedOrigins' | 'logLevel'>, opts: { logger?: boolean } = {}) {
+export function createHttp(config: Pick<Config, 'allowedOrigins' | 'logLevel'>, opts: { logger?: boolean; logStream?: { write(line: string): void } } = {}) {
   const app = Fastify({
     logger:
       opts.logger === false
         ? false
         : {
             level: config.logLevel,
+            // Tests read what would be logged (ID-02: no recovery words in logs); production logs to stdout.
+            ...(opts.logStream ? { stream: opts.logStream } : {}),
             // Nothing of the request but its method and route pattern; the onResponse hook logs the rest.
             serializers: { req: (req) => ({ method: req.method, route: req.routeOptions?.url }), res: () => ({}) },
             redact: { paths: ['headers', 'body', 'query', 'params'], remove: true },

@@ -37,10 +37,18 @@ describe('identity and devices', () => {
   let core: Awaited<ReturnType<typeof buildCore>>;
   const clock = fakeClock();
   let srv: string;
+  // Every phrase this file makes, and everything the server logs: ID-02 looks for the words in both at the end.
+  const phrases: Uint8Array[] = [];
+  const logLines: string[] = [];
+  const newPhrase = () => {
+    const e = newEntropy();
+    phrases.push(e.slice());
+    return e;
+  };
 
   beforeAll(async () => {
     ({ db, drop } = await testDb());
-    core = await buildCore({ config: testConfig({ publicOrigins: [ORG] }), db, clock, secrets: SECRETS, logger: false });
+    core = await buildCore({ config: testConfig({ publicOrigins: [ORG] }), db, clock, secrets: SECRETS, logger: true, logStream: { write: (l) => void logLines.push(l) } });
     await core.app.ready();
     srv = core.serverId;
   });
@@ -63,7 +71,7 @@ describe('identity and devices', () => {
     return core.identity.createInvite(db, { kind: 'account', createdBy: null, grantsAdmin: o.admin ?? false, spoken: true });
   }
 
-  async function createAccount(code: string, entropy = newEntropy(), name = 'Anna') {
+  async function createAccount(code: string, entropy = newPhrase(), name = 'Anna') {
     const id = deriveIdentity(entropy);
     const dev = await deviceKey();
     const djkt = await thumbprint(dev.jwk);
@@ -181,7 +189,7 @@ describe('identity and devices', () => {
     expect(second.seq).toBeGreaterThan(0);
   });
   it('answers an unknown identity exactly as a bad proof (nobody learns who exists)', async () => {
-    const rec = await recover(newEntropy());
+    const rec = await recover(newPhrase());
     expect(rec.statusCode).toBe(401);
   });
 
@@ -249,7 +257,7 @@ describe('identity and devices', () => {
     const inv = await invite();
     const { r, entropy, id, ipk } = await createAccount(inv.code);
     const { token, userId } = r.json() as { token: string; userId: string };
-    const fresh = newEntropy();
+    const fresh = newPhrase();
     const next = deriveIdentity(fresh);
     const nextKey = b64url(next.publicKey);
     const ch = await challenge('identity.rotate', {}, token);
@@ -271,7 +279,7 @@ describe('identity and devices', () => {
     expect((await get('/api/v1/me', token)).json()).toMatchObject({ identityKey: ipk, recoveryState: 'unconfirmed', canReissue: true });
 
     const reissue = async (t: string, did: string) => {
-      const fresh = newEntropy();
+      const fresh = newPhrase();
       const next = deriveIdentity(fresh);
       const ch = await challenge('identity.reissue', {}, t);
       const payload = { srv, org: ORG, uid: userId, did, new_ipk: b64url(next.publicKey), nonce: ch.nonce };
@@ -305,5 +313,20 @@ describe('identity and devices', () => {
     const r = await post('/api/v1/admin/account-invites', { label: 'Mama' }, admin.token);
     expect(r.statusCode).toBe(201);
     expect(r.json()).toMatchObject({ code: expect.stringMatching(/^[0-9A-Z]{26}$/), spoken: expect.stringMatching(/^\d{10}$/) });
+  });
+  it('ID-02: no phrase made here appears in any table or in anything the server logged, in either rendering', async () => {
+    expect(phrases.length).toBeGreaterThan(10);
+    expect(logLines.length).toBeGreaterThan(10);
+    const tables = await sql<{ table_name: string }>`select table_name from information_schema.tables where table_schema = current_schema()`.execute(db);
+    let dump = '';
+    for (const t of tables.rows) dump += JSON.stringify((await sql`select * from ${sql.table(t.table_name)}`.execute(db)).rows);
+    const hay = (dump + logLines.join('\n')).toLowerCase();
+    for (const e of phrases)
+      for (const lang of ['de', 'en'] as const) {
+        const words = toWords(e, lang);
+        for (let i = 0; i + 2 < words.length; i++) expect(hay).not.toMatch(new RegExp(`${words[i]}\\W{1,3}${words[i + 1]}\\W{1,3}${words[i + 2]}`));
+        expect(hay).not.toContain(Buffer.from(e).toString('hex'));
+        expect(hay).not.toContain(Buffer.from(e).toString('base64url'));
+      }
   });
 });

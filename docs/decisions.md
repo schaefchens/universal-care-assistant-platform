@@ -44,10 +44,23 @@ then they stay as built, and nothing here is frozen.
      “suspicious” and not dropped, because shopping lists contain many nouns. But 9 of 12 words leave only about
      2³³ possibilities, which a computer can search. Should a suspicious transcript also be dropped (and the person
      warned), at the cost of some shopping-list notes? This matters from S8 on.
-7. **The German list needs a stricter pass before your listening review.** The speech check and the first real
-   ceremonies showed words that break the plan's “concrete, familiar nouns”: *jetzt* (not a noun), *Gebote*
-   (plural; religion), *Kunz* (a name), *Wesir* (unfamiliar). The next build requires every word to be a singular
-   noun from the German noun list and common in the frequency list.
+7. **The German list was rebuilt stricter, with a new source and a reading by Claude** (714 of 2048 words changed).
+   - Why: the speech check and the first ceremonies showed words that break the plan's “concrete, familiar nouns”:
+     *jetzt* (not a noun), *Gebote* (plural; religion), *Kunz* (a name), *Wesir* (unfamiliar).
+   - Now every word is a singular noun with a grammatical gender in Wiktionary's noun list. Words come in tiers:
+     1. curated (the BIP39 proposals, and dys2p's German lists, Unlicense/CC0) and common (in the 50 000 most
+        frequent words): 1469;
+     2. curated but rarer (Dattel, Saite, Windrad): 418;
+     3. Wiktionary alone, only words Claude read and found fit (`REVIEWED_FILL`): 161. That pool is mostly names,
+        English, slang and slurs, so nothing from it enters unread.
+   - Claude read all 2048 and excluded, by category in `tools/wordlist/rules.ts`: illness and the body's organs,
+     death, violence, military, legal and crime, religion, politics, sexual, alcohol, money, gambling, ethnic and
+     national groups, names, places, English, negative feelings, function words (das Jetzt, das Bitte), unfamiliar
+     jargon, and words UCAP's own sentences use (weekdays, months, minutes and hours, Notiz, Antwort, Konto,
+     Telefon, Server).
+   - To confirm: the exclusion of time words (*Montag*, *Juni*, *Minute*) is Claude's addition. It keeps reminder
+     readbacks (“Erinnerung gespeichert: Dienstag, …”) apart from recovery words.
+   - Development accounts made with the old German list can still recover with the English rendering.
 
 ### Decided (within the plan)
 

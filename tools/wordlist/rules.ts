@@ -121,12 +121,91 @@ export const DENIED_GERMAN: Record<string, string[]> = {
   english: list(`daddy madame sergeant penny german meeting website timing shuttle outfit league empire rover stalker scooter twitter selfie hacker lobby flirt hippie popcorn bikini logo treff tipp flyer cowboy mylord mylady teenager`),
   abstract: list(`fehler befehl ahnung idee gesetz beweis risiko hoheit urteil antrag irrtum gerede wesen dreck unfug unsinn quatsch unrecht zweifel pflicht flucht absicht vernunft unschuld furcht`),
   care: list(`helfer helferin pflegerin betreuer notarzt rettung retter`),
+  // From reading the selected words (2026-10-14): what the categories above missed.
+  reviewedIllness: list(`abstrich apotheke asbest attest bahre bettruhe bruch diagnose doktor eingriff gicht hospiz mumps pickel
+    radon uran vene sarkom ekzem agonie blessur zerrung reizung fetus sehtest dioptrie chirurg zahnarzt toilette
+    gehirn hirn milz galle gelenk knochen knorpel schlund gurgel vene achsel wanst parasit made wanze milbe schimmel
+    reblaus fungizid pestizid endlager unfall aufprall wrack zerfall erbfolge trost abschied ewigkeit`),
+  reviewedViolence: list(`attacke duell eroberer fehde feind haudegen krawall randale salve untat untier pogrom bestie tumult
+    machete degen keule lunte visier werfer knarre geisel gangster treffer albtraum`),
+  military: list(`division festung fregatte garde kaserne kader konvoi offizier rekrut sold tarnung wehr admiral
+    leutnant husar obrist besatzer vasall hiwi`),
+  legal: list(`alibi indiz insasse justiz kartell kaution kerker klage pranger richter revier spion pirat delikt doping
+    kumpan polizist`),
+  reviewedReligion: list(`abtei frevel gnade hexerei karma predigt prophet seher hostie mesner eremit gnosis allmacht abgott
+    dogma kibbuz kadi messe glauben gloria reverend apsis empore`),
+  reviewedPolitics: list(`allianz blockade exil imperium mandat mehrheit patriot protest rebell senat streik volk wahltag
+    annexion emirat enklave populist neuwahl vormacht votum plenum amtseid obmann obfrau dementi kampagne`),
+  reviewedSexual: list(`eskorte harem lust trieb einehe ehebett unlust erguss abart`),
+  alcohol: list(`fusel pulle sprit trunk umtrunk eiswein riesling rebstock winzer`),
+  negative: list(`arroganz bosheit desaster disput faulheit feigheit fiasko fratze frust gehabe gehorsam geiz getue
+    habgier ignoranz krise meute misere mitleid obdach obhut panik qual reue ruine skandal skrupel
+    spott stuss torheit tribut zumutung zwang zwist zoff missmut undank unart habsucht wehmut hemmung
+    raumnot manko murks pfusch nepp eklat tirade polemik mahner mief abweg irrweg exzess fron fimmel heimweh zucht
+    dummheit jammer wahnsinn benimm`),
+  reviewedInsult: list(`bengel lakai knecht mieze weib zwerg bonze emanze knilch popanz mutant troll tussi fotze muschi
+    pinkeln hintern blonde`),
+  reviewedMoney: list(`anleihe defizit dollar zaster teuerung tilgung zinssatz tantieme kasko entgelt mitgift`),
+  gambling: list(`lotto poker kasino bingo roulette`),
+  people: list(`inder asiat balte iberer osmane slawe sorbe kreole inka jeside sunnit gaucho fakir exot`),
+  names: list(`lutz merlin knigge benjamin chan devon esther ethan jean lori marge quentin robinson sharon steven
+    stuart tara amber iris fischer braun`),
+  places: list(`taunus pfalz mosel attika`),
+  englishMore: list(`freak baseball darling farmer football look porter queen show adieu bravo`),
+  functionWord: list(`jetzt bitte morgen daheim niemand quere pardon hallo etwas selbst sowieso trotz voraus dunkel gelb
+    perfekt extrem negativ leisten opfern gefallen achtung vorsicht hinsicht zeug fremde heil
+    vize expo furore usus nimbus`),
+  unfamiliar: list(`axiom binom tupel torus sinus suffix dativ kasus valenz semantik didaktik gradient entropie isotop
+    neutrino anion anode dipol diode argon barium butan mangan xenon sulfat nitrat dioxid epoxid bauxit kilovolt okular
+    pleuel unwucht unruh lunker trias tonika umbra sept terz walart wulst asket oktagon kescher legat vogt aspirant
+    eloquenz opulenz vehemenz evidenz vakanz unwort sozius wams teeei pneu bonmot floskel abkehr talg`),
+  reviewedDys2p: list(`aberwitz abgrund achtzehn neunzehn sechzehn vierzehn drittel aderlass advent affront ahndung
+    alias alptraum amnesie anarchie andacht anstalt argwohn askese attentat aufstand ausbruch axthieb baldrian
+    beige blau beihilfe bierkrug portwein weinberg bosse boxkampf chatbot delirium depesche dietrich dissens
+    duldung ehebruch ehekrise elend embargo endkampf endzeit erzfeind event feigling gehhilfe gejohle
+    gespenst gezeter glamour grabmal hautarzt leibarzt havarie hehlerei hemmnis heute ignorant
+    infusion inbrunst invalide irrsinn juckreiz kerbholz kniefall konflikt konkurs kopfweh krampf leumund
+    lithium manifest mutation nahkampf neider notdurft notlage notnagel ozonloch paranoia periode pritsche radau
+    regress rhodium salbe sammeln sehkraft sintflut stottern subjekt therapie tief ungnade unhold unruhe unsitte
+    unzucht verdacht verruf vormund vorwurf wallung warnung wollust zinslast stecken abschaum aktiv barbie earl
+    einstein eminenz jeep junkie kacke khan leichter loser mailbox mandant neue nichts wehe wenn spass`),
+  reviewedFinal: list(`autist amme indio semit gote ethnie hetzer hexer macho dezernat fiskus fistel lunge kehle hornhaut
+    pore pupille augapfel sekret spucke unrat mist gelage weinfest kopftuch kutte segen tribun patron sexte kuli
+    mietzins rendite haftung amtszeit unmut unding star zehner mahnmal trage harpune beil bollwerk lager abmarsch
+    oheim turban`),
+  // Words UCAP itself says or asks for: a recovery word must never sound like part of the app's own sentences
+  // (reminder readbacks name weekdays, months and times; the areas are called Notizen, Antworten, …).
+  ucapWords: list(`hinweis meldung anfrage zugriff zustand nummer ziffer obacht single
+    konto adresse parole vorname passwort kontakt server telefon notiz antwort anruf seite sprache karte
+    feld liste termin kalender minute sekunde stunde montag dienstag mittwoch
+    donnerstag freitag samstag sonntag januar februar marz maerz april juni juli august september oktober november
+    dezember`),
   command: list(`hilfe helfen hilferuf notruf notfall stopp stop halt nein senden zuruck zurueck abbrechen lauter leiser
     leise uhrzeit wiederholen nochmal erledigt spater spaeter ende weiter stimme ruhe help yes cancel back repeat
     louder quieter`),
 };
 
 export const ALL_DENIED = new Set(Object.values(DENIED_GERMAN).flat());
+
+/**
+ * Nouns from Wiktionary alone (tier 3 in build.ts) that were read and found fit: concrete or familiar, neutral, no
+ * name, brand or slang. Only these may fill the list after the curated pools; the rest of that pool is unread or
+ * unfit (it brings names, slurs and worse). Reviewed 2026-10-14.
+ */
+export const REVIEWED_FILL = new Set(
+  list(`richtung stimmung sieger herzog butler kaugummi greif delta routine wurmloch premiere portal maestro ballett
+    seemann kristall sportler kritiker jackett kutscher tournee kolumne pfennig souvenir espresso artefakt shampoo
+    splitter lasagne billard omega talisman traktor buffet flicken auffahrt brocken umlauf anhalter jojo chefkoch
+    journal seufzer klaue karo jasmin dukaten tapete steward banjo refrain jukebox overall krimi polier drogerie
+    eiskrem peperoni pfeiler omelette maroni oldtimer zeichner tanker opossum fiedler winzling mechanik ringer taifun
+    lakritze einlass hazienda blazer baufirma risotto rosmarin kimono dramatik darts paella trichter innenhof kotelett
+    smaragd plausch entlein foxtrott ostseite kaschmir baguette oktopus maisfeld griffel toga bongo klecks oregano
+    periskop finesse sinfonie anrichte falafel alfalfa lolli bouquet zobel seeluft tutu farmhaus gaukler gabelung
+    geologie drops azur kohlkopf mahagoni heilbutt trilogie gazpacho beiboot lemur anchovis nautilus leckerli
+    tunfisch revers rebhuhn looping chalet astronom akrobat kosename pistazie sombrero tiramisu baklava brummer
+    serenade magenta seezunge tipi bravour zickzack kilt durchzug heuboden kricket tiara molkerei tamtam refugium
+    fechter impala anatomie kappa blende jogger kebab eismann kontext barbier tatkraft hommage skunk tarantel`),
+);
 
 /** UCAP's commands and help words: a recovery word within one edit of them is refused (spoken words get confused). */
 export const COMMAND_WORDS = DENIED_GERMAN.command!;
@@ -137,6 +216,8 @@ export function plainSpelling(word: string): boolean {
 }
 
 export type Rejection =
+  | 'not_a_noun'
+  | 'unreviewed'
   | 'not_a_to_z'
   | 'foreign_spelling'
   | 'length'

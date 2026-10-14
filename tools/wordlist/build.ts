@@ -1,7 +1,7 @@
 /**
  * Builds UCAP's German recovery-word list from candidate pools (docs/plan.md, "The German wordlist", steps 1–2):
- * the German lists proposed for BIP39 (bitcoin/bips PR #721, and the Cryptocalc list behind PR #1921), used only as
- * pools. The rules (rules.ts) pick the words; speech recognition checks them next (stt-check.ts); the owner's
+ * the German lists proposed for BIP39 (bitcoin/bips PR #721, the Cryptocalc list behind PR #1921, dys2p's lists),
+ * used only as pools; every word must also be a common singular noun in Wiktionary. The rules (rules.ts) pick the words; speech recognition checks them next (stt-check.ts); the owner's
  * listening pass decides; then the list is frozen.
  *
  *   node tools/wordlist/build.ts            # writes tools/wordlist/out/{candidates,report}.json
@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { wordlist as english } from '@scure/bip39/wordlists/english.js';
-import { checkWord, conflict, koelner, type Rejection } from './rules.ts';
+import { checkWord, conflict, koelner, type Rejection, REVIEWED_FILL } from './rules.ts';
 
 const DIR = new URL('./', import.meta.url);
 const SOURCES = new URL('data/sources/', DIR);
@@ -63,9 +63,10 @@ function frequencyRanks(): Map<string, number> {
   return ranks;
 }
 
-/** Common nouns only: Wiktionary entries tagged exactly "Substantiv" (no places, names, abbreviations), and only
- *  those among the 40 000 most common words, so the list stays with familiar words. */
-const COMMON_RANK = 40_000;
+/** Common nouns only: Wiktionary entries tagged exactly "Substantiv" (no places, names, abbreviations), in their
+ *  singular form (the lemma), with a grammatical gender, and only those among the 50 000 most common words (the
+ *  whole frequency list), so the list stays with familiar words. Every word of the list must be one of these. */
+const COMMON_RANK = 50_000;
 
 const POOLS: Pool[] = [
   {
@@ -82,27 +83,40 @@ const POOLS: Pool[] = [
     parse: (t) => [...t.matchAll(/"([^"\n]{2,30})"/g)].map((m) => m[1]!.trim()),
   },
   {
+    // dys2p's German lists (Unlicense, CC0 or BSD-3): made for BIP39 (2048) and Diceware (7776), base forms, no
+    // names, places, religions or strongly negative words. They hold verbs and adjectives too; only nouns are used.
+    name: 'dys2p-2048',
+    url: 'https://raw.githubusercontent.com/dys2p/wordlists-de/6ef31b9aefb8735a7b066592393d12843ec502cd/de-2048-v1.txt',
+    file: 'dys2p/de-2048-v1.txt',
+    parse: (t) => t.split(/\r?\n/).map((w) => w.trim()).filter(Boolean),
+  },
+  {
+    name: 'dys2p-7776',
+    url: 'https://raw.githubusercontent.com/dys2p/wordlists-de/6ef31b9aefb8735a7b066592393d12843ec502cd/de-7776-v1.txt',
+    file: 'dys2p/de-7776-v1.txt',
+    parse: (t) => t.split(/\r?\n/).map((w) => w.trim()).filter(Boolean),
+  },
+  {
     name: 'wiktionary-nouns',
     url: 'https://raw.githubusercontent.com/gambolputty/german-nouns/main/german_nouns/nouns.csv',
     file: 'german-nouns.csv',
     parse: (t) => {
-      const ranks = frequencyRanks();
       const out: string[] = [];
       const lines = t.split(/\r?\n/);
       const header = csvFields(lines[0]!);
-      const genusAt = header.indexOf('genus');
+      // Nouns with two genders (der/das Bonbon) keep them in "genus 1", "genus 2", …
+      const genusAt = ['genus', 'genus 1', 'genus 2', 'genus 3', 'genus 4'].map((c) => header.indexOf(c)).filter((i) => i >= 0);
       for (const line of lines.slice(1)) {
         const f = csvFields(line);
         const [lemma, pos] = f;
-        const genus = f[genusAt];
-        if (!lemma || pos !== 'Substantiv' || !genus || !'mfn'.includes(genus)) continue;
+        const genus = genusAt.map((i) => f[i]).find((g) => g === 'm' || g === 'f' || g === 'n');
+        if (!lemma || pos !== 'Substantiv' || !genus) continue;
         const w = lemma.toLowerCase();
         // Nominalised infinitives (das Trinken, das Laufen) are verbs to the ear; feminine forms in -in (Kundin,
         // Helferin) double their base word and bring the care vocabulary close.
         if (genus === 'n' && w.endsWith('en')) continue;
         if (genus === 'f' && w.endsWith('in')) continue;
-        const rank = ranks.get(w);
-        if (rank !== undefined && rank <= COMMON_RANK) out.push(lemma);
+        out.push(lemma);
       }
       return out;
     },
@@ -129,15 +143,20 @@ export function build(opts: { skip?: ReadonlySet<string> } = {}) {
     }
   }
 
-  // Preference: words from the curated noun lists (the BIP39 proposals) before words the frequency pool alone brings
-  // (subtitle frequency favours names, places, slang and worse: it only fills the gap); then words more pools agree
-  // on; then more common words; then shorter ones (easier to say and type).
+  // Preference, in tiers:
+  // 1. nouns the curated lists (the BIP39 proposals) chose that are also common (in the 50 000 most frequent words);
+  // 2. curated nouns that are rarer in film subtitles (Dattel, Saite, Windrad): people chose them for mnemonics;
+  // 3. common nouns from Wiktionary alone. Subtitle frequency brings names, slang, slurs and worse, so this tier only
+  //    fills the gap, and only with words read and found fit (REVIEWED_FILL in rules.ts).
+  // Nouns that are neither curated nor common are not used. Within a tier: more pools agreeing, more common, shorter.
   const ranks = frequencyRanks();
   const rank = (w: string) => ranks.get(w) ?? Number.MAX_SAFE_INTEGER;
-  const curated = (w: string) => (seen.get(w)!.has('bips-pr721') || seen.get(w)!.has('cryptocalc-de') ? 1 : 0);
-  const ordered = [...seen.keys()].sort(
-    (a, b) => curated(b) - curated(a) || seen.get(b)!.size - seen.get(a)!.size || rank(a) - rank(b) || a.length - b.length || a.localeCompare(b),
-  );
+  const CURATED = ['bips-pr721', 'cryptocalc-de', 'dys2p-2048', 'dys2p-7776'];
+  const curated = (w: string) => CURATED.some((p) => seen.get(w)!.has(p));
+  const tier = (w: string) => (curated(w) ? (rank(w) <= COMMON_RANK ? 1 : 2) : rank(w) <= COMMON_RANK ? 3 : 4);
+  const ordered = [...seen.keys()]
+    .filter((w) => tier(w) < 4)
+    .sort((a, b) => tier(a) - tier(b) || seen.get(b)!.size - seen.get(a)!.size || rank(a) - rank(b) || a.length - b.length || a.localeCompare(b));
 
   const englishSet = new Set(english);
   const englishPrefixes = new Set(english.map((w) => w.slice(0, 4)));
@@ -148,6 +167,17 @@ export function build(opts: { skip?: ReadonlySet<string> } = {}) {
   for (const word of ordered) {
     if (opts.skip?.has(word)) {
       rejected.push({ word, reason: 'stt' });
+      continue;
+    }
+    // A singular common noun, familiar enough (the Wiktionary pool already holds only those): the proposal lists
+    // also carry adverbs ("jetzt"), plurals ("gebote") and names ("kunz"), which the first ceremonies turned up.
+    if (!seen.get(word)!.has('wiktionary-nouns')) {
+      rejected.push({ word, reason: 'not_a_noun' });
+      continue;
+    }
+    // UCAP_WORDLIST_REVIEW=1 lets the unread ones through, to list them for reading; never for writing the list.
+    if (tier(word) === 3 && !REVIEWED_FILL.has(word) && !(process.env.UCAP_WORDLIST_REVIEW === '1' && !process.argv.includes('--write'))) {
+      rejected.push({ word, reason: 'unreviewed' });
       continue;
     }
     const single = checkWord(word, englishSet, englishPrefixes);
@@ -166,8 +196,8 @@ export function build(opts: { skip?: ReadonlySet<string> } = {}) {
 
   const reasons: Record<string, number> = {};
   for (const r of rejected) reasons[r.reason] = (reasons[r.reason] ?? 0) + 1;
-  const isCurated = (w: string) => curated(w) === 1;
-  return { sources, candidates: accepted.map((a) => a.word), curated: accepted.map((a) => a.word).filter(isCurated), rejected, reasons, pool: ordered.length };
+  const words = accepted.map((a) => a.word);
+  return { sources, candidates: words, curated: words.filter(curated), tiers: words.map(tier), rejected, reasons, pool: ordered.length };
 }
 
 if (import.meta.main) {
@@ -178,14 +208,17 @@ if (import.meta.main) {
   writeFileSync(new URL('candidates.json', OUT), JSON.stringify(r.candidates, null, 1) + '\n');
   writeFileSync(new URL('report.json', OUT), JSON.stringify({ sources: r.sources, pool: r.pool, accepted: r.candidates.length, reasons: r.reasons, rejected: r.rejected }, null, 1) + '\n');
   console.log(`pool ${r.pool} words → ${r.candidates.length} pass the rules (need 2048); rejected: ${JSON.stringify(r.reasons)}`);
-  console.log(`${r.curated.length} of them come from the curated noun lists`);
+  console.log(`${r.curated.length} of them come from the curated noun lists; tiers of the first 2048: ${[1, 2, 3].map((n) => `${n}: ${r.tiers.slice(0, 2048).filter((x) => x === n).length}`).join(', ')}`);
+  writeFileSync(new URL('tiers.json', OUT), JSON.stringify(r.candidates.map((w, i) => [w, r.tiers[i]])) + '\n');
   if (process.argv.includes('--write')) {
-    // Curated words only: the frequency pool brings names, places and slang, and is not used for the list.
-    if (r.curated.length < 2048) {
-      console.error(`only ${r.curated.length} curated words pass: not enough for a list (see out/report.json)`);
+    // Every accepted word is a common singular noun; the ones the BIP39 proposals also chose come first.
+    if (r.candidates.length < 2048) {
+      console.error(`only ${r.candidates.length} words pass: not enough for a list (see out/report.json)`);
       process.exit(1);
     }
-    const words = r.curated.slice(0, 2048).sort();
+    const words = r.candidates.slice(0, 2048).sort();
+    const t = r.tiers.slice(0, 2048);
+    console.log(`tiers in the list: ${[1, 2, 3].map((n) => `${n}: ${t.filter((x) => x === n).length}`).join(', ')}`);
     const file = new URL('../../packages/identity/wordlists/de-dev.json', DIR);
     writeFileSync(
       file,

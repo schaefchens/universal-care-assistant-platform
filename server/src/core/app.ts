@@ -26,9 +26,10 @@ export async function buildCore(o: {
   /** A test seam for the realtime hub; normally sockets authenticate with a session token. */
   authenticate?: (token: string) => Promise<{ userId: string; deviceId: string } | null>;
   logger?: boolean;
+  logStream?: { write(line: string): void };
   dispatcherLock?: string;
 }) {
-  const app = createHttp(o.config, { logger: o.logger });
+  const app = createHttp(o.config, { logger: o.logger, logStream: o.logStream });
   const log = (msg: string) => app.log.warn(msg);
   const serverId = await ensureServerId(o.db);
 
