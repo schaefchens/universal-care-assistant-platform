@@ -18,6 +18,7 @@ interface PlanView {
   realertS: number;
   sosNumber: string;
   phoneFallback: PhoneFallback | null;
+  unconfirmedPolicy: 'send' | 'drop';
 }
 
 /** "+49 30 / 123-45 67" → "+4930123 4567" without the spaces: what a dialler takes. */
@@ -51,7 +52,7 @@ export function PhoneFallbackSetting(p: { session: Session }) {
   async function save(fallback: PhoneFallback | null) {
     if (!plan) return;
     try {
-      await p.session.call(url, { method: 'PUT', body: { version: plan.version, tiers: plan.tiers, realertS: plan.realertS, sosNumber: plan.sosNumber, phoneFallback: fallback } });
+      await p.session.call(url, { method: 'PUT', body: { version: plan.version, tiers: plan.tiers, realertS: plan.realertS, sosNumber: plan.sosNumber, phoneFallback: fallback, unconfirmedPolicy: plan.unconfirmedPolicy } });
       await refreshFallbacks(p.session);
       await load();
       tell(fallback ? tr(fallback.direct ? 'fallback.saved.direct' : 'fallback.saved', { name: fallback.name }) : tr('fallback.removed'));

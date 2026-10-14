@@ -25,6 +25,7 @@ export const MIGRATIONS: { id: string; url: URL }[] = [
   { id: '0006_push_android.sql', url: new URL('0006_push_android.sql', SERVER) },
   { id: '0007_reminders.sql', url: new URL('0007_reminders.sql', SERVER) },
   { id: '0008_providers.sql', url: new URL('0008_providers.sql', SERVER) },
+  { id: '0009_voice.sql', url: new URL('0009_voice.sql', SERVER) },
 ];
 
 const checksum = (text: string) => createHash('sha256').update(text).digest('hex');

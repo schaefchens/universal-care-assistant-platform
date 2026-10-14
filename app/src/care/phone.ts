@@ -15,6 +15,8 @@ export interface PhoneFallback {
 export interface Fallbacks {
   phoneFallback: PhoneFallback | null;
   sosNumber: string;
+  /** A help question unanswered twice: sent marked unconfirmed, or not (docs/plan.md, Decisions "Other help"). */
+  unconfirmedPolicy: 'send' | 'drop';
 }
 
 const KEY = 'ucap.care.fallback.v1';
@@ -22,11 +24,11 @@ const KEY = 'ucap.care.fallback.v1';
 export function loadFallbacks(): Fallbacks {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Fallbacks | null;
-    if (v && typeof v.sosNumber === 'string') return v;
+    if (v && typeof v.sosNumber === 'string') return { ...v, unconfirmedPolicy: v.unconfirmedPolicy === 'drop' ? 'drop' : 'send' };
   } catch {
     // Unreadable or no storage: the defaults below.
   }
-  return { phoneFallback: null, sosNumber: '112' };
+  return { phoneFallback: null, sosNumber: '112', unconfirmedPolicy: 'send' };
 }
 
 function saveFallbacks(f: Fallbacks) {
@@ -39,8 +41,8 @@ function saveFallbacks(f: Fallbacks) {
 
 /** Fetches the person's plan and keeps what is needed offline. */
 export async function refreshFallbacks(session: Session): Promise<Fallbacks> {
-  const plan = await session.call<{ phoneFallback: PhoneFallback | null; sosNumber: string }>(`/api/v1/people/${session.ref.userId}/escalation-plan`);
-  const f = { phoneFallback: plan.phoneFallback, sosNumber: plan.sosNumber };
+  const plan = await session.call<{ phoneFallback: PhoneFallback | null; sosNumber: string; unconfirmedPolicy?: 'send' | 'drop' }>(`/api/v1/people/${session.ref.userId}/escalation-plan`);
+  const f: Fallbacks = { phoneFallback: plan.phoneFallback, sosNumber: plan.sosNumber, unconfirmedPolicy: plan.unconfirmedPolicy === 'drop' ? 'drop' : 'send' };
   saveFallbacks(f);
   return f;
 }

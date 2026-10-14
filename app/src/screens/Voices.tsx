@@ -147,6 +147,7 @@ export function VoicesPage(p: { session: Session; onClose: () => void }) {
             </div>
           </section>
         ))}
+      <Recognition session={p.session} onChanged={() => void api.consents().then((r) => setConsents(r.consents), () => {})} />
       <section className="settings-section">
         <h2>{tr('voices.consents')}</h2>
         {consents.length === 0 && <p>{tr('voices.consents.none')}</p>}
@@ -173,6 +174,92 @@ export function VoicesPage(p: { session: Session; onClose: () => void }) {
         </ul>
       </section>
     </main>
+  );
+}
+
+interface RecognitionOption {
+  ref: string;
+  name: string;
+  location: 'server' | 'operator_lan' | 'external';
+  consentNeeded: boolean;
+}
+
+/**
+ * Who hears the person's voice (S8; Appendix I): said in plain words, and chosen where the operator offers more than
+ * their own recognition. An external one asks for consent in place, like a voice.
+ */
+function Recognition(p: { session: Session; onChanged: () => void }) {
+  const { tr, say } = useUi();
+  const [view, setView] = useState<{ options: RecognitionOption[]; chosen: string | null } | null>(null);
+  const [asking, setAsking] = useState<RecognitionOption | null>(null);
+  const question = useRef<HTMLElement>(null);
+  const load = async () => setView(await p.session.call<{ options: RecognitionOption[]; chosen: string | null }>('/api/v1/speech/recognition'));
+  useEffect(() => {
+    void load().catch(() => {});
+  }, [p.session]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!asking) return;
+    question.current?.scrollIntoView({ block: 'nearest' });
+    question.current?.focus();
+  }, [asking]);
+
+  async function choose(o: RecognitionOption | null, consent = false) {
+    try {
+      await p.session.call('/api/v1/speech/recognition', { method: 'PUT', body: { ref: o?.ref ?? null, consent } });
+      setAsking(null);
+      await load();
+      p.onChanged();
+      say(o ? tr('recognition.external', { provider: o.name }) : tr('recognition.own'), 'system');
+    } catch (e) {
+      if (e instanceof ApiError && e.params.reason === 'consent_required' && o) {
+        setAsking(o);
+        say(tr('recognition.consent', { provider: o.name }), 'system');
+      } else say(tr(`error.${e instanceof ApiError ? e.code : 'internal'}`), 'system');
+    }
+  }
+
+  if (!view) return null;
+  const own = view.options.filter((o) => o.location !== 'external');
+  const external = view.options.filter((o) => o.location === 'external');
+  const chosen = external.find((o) => o.ref === view.chosen) ?? null;
+  return (
+    <section className="settings-section">
+      <h2>{tr('recognition.title')}</h2>
+      <p>{chosen ? tr('recognition.external', { provider: chosen.name }) : own.length ? tr('recognition.own') : tr('recognition.none')}</p>
+      {external.length > 0 && (
+        <RadioGroup
+          className="choice"
+          aria-label={tr('recognition.title')}
+          value={chosen?.ref ?? 'own'}
+          onChange={(ref) => void choose(ref === 'own' ? null : (external.find((o) => o.ref === ref) ?? null))}
+        >
+          {own.length > 0 && (
+            <Radio value="own" className="choice-option">
+              {tr('recognition.option.own', { name: own.map((o) => o.name).join(', ') })}
+            </Radio>
+          )}
+          {external.map((o) => (
+            <Radio key={o.ref} value={o.ref} className="choice-option">
+              {tr('recognition.option.external', { name: o.name })}
+            </Radio>
+          ))}
+        </RadioGroup>
+      )}
+      {asking && (
+        <section ref={question} className="question" role="alertdialog" aria-labelledby="consent-stt" aria-describedby="consent-stt-text" tabIndex={-1}>
+          <h2 id="consent-stt">{tr('voices.consent.title')}</h2>
+          <p id="consent-stt-text">{tr('recognition.consent', { provider: asking.name })}</p>
+          <div className="row">
+            <Button className="button primary" onPress={() => void choose(asking, true)}>
+              {tr('voices.consent.yes')}
+            </Button>
+            <Button className="button" onPress={() => setAsking(null)}>
+              {tr('voices.consent.no')}
+            </Button>
+          </div>
+        </section>
+      )}
+    </section>
   );
 }
 

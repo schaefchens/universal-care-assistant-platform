@@ -1,6 +1,9 @@
 package de.schaefchens.ucap;
 
+import android.content.Context;
 import android.content.pm.PackageInfo;
+import android.media.AudioManager;
+import android.view.accessibility.AccessibilityManager;
 import android.content.res.Configuration;
 import android.os.Build;
 import android.webkit.WebView;
@@ -28,6 +31,36 @@ public class InfoPlugin extends Plugin {
         r.put("webViewVersion", wv != null ? wv.versionName : "");
         r.put("fontScale", c.fontScale);
         r.put("nightMode", (c.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES);
+        call.resolve(r);
+    }
+
+    /**
+     * "Lauter" and "Leiser" by voice (docs/plan.md, S8). UCAP speaks with accessibility usage, which follows the media
+     * volume unless a screen reader keeps an accessibility volume of its own; an app cannot change that one, so then
+     * the person is pointed to the volume keys. Never down to silence: "Leiser" stops one step above it.
+     */
+    @PluginMethod
+    public void volume(PluginCall call) {
+        int step = call.getInt("step", 0);
+        AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        AccessibilityManager a11y = (AccessibilityManager) getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
+        JSObject r = new JSObject();
+        if (a11y != null && a11y.isEnabled() && a11y.isTouchExplorationEnabled()) {
+            r.put("changed", false);
+            r.put("reason", "accessibility");
+            call.resolve(r);
+            return;
+        }
+        int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        int cur = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+        // About an eighth of the range per step: one raw step is hard to hear on a phone with 25 of them.
+        int by = Math.max(1, Math.round(max / 8f));
+        int next = Math.max(1, Math.min(max, cur + Integer.signum(step) * by));
+        if (next != cur) am.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0);
+        r.put("changed", next != cur);
+        r.put("level", next);
+        r.put("max", max);
+        if (next == cur) r.put("reason", step > 0 ? "max" : "min");
         call.resolve(r);
     }
 

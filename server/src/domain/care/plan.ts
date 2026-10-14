@@ -29,6 +29,8 @@ export interface Plan {
   watchdogS: number;
   sosNumber: string;
   phoneFallback: PhoneFallback | null;
+  /** A help question unanswered twice: sent marked unconfirmed, or not sent. */
+  unconfirmedPolicy: 'send' | 'drop';
   stored: boolean;
 }
 
@@ -50,11 +52,11 @@ export async function responders(exec: Exec, personId: string): Promise<{ id: st
  *  in a last tier, so nobody with care.respond is ever left out. */
 export async function effectivePlan(exec: Exec, personId: string): Promise<Plan> {
   const who = (await responders(exec, personId)).map((h) => h.id);
-  const r = await sql<{ version: number; tiers: Tier[]; realert_s: number; reopen_s: number; watchdog_s: number; sos_number: string; phone_fallback: PhoneFallback | null }>`
-    select version, tiers, realert_s, reopen_s, watchdog_s, sos_number, phone_fallback from escalation_plans where person_id = ${personId}`.execute(exec);
+  const r = await sql<{ version: number; tiers: Tier[]; realert_s: number; reopen_s: number; watchdog_s: number; sos_number: string; phone_fallback: PhoneFallback | null; unconfirmed_policy: 'send' | 'drop' }>`
+    select version, tiers, realert_s, reopen_s, watchdog_s, sos_number, phone_fallback, unconfirmed_policy from escalation_plans where person_id = ${personId}`.execute(exec);
   const row = r.rows[0];
   if (!row)
-    return { version: 0, tiers: who.length ? [{ waitS: DEFAULT_WAIT_S, helpers: who }] : [], realertS: 300, reopenS: 1800, watchdogS: 1200, sosNumber: '112', phoneFallback: null, stored: false };
+    return { version: 0, tiers: who.length ? [{ waitS: DEFAULT_WAIT_S, helpers: who }] : [], realertS: 300, reopenS: 1800, watchdogS: 1200, sosNumber: '112', phoneFallback: null, unconfirmedPolicy: 'send', stored: false };
   const named = new Set<string>();
   const tiers: Tier[] = [];
   for (const t of row.tiers) {
@@ -64,7 +66,17 @@ export async function effectivePlan(exec: Exec, personId: string): Promise<Plan>
   }
   const rest = who.filter((h) => !named.has(h));
   if (rest.length) tiers.push({ waitS: DEFAULT_WAIT_S, helpers: rest });
-  return { version: row.version, tiers, realertS: row.realert_s, reopenS: row.reopen_s, watchdogS: row.watchdog_s, sosNumber: row.sos_number, phoneFallback: row.phone_fallback, stored: true };
+  return {
+    version: row.version,
+    tiers,
+    realertS: row.realert_s,
+    reopenS: row.reopen_s,
+    watchdogS: row.watchdog_s,
+    sosNumber: row.sos_number,
+    phoneFallback: row.phone_fallback,
+    unconfirmedPolicy: row.unconfirmed_policy,
+    stored: true,
+  };
 }
 
 /** A plan replaces the stored one as a whole: a field left out takes its default. */
@@ -73,7 +85,7 @@ export async function savePlan(
   clock: Clock,
   personId: string,
   by: string,
-  input: { version: number; tiers: Tier[]; realertS?: number; sosNumber?: string; phoneFallback?: PhoneFallback | null },
+  input: { version: number; tiers: Tier[]; realertS?: number; sosNumber?: string; phoneFallback?: PhoneFallback | null; unconfirmedPolicy?: 'send' | 'drop' },
 ) {
   // No tiers named: everyone with care.respond is one tier, as without a plan (effectivePlan).
   if (input.tiers.length > 6) throw new AppError('bad_request', { params: { reason: 'tiers' } });
@@ -86,11 +98,12 @@ export async function savePlan(
     if (input.version !== version) throw new AppError('conflict', { params: { reason: 'stale', version } });
     const fallback = input.phoneFallback ? JSON.stringify({ name: input.phoneFallback.name, number: input.phoneFallback.number, direct: input.phoneFallback.direct }) : null;
     await sql`
-      insert into escalation_plans (person_id, version, tiers, realert_s, sos_number, phone_fallback, updated_at, updated_by)
+      insert into escalation_plans (person_id, version, tiers, realert_s, sos_number, phone_fallback, unconfirmed_policy, updated_at, updated_by)
       values (${personId}, ${version + 1}, ${JSON.stringify(input.tiers)}::jsonb, ${input.realertS ?? 300}, ${input.sosNumber ?? '112'}, ${fallback}::jsonb,
-              ${new Date(clock())}, ${by})
+              ${input.unconfirmedPolicy ?? 'send'}, ${new Date(clock())}, ${by})
       on conflict (person_id) do update set version = excluded.version, tiers = excluded.tiers, realert_s = excluded.realert_s,
-        sos_number = excluded.sos_number, phone_fallback = excluded.phone_fallback, updated_at = excluded.updated_at, updated_by = excluded.updated_by`.execute(trx);
+        sos_number = excluded.sos_number, phone_fallback = excluded.phone_fallback, unconfirmed_policy = excluded.unconfirmed_policy,
+        updated_at = excluded.updated_at, updated_by = excluded.updated_by`.execute(trx);
     return { version: version + 1 };
   });
 }

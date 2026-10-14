@@ -168,7 +168,8 @@ export function createProviders(d: { db: Db; clock: Clock; sealer: Sealer }) {
       return r.secret_sealed ? d.sealer.open(r.secret_sealed, context(id)) : null;
     },
 
-    async create(actorId: string, i: ProviderInput): Promise<Provider> {
+    /** `actorId` null: set up from the operator's configuration. */
+    async create(actorId: string | null, i: ProviderInput): Promise<Provider> {
       checkUrl(i.baseUrl);
       checkLocation(i.location, i.baseUrl);
       const id = uuidv7(d.clock());

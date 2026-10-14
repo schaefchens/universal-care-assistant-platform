@@ -11,6 +11,8 @@ import type { Session } from '../identity/account.ts';
 import { type Answer, answer, type Occurrence, reminders } from '../reminders/api.ts';
 import { afterAnswer, promptOf, question, titleOf } from '../reminders/words.ts';
 import { useUi } from '../ui.tsx';
+import { useScreenVoice } from '../voice/screen.ts';
+import { TalkButton } from '../voice/TalkButton.tsx';
 
 export function ReminderScreen(p: {
   session: Session;
@@ -46,6 +48,21 @@ export function ReminderScreen(p: {
       );
   }, [p.occurrenceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // By voice too (docs/plan.md, S8: the reminder context): "Erledigt" or "Ja", "Später", "Nein", "Hilfe holen".
+  useScreenVoice(
+    {
+      context: 'reminder',
+      onIntent: (i) => {
+        if (!o) return false;
+        if (i === 'done' || i === 'later' || i === 'no' || i === 'help') void choose(i);
+        else if (i === 'repeat') p.ask(question(tr, o));
+        else return false;
+        return true;
+      },
+    },
+    [o?.id, o?.prompts, busy],
+  );
+
   async function choose(id: string) {
     if (!o || busy) return;
     if (id === 'help') {
@@ -66,6 +83,7 @@ export function ReminderScreen(p: {
       <header className="onboard-header">
         <h1>{o ? titleOf(tr, o) : tr('reminder.title')}</h1>
         {o && <p>{promptOf(tr, o)}</p>}
+        <TalkButton className="button talk" />
       </header>
       {o && (
         <ChoiceGrid

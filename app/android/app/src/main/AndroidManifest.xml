@@ -75,6 +75,9 @@
     <!-- Permissions. Each one is asked for only when its feature needs it. -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Push-to-talk (S8): the WebView's microphone, with the platform's echo canceller. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- The help alarm: notifications (asked for in the helper's checklist), the full-screen alarm (a user grant on
          Android 14+, a Play Console declaration), and keeping retries across a restart (JobScheduler, persisted). -->

@@ -138,6 +138,7 @@ export function registerCareRoutes(
           phoneFallback: Type.Optional(
             Type.Union([Type.Null(), Type.Object({ name: Type.String({ minLength: 1, maxLength: 40 }), number: Type.String({ pattern: '^\\+?[0-9]{3,15}$' }), direct: Type.Boolean() })]),
           ),
+          unconfirmedPolicy: Type.Optional(Type.Union([Type.Literal('send'), Type.Literal('drop')])),
         }),
       },
     },

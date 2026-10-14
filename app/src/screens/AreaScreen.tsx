@@ -5,10 +5,12 @@
  */
 import type { AreaDef, DeviceConfig, ScreenDef } from '@ucap/shared';
 import { position } from '@ucap/touch';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useContext, useEffect } from 'react';
 import { AreaGrid, type AreaText } from '../areas/AreaGrid.tsx';
 import { record } from '../debug.ts';
 import { useUi } from '../ui.tsx';
+import { useScreenVoice } from '../voice/screen.ts';
+import { TalkButton, VoiceContext } from '../voice/TalkButton.tsx';
 
 export function areaText(a: AreaDef, tr: (key: string, params?: Record<string, string | number | Date>) => string): AreaText {
   return {
@@ -49,6 +51,7 @@ export function AreaScreen(p: {
 }) {
   const ui = useUi();
   const { tr, say, earcons, speech, assistive } = ui;
+  const { voice } = useContext(VoiceContext);
   const screen = p.config.screens[p.stack.at(-1)!] ?? p.config.screens[p.config.home]!;
   const atHome = screen.id === p.config.home;
 
@@ -64,6 +67,8 @@ export function AreaScreen(p: {
     return tr('where.screen', { screen: screenTitle(screen, tr), route });
   }, [atHome, screen, p.stack, tr]);
 
+  useScreenVoice({ where, whatCanIDo: () => whatCanIDo(screen, tr) }, [where, screen, tr]);
+
   const activate = useCallback(
     (a: AreaDef) => {
       earcons.play(a.role === 'help' ? 'care-press' : 'activate');
@@ -74,7 +79,9 @@ export function AreaScreen(p: {
           p.onHelp();
           return;
         case 'assistant':
-          say(tr('notyet.feature'), 'system');
+          // The talk area (S8): the same as the talk button.
+          if (voice) voice.talk();
+          else say(tr('notyet.feature'), 'system');
           return;
         case 'screen':
           if (p.config.screens[act.screen]) p.onNavigate([...p.stack, act.screen]);
@@ -99,7 +106,7 @@ export function AreaScreen(p: {
           return;
       }
     },
-    [earcons, ui, say, tr, p, atHome, where],
+    [earcons, ui, say, tr, p, atHome, where, voice],
   );
 
   // F1 or "?" answers "Was kann ich hier tun?"; Escape goes back.
@@ -122,6 +129,7 @@ export function AreaScreen(p: {
     <main className="area-screen" aria-label={screenTitle(screen, tr)}>
       <header className="topbar">
         <h1 className="topbar-title">{screenTitle(screen, tr)}</h1>
+        <TalkButton />
         <button type="button" className="topbar-button" onClick={() => say(whatCanIDo(screen, tr), 'system')} aria-label={tr('app.whatcan')}>
           ?
         </button>

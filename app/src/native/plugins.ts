@@ -71,6 +71,8 @@ export interface InfoPlugin {
   setSystemBars(o: { dark: boolean }): Promise<void>;
   /** FLAG_SECURE: no screenshots or screen recording while the recovery words are visible. */
   setSecure(o: { on: boolean }): Promise<void>;
+  /** "Lauter" (+1) and "Leiser" (-1): the volume UCAP's voice uses, never down to silence. */
+  volume(o: { step: number }): Promise<{ changed: boolean; level?: number; max?: number; reason?: 'max' | 'min' | 'accessibility' }>;
 }
 
 export interface Jwk {

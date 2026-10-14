@@ -7,6 +7,7 @@ import type { HerdeProject } from 'herde-project';
 import Type from 'typebox';
 import { DATA_CLASSES } from '../../ai/policy.ts';
 import type { ProviderInput, Providers } from '../../ai/providers.ts';
+import type { Stt } from '../../ai/stt/service.ts';
 import type { Speech } from '../../ai/tts/service.ts';
 import { auth } from '../../core/auth.ts';
 import type { IdentityService } from '../../domain/identity/service.ts';
@@ -32,7 +33,7 @@ const Fields = {
   enabled: Type.Optional(Type.Boolean()),
 };
 
-export function registerAiAdminRoutes(app: AnyApp, o: { db: Db; clock: Clock; identity: IdentityService; providers: Providers; speech: Speech; herde: HerdeProject; publicUrl: string }) {
+export function registerAiAdminRoutes(app: AnyApp, o: { db: Db; clock: Clock; identity: IdentityService; providers: Providers; speech: Speech; stt: Stt; herde: HerdeProject; publicUrl: string }) {
   const admin = requireAdmin(o.identity);
   const Id = Type.Object({ id: Type.String({ format: 'uuid' }) });
 
@@ -41,7 +42,14 @@ export function registerAiAdminRoutes(app: AnyApp, o: { db: Db; clock: Clock; id
     '/api/v1/ai-admin/providers',
     {
       preHandler: admin,
-      schema: { body: Type.Object({ function: Type.Literal('tts'), type: Type.Union([Type.Literal('openai'), Type.Literal('elevenlabs')]), ...Fields }, { additionalProperties: false }) },
+      schema: {
+        // Speech output: OpenAI's API (or a server that speaks it) and ElevenLabs; recognition: OpenAI's API (or a server
+        // that speaks it) and UCAP's own whisper server.
+        body: Type.Union([
+          Type.Object({ function: Type.Literal('tts'), type: Type.Union([Type.Literal('openai'), Type.Literal('elevenlabs')]), ...Fields }, { additionalProperties: false }),
+          Type.Object({ function: Type.Literal('stt'), type: Type.Union([Type.Literal('openai'), Type.Literal('stt_mlx')]), ...Fields }, { additionalProperties: false }),
+        ]),
+      },
     },
     async (req, reply) => reply.code(201).send(await o.providers.create(auth(req).userId, req.body as ProviderInput)),
   );
@@ -56,6 +64,7 @@ export function registerAiAdminRoutes(app: AnyApp, o: { db: Db; clock: Clock; id
   app.post('/api/v1/ai-admin/providers/:id/check', { preHandler: admin, schema: { params: Id } }, async (req) => {
     const { id } = req.params as { id: string };
     await o.speech.checkHealth(id);
+    await o.stt.checkHealth(id);
     return o.providers.get(id);
   });
   app.get('/api/v1/ai-admin/usage', { preHandler: admin }, async () => ({ usage: await o.providers.usage() }));

@@ -99,6 +99,8 @@ export class SpeechOut {
   private current: Utterance | null = null;
   private readonly queue: Utterance[] = [];
   private rate = 1;
+  /** The last thing said that was not a label, for "Wiederholen". */
+  private last: Utterance | null = null;
 
   constructor(backend: SpeechBackend) {
     this.backend = backend;
@@ -119,6 +121,7 @@ export class SpeechOut {
 
   say(text: string, lang: string, channel: Channel): void {
     const u: Utterance = { text, lang, channel };
+    if (channel !== 'label') this.last = u;
     const cur = this.current;
     if (cur && PRIORITY[cur.channel] > PRIORITY[channel]) {
       if (channel !== 'label') this.enqueue(u); // labels are only useful while the finger is there
@@ -144,6 +147,13 @@ export class SpeechOut {
       this.interrupt();
       this.next();
     }
+  }
+
+  /** "Wiederholen": the last thing said again, in its channel; false when nothing was said yet. */
+  repeat(): boolean {
+    if (!this.last) return false;
+    this.say(this.last.text, this.last.lang, this.last.channel);
+    return true;
   }
 
   /** "Stopp": everything, care included. */

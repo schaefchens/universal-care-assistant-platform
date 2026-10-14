@@ -7,7 +7,9 @@ import type { AreaDef, AreaRole, DeviceConfig, ScreenDef } from '@ucap/shared';
 import { useMemo } from 'react';
 import { record } from '../debug.ts';
 import { ceremony, redactWords } from '../identity/ceremony.ts';
+import { whatCanIDo } from '../screens/AreaScreen.tsx';
 import { useUi } from '../ui.tsx';
+import { useScreenVoice } from '../voice/screen.ts';
 import { AreaGrid } from './AreaGrid.tsx';
 
 export interface Choice {
@@ -42,6 +44,8 @@ export function ChoiceGrid(p: { id: string; choices: Choice[]; config: DeviceCon
     [p.id, key, rows, cols], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const ids = useMemo(() => new Map(screen.areas.map((a, i) => [a.id, p.choices[i]!.id])), [screen]); // eslint-disable-line react-hooks/exhaustive-deps
+  // "Was kann ich hier tun?" by voice: these areas, by their place on the screen.
+  useScreenVoice({ whatCanIDo: () => whatCanIDo({ ...screen, title: document.querySelector('main h1')?.textContent ?? '' }, ui.tr) }, [screen, ui.tr]);
   const hint = ui.tr(ui.assistive === 'screen-reader' ? '' : `gesture.${p.config.touch.mode === 'hold' ? 'hold' : p.config.touch.mode === 'direct' || ui.assistive === 'gesture-at' ? 'direct' : 'explore'}`);
   return (
     <AreaGrid

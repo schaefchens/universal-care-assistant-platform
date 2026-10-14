@@ -11,6 +11,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
 import { PhoneFallbackSetting } from '../care/PhoneFallbackSetting.tsx';
+import { UnconfirmedSetting } from '../care/UnconfirmedSetting.tsx';
 import { ApiError } from '../net/api.ts';
 import { type AuditEvent, type Invitation, type InvitePreview, people, previewInvite, type Relationship } from '../people/api.ts';
 import { overviewSummary, scopeLabel } from '../people/summary.ts';
@@ -239,6 +240,7 @@ export function Helpers(p: {
       </section>
 
       <PhoneFallbackSetting session={p.session} />
+      <UnconfirmedSetting session={p.session} />
 
       <section className="settings-section">
         <h2>{tr('people.invite')}</h2>

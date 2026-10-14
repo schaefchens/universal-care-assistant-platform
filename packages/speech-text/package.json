@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Text for speech: preparing what a voice reads (digit runs, dates, times, abbreviations, links, emoji) and cutting it into sentences.",
+  "description": "Speech as text: preparing what a voice reads (digit runs, dates, times, links, emoji), cutting it into sentences, and judging and matching what speech recognition heard (commands by context, the help question).",
   "exports": {
     ".": "./src/index.ts"
   },

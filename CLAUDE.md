@@ -70,6 +70,10 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - JobScheduler refuses a job with a network constraint unless the app holds `ACCESS_NETWORK_STATE` (Android 14+), and
   an ordinary job can wait minutes after its backoff: expedite what a person waits for, and retry in-process first.
 - A full-screen alarm over the lock screen is a native activity (`showWhenLocked`), never the WebView.
+- A button that is held (push-to-talk) must keep its size when its label changes: React Aria ends a press when the
+  finger leaves the button. The WebView's long-press menu cancels the touch: prevent `contextmenu`, `touch-action: none`.
+- React runs effects twice in development: a cleanup that ends a screen's state must be undone when the effect runs
+  again, or the dev browser ignores every answer while the production app works.
 - ntfy 2.29 declares users, tokens and access in its environment (`NTFY_AUTH_*`); a VAPID `Authorization` header
   without UCAP's token is refused, so the token goes in that header and no VAPID is sent to ntfy.
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.

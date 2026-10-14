@@ -9,11 +9,14 @@ export interface DebugRecord {
   spoken: { t: number; channel: string; text: string }[];
   earcons: { t: number; name: string }[];
   activations: { t: number; area: string; how: string }[];
+  /** Push-to-talk: states, recordings (length, why they ended), and the turns' events (never what was said). */
+  voice: { t: number; state?: string; recorded?: number; reason?: string; speech?: boolean }[];
+  turn: { t: number; [k: string]: unknown }[];
 }
 
 const LIMIT = 100;
 
-export const debug: DebugRecord | null = typeof __UCAP_DEBUG__ !== 'undefined' && __UCAP_DEBUG__ ? { spoken: [], earcons: [], activations: [] } : null;
+export const debug: DebugRecord | null = typeof __UCAP_DEBUG__ !== 'undefined' && __UCAP_DEBUG__ ? { spoken: [], earcons: [], activations: [], voice: [], turn: [] } : null;
 if (debug) (globalThis as unknown as { __ucap: DebugRecord }).__ucap = debug;
 
 export function record<K extends keyof DebugRecord>(kind: K, entry: Omit<DebugRecord[K][number], 't'>): void {

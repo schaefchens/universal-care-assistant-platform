@@ -12,7 +12,8 @@ import { useUi } from '../ui.tsx';
 
 interface Provider {
   id: string;
-  type: 'openai' | 'elevenlabs';
+  function: 'tts' | 'stt';
+  type: 'openai' | 'elevenlabs' | 'stt_mlx';
   name: string;
   baseUrl: string | null;
   location: 'server' | 'operator_lan' | 'external';
@@ -72,7 +73,7 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
   const [status, setStatus] = useState('');
   // The add form's outcome is shown at the form: the page's status line is far above it.
   const [formStatus, setFormStatus] = useState('');
-  const [form, setForm] = useState({ type: 'openai', name: '', baseUrl: '', model: '', apiKey: '', location: 'external', classes: [] as string[], price: '', cap: '', voices: '' });
+  const [form, setForm] = useState({ fn: 'tts' as 'tts' | 'stt', type: 'openai', name: '', baseUrl: '', model: '', apiKey: '', location: 'external', classes: [] as string[], price: '', cap: '', voices: '' });
   const [workerName, setWorkerName] = useState('');
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
@@ -121,19 +122,20 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
 
   async function add(e: FormEvent) {
     e.preventDefault();
+    const euros = Number(form.price.replace(',', '.') || '0');
     const body = {
-      function: 'tts',
+      function: form.fn,
       type: form.type,
-      name: form.name.trim() || (form.type === 'openai' ? 'OpenAI' : 'ElevenLabs'),
+      name: form.name.trim() || (form.type === 'openai' ? 'OpenAI' : form.type === 'stt_mlx' ? 'Whisper' : 'ElevenLabs'),
       baseUrl: form.baseUrl.trim() || null,
       location: form.location,
       model: form.model.trim() || null,
       ...(form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
       allowedClasses: form.classes,
-      // Prices are entered per 1000 characters, in euros.
-      priceMicrosPerUnit: Math.round(Number(form.price.replace(',', '.') || '0') * 1_000_000),
+      // Prices are entered in euros: speech per 1000 characters, recognition per minute (kept per 1000 seconds).
+      priceMicrosPerUnit: Math.round(form.fn === 'stt' ? (euros * 1_000_000 * 1000) / 60 : euros * 1_000_000),
       monthlyCapMicros: form.cap.trim() ? Math.round(Number(form.cap.replace(',', '.')) * 1_000_000) : null,
-      voices: parseVoices(form.voices),
+      voices: form.fn === 'tts' ? parseVoices(form.voices) : [],
     };
     // The form keeps what was typed when it was refused, to be corrected.
     if (await run(() => p.session.call('/api/v1/ai-admin/providers', { method: 'POST', body }), tr('admin.provider.added', { name: body.name }), setFormStatus)) set({ name: '', apiKey: '', voices: '' });
@@ -163,10 +165,11 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
               </Heading>
               <p className="muted">
                 {[
+                  tr(`admin.function.${x.function}`),
                   tr(`admin.location.${x.location}`),
                   x.voices.map((v) => v.label).join(', '),
                   tr(`admin.health.${x.health}`) + (x.health === 'failing' && x.healthError ? ` (${reason(x.healthError)})` : ''),
-                  tr('admin.spent', { spent: euros(x.spentMicros, ui.lang), cap: x.monthlyCapMicros === null ? tr('admin.noCap') : euros(x.monthlyCapMicros, ui.lang) }),
+                  x.monthlyCapMicros === null ? tr('admin.spent.noCap', { spent: euros(x.spentMicros, ui.lang) }) : tr('admin.spent', { spent: euros(x.spentMicros, ui.lang), cap: euros(x.monthlyCapMicros, ui.lang) }),
                   x.hasKey ? tr('admin.key.set') : tr('admin.key.none'),
                 ]
                   .filter(Boolean)
@@ -186,14 +189,28 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
         </ul>
         <h3>{tr('admin.provider.add')}</h3>
         <Form className="stack" onSubmit={add}>
+          <RadioGroup className="choice" value={form.fn} onChange={(fn) => set({ fn: fn as 'tts' | 'stt', type: 'openai', classes: [] })}>
+            <Label className="choice-label">{tr('admin.field.function')}</Label>
+            {(['tts', 'stt'] as const).map((f) => (
+              <Radio key={f} value={f} className="choice-option">
+                {tr(`admin.function.${f}`)}
+              </Radio>
+            ))}
+          </RadioGroup>
           <RadioGroup className="choice" value={form.type} onChange={(type) => set({ type })}>
             <Label className="choice-label">{tr('admin.field.type')}</Label>
             <Radio value="openai" className="choice-option">
               {tr('admin.type.openai')}
             </Radio>
-            <Radio value="elevenlabs" className="choice-option">
-              ElevenLabs
-            </Radio>
+            {form.fn === 'tts' ? (
+              <Radio value="elevenlabs" className="choice-option">
+                ElevenLabs
+              </Radio>
+            ) : (
+              <Radio value="stt_mlx" className="choice-option">
+                {tr('admin.type.stt_mlx')}
+              </Radio>
+            )}
           </RadioGroup>
           <Field label={tr('admin.field.name')} value={form.name} onChange={(name) => set({ name })} />
           <Field label={tr('admin.field.baseUrl')} value={form.baseUrl} onChange={(baseUrl) => set({ baseUrl })} description={tr('admin.field.baseUrl.hint')} />
@@ -209,15 +226,15 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
           </RadioGroup>
           <CheckboxGroup className="choice" value={form.classes} onChange={(classes) => set({ classes })}>
             <Label className="choice-label">{tr('admin.field.classes')}</Label>
-            {['personal', 'communication', 'health'].map((c) => (
+            {(form.fn === 'tts' ? ['personal', 'communication', 'health'] : ['voice_audio']).map((c) => (
               <Checkbox key={c} value={c} className="choice-option checkbox">
                 {tr(`admin.class.${c}`)}
               </Checkbox>
             ))}
           </CheckboxGroup>
-          <Field label={tr('admin.field.price')} value={form.price} onChange={(price) => set({ price })} />
+          <Field label={tr(form.fn === 'stt' ? 'admin.field.price.stt' : 'admin.field.price')} value={form.price} onChange={(price) => set({ price })} />
           <Field label={tr('admin.field.cap')} value={form.cap} onChange={(cap) => set({ cap })} />
-          <Field label={tr('admin.field.voices')} value={form.voices} onChange={(voices) => set({ voices })} description={tr('admin.field.voices.hint')} />
+          {form.fn === 'tts' && <Field label={tr('admin.field.voices')} value={form.voices} onChange={(voices) => set({ voices })} description={tr('admin.field.voices.hint')} />}
           <Button type="submit" className="button primary">
             {tr('admin.provider.save')}
           </Button>

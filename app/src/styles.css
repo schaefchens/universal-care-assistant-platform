@@ -64,15 +64,18 @@ body {
 }
 
 .topbar {
+  position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem 0.5rem;
   min-height: var(--topbar-h);
-  padding: 0 calc(var(--gap-px) + 0.25rem);
+  padding: 0.25rem calc(var(--gap-px) + 0.25rem);
 }
 
+/* On a narrow phone the buttons go to a second row rather than being cut off. */
 .topbar-title {
-  flex: 1;
+  flex: 1 1 6rem;
   margin: 0;
   font-size: calc(1.1rem * min(var(--text-scale), 1.6));
 }
@@ -86,6 +89,64 @@ body {
   background: var(--c-surface);
   border: max(2px, var(--border-px)) solid var(--c-border);
   border-radius: 0.5rem;
+}
+
+/* The talk button (S8): held without the system taking the touch over (scrolling, the long-press menu). */
+.talk-wrap {
+  display: contents;
+}
+
+.talk {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.talk-labels {
+  display: inline-grid;
+}
+
+.talk-labels > span {
+  grid-area: 1 / 1;
+}
+
+.talk-labels > .off {
+  visibility: hidden;
+}
+
+/* In the assistant's colours while it listens, so the state shows without the earcon. */
+.talk[data-state='listening'] {
+  background: var(--area-assistant-bg);
+  color: var(--area-assistant-text);
+  border-color: var(--area-assistant-border);
+  font-weight: 700;
+}
+
+.voice-status {
+  color: var(--c-text-muted);
+}
+
+/* In the top bar it lies over the grid's upper edge and takes no room: nothing moves under a finger when it appears,
+   and touches pass through it. */
+.topbar .voice-status {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: 0.25rem calc(var(--gap-px) + 0.5rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border-bottom: max(2px, var(--border-px)) solid var(--c-border);
+  pointer-events: none;
+}
+
+.voice-status:empty {
+  display: none;
 }
 
 .area-grid {

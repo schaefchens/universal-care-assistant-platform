@@ -310,3 +310,60 @@ then they stay as built, and nothing here is frozen.
 - Still open: herde joined by the owner and a reminder spoken by Sohee (the fake herde worker passes the real
   protocol in the tests); the admin page in a browser (needs an administrator signed in there).
 
+## S8: voice input and commands (2026-10-14)
+
+### To confirm
+
+1. **The plan's tolerance for near matches stays, although a synthetic "Hilfe" slipped through.** Appendix D:
+   "within one edit for phrases of up to 5 characters, two for longer ones". macOS voices saying "Hilfe" alone were
+   heard by whisper as "Hilsen" and "Heße" (two and three edits: nothing happened), as "Hilf" and "Hilfse" (help words:
+   asked). The owner's own recordings were 9 of 9 in lookup. Two edits for "Hilfe" would have caught "Hilsen" and
+   would ask after words like "Hülle" or "Halte". Voice help stays a convenience on top of the help area and the help
+   key; a listening test with real voices on a real phone decides.
+2. **An answer to the help question that is neither yes nor no counts as unanswered.** Decisions: "unanswered twice in
+   push-to-talk, it is sent marked 'unconfirmed'". "Was?" or anything else asks again, and after the second question
+   the person's choice applies (sent marked unconfirmed by default, or not sent). Silence counts the same way.
+3. **The pause that ends an utterance is 0.9 s.** Measured on the emulator: "Wie spät ist es?" was answered 0.46 s
+   after the recording ended (whisper 0.41 s), about 1.4 s after the last word, where the plan says "about 1 s".
+   0.7 s would gain 0.2 s and cut off people who pause; it can become a per-person setting.
+
+### Decided (within the plan)
+
+- **One turn is one POST with the audio as its body** (16 kHz mono WAV), its id, context and language in the query:
+  names only, never words. The plan said multipart; nothing else rides along, so the body is the file.
+- **Contexts:** what works everywhere (help, stop, back, home, repeat, louder, quieter, time, where am I, what can I
+  do here), the help question's yes and no, and the reminder's answers ("Ja" and "Erledigt" are done there). A help
+  word inside a longer utterance asks, also in dictation ("Sag Maria, sie soll mir beim Einkaufen helfen" asks once):
+  lookup's corpora gave no false action in 288 near misses, numbers and dictations.
+- **Voice where areas are:** the area screens (the Assistent area is the talk area), the reminder's question and the
+  help question have the talk button; the settings pages, made for screen readers and keyboards, do not.
+- **Tap or hold:** a tap starts listening, and the pause or a second tap ends it; held, only the release ends it.
+  Pressed while an answer is on its way, that answer is dropped and listening starts again. UCAP falls silent before
+  the microphone opens; a help announcement is let finish first.
+- **Recognition:** the person's choice, else the operator's own (the whisper server from `STT_URL` is set up as a
+  provider the admin sees); an external provider only with the operator's policy for voice recordings and the
+  person's consent, and never in place of an own one that fails: then A19. A failing own server is still tried on
+  the next turn, and A19 is said at once for 30 s instead of recording in vain.
+- **No transcripts are kept.** A turn is recorded by its timings, context and outcome; the audio lives in memory for
+  the recognition call. The plan allows 30 days of transcripts; the assistant's history (S9) decides what it needs.
+- **Before anything acts:** silence and whisper's television credits are "nothing heard"; recovery words are dropped
+  before the transcript reaches even the app, and new words are offered.
+- **Louder and quieter** move the media volume, which UCAP's accessibility audio follows, an eighth of the range at a
+  time and never to silence. With TalkBack on, its own accessibility volume cannot be set by an app: the person is
+  pointed to the volume keys.
+- **Until the assistant (S9),** anything else gets "Das kann ich noch nicht. Sag zum Beispiel: …".
+
+### Measured on the emulator and in the browser
+
+- The real microphone path: the app announced Android's question, Android asked, it was allowed; the emulator's
+  microphone (host audio off) gave silence, and after six seconds "Ich habe nichts gehört."
+- With recorded speech fed to the WebView in place of the microphone: "Wie spät ist es?" answered (whisper 414 ms,
+  the turn 425 ms); "Hilde" asked A17 with the confirmation earcon, "Ja" by voice sent a help request marked
+  voice_confirmed (Maria's browser alerted); left unanswered, A17 came twice, 17.5 s apart, and the request went out
+  marked unconfirmed, shown to Maria as "(nicht bestätigt)"; "Ich brauche Hilfe" sent at once; "Erledigt" answered a
+  reminder; "Zurück", "Was kann ich hier tun?", "Wiederholen", "Lauter", "Leiser" worked; with whisper stopped, A19.
+- Held for 4.5 s, the talk button recorded until released, after two fixes: the label's change of width ended the
+  press under a still finger, and the WebView's long-press menu cancelled the touch.
+- Maria in Chrome: "Wie spät ist es?" and the help question (answered "Nein" by click: A18, nothing sent).
+- Still open: a real phone with real voices ("Hilfe" sends, "Hilde" asks back, the time in about a second).
+

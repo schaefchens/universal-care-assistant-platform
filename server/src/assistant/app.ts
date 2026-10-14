@@ -5,6 +5,7 @@
 import { hkdfSync } from 'node:crypto';
 import { createHerdeProject } from 'herde-project';
 import { createProviders } from '../ai/providers.ts';
+import { createStt } from '../ai/stt/service.ts';
 import { createSpeech } from '../ai/tts/service.ts';
 import { registerAuth } from '../core/auth.ts';
 import { ensureServerId } from '../core/server-info.ts';
@@ -19,6 +20,8 @@ import { createSealer } from '../lib/sealed.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
 import { registerAiAdminRoutes } from './routes/ai-admin.ts';
 import { registerSpeechRoutes } from './routes/speech.ts';
+import { registerTurnRoutes } from './routes/turns.ts';
+import { createTurns } from './turns.ts';
 import { createVoiceActivity } from './voice-activity.ts';
 
 /** How often speech providers are checked (their health on the admin pages; a failing one is not used). */
@@ -76,12 +79,16 @@ export async function buildAssistant(o: {
   const voice = createVoiceActivity((active) => herde.setVoiceActivity(active));
   const providers = createProviders({ db: o.db, clock: o.clock, sealer: createSealer(o.secrets.masterKey) });
   const speech = createSpeech({ db: o.db, clock: o.clock, providers, herde, files, fetch: o.providerFetch, log, claimTimeoutMs: o.claimTimeoutMs });
-  registerSpeechRoutes(app, { speech, providers });
-  registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, herde, publicUrl: o.config.publicUrl });
+  const stt = createStt({ db: o.db, clock: o.clock, providers, fetch: o.providerFetch, log, sttUrl: o.config.sttUrl });
+  const turns = createTurns({ db: o.db, clock: o.clock, stt });
+  registerSpeechRoutes(app, { speech, providers, stt });
+  registerTurnRoutes(app, { turns, stt });
+  registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, stt, herde, publicUrl: o.config.publicUrl });
 
   const handlers: Record<string, Handler> = {
     'providers.health': async () => {
       await speech.checkHealth();
+      await stt.checkHealth();
       await enqueue(o.db, { queue: 'assistant', kind: 'providers.health', key: 'providers.health', runAt: o.clock() + HEALTH_EVERY_MS });
     },
     'speech.sweep': async () => {
@@ -110,9 +117,12 @@ export async function buildAssistant(o: {
     jobs,
     providers,
     speech,
+    stt,
+    turns,
     identity,
     files,
     async start() {
+      await stt.ensureConfigured();
       await enqueue(o.db, { queue: 'assistant', kind: 'providers.health', key: 'providers.health', runAt: o.clock() + 60_000, onConflict: 'keep' });
       await enqueue(o.db, { queue: 'assistant', kind: 'speech.sweep', key: 'speech.sweep', runAt: o.clock() + 120_000, onConflict: 'keep' });
       jobs.start();

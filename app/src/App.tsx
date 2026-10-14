@@ -9,7 +9,9 @@
  */
 import { App as CapApp } from '@capacitor/app';
 import type { DeviceConfig } from '@ucap/shared';
+import type { Intent } from '@ucap/speech-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChoiceGrid } from './areas/ChoiceGrid.tsx';
 import { type AssistiveMode, modeFrom, watchAssistive } from './a11y/assistive.ts';
 import { createEarcons } from './audio/earcons.ts';
 import { ClipPlayer, speakAs, voicesApi } from './audio/voices.ts';
@@ -33,6 +35,7 @@ import { AreaScreen } from './screens/AreaScreen.tsx';
 import { Approve } from './screens/Approve.tsx';
 import { CareScreen } from './screens/CareScreen.tsx';
 import { HelperAlert, HelperInbox } from './screens/HelperInbox.tsx';
+import { HelpQuestion } from './screens/HelpQuestion.tsx';
 import { Devices } from './screens/Devices.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
@@ -52,6 +55,10 @@ import { loadDeviceConfig, loadPrefs, loadServer, type Prefs, saveDeviceConfig, 
 import { applyTheme, platformPrefs } from './theme/apply.ts';
 import { resolveTheme } from './theme/themes.ts';
 import { makeUi, UiProvider } from './ui.tsx';
+import { VoiceController, type VoiceState } from './voice/controller.ts';
+import { micInput } from './voice/mic.ts';
+import { currentVoice } from './voice/screen.ts';
+import { VoiceContext } from './voice/TalkButton.tsx';
 
 type RemindersOf = { id: string; displayName: string; canManage: boolean; canRead: boolean };
 type Page =
@@ -66,13 +73,17 @@ type Page =
   | 'voices'
   | 'voiceIntro'
   | 'aiAdmin'
+  /** "Soll ich einen Hilferuf senden?" after a help word or a near match (A17). */
+  | 'helpQuestion'
+  /** The recovery words were said to the assistant: a warning, and new words offered (Appendix C). */
+  | 'leak'
   | { approve: string }
   | { alert: string }
   | { reminder: string }
   | { remindersOf: RemindersOf };
 const pageKey = (p: Page) => (typeof p === 'string' ? p : Object.keys(p)[0]!);
 /** Pages a due reminder does not interrupt: a help request in progress, a helper's alert. It waits for its next prompt. */
-const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p));
+const busy = (p: Page) => p === 'care' || p === 'helpQuestion' || (typeof p === 'object' && ('alert' in p || 'approve' in p));
 
 /** An invitation opened as a link in the browser (`…/#invite=CODE`): taken once and removed from the address bar
  *  and history. The code sits in the fragment, so it never reaches a server's access log. */
@@ -242,6 +253,24 @@ export function App() {
   const gestureRef = useRef('');
   gestureRef.current = ui.tr(`care.gesture.${config.touch.mode === 'hold' ? 'hold' : config.touch.mode === 'direct' || assistive === 'gesture-at' ? 'direct' : 'explore'}`);
 
+  // Push-to-talk (S8): one controller for the app's life; it reads the current session, words and screen when used.
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const [voiceView, setVoiceView] = useState<{ state: VoiceState; heard: string | null }>({ state: 'idle', heard: null });
+  const intentRef = useRef<(i: Intent) => void>(() => {});
+  const voiceRef = useRef<VoiceController | null>(null);
+  voiceRef.current ??= new VoiceController({
+    session: () => sessionRef.current,
+    ui: () => uiRef.current,
+    gesture: () => gestureRef.current,
+    input: micInput(),
+    onState: (state, heard) => setVoiceView({ state, heard }),
+    onIntent: (i) => intentRef.current(i),
+    onAsk: () => setPage((pg) => (pg === 'care' ? pg : 'helpQuestion')),
+    onLeak: () => setPage('leak'),
+  });
+  useEffect(() => () => voiceRef.current?.cancel(), [session]);
+
   // Help requests of this person: the outbox and the announcements (docs/plan.md, Appendix D).
   useEffect(() => {
     if (!session) return;
@@ -370,18 +399,72 @@ export function App() {
     return () => void lock?.release().catch(() => {});
   }, [careOpen]);
 
+  /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
+  const goBack = () => {
+    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin') setPage('settings');
+    else if (typeof page === 'object' && 'remindersOf' in page) setPage('helpers');
+    else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
+    else if (typeof page === 'object' || page !== 'areas') setPage('areas');
+    else if (stack.length > 1) setStack((s) => s.slice(0, -1));
+    else ui.say(ui.tr('where.home'), 'system');
+  };
   useEffect(() => {
     if (!has('App')) return;
-    const handle = CapApp.addListener('backButton', () => {
-      if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin') setPage('settings');
-      else if (typeof page === 'object' && 'remindersOf' in page) setPage('helpers');
-      else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
-      else if (typeof page === 'object' || page === 'settings' || page === 'care' || page === 'inbox') setPage('areas');
-      else if (stack.length > 1) setStack((s) => s.slice(0, -1));
-      else ui.say(ui.tr('where.home'), 'system');
-    });
+    const handle = CapApp.addListener('backButton', goBack);
     return () => void handle.then((h) => h.remove());
-  }, [page, stack.length, ui]);
+  }, [page, stack.length, ui]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** "Lauter" and "Leiser": the device's volume for UCAP's voice, where the app may change it. */
+  async function volume(step: 1 | -1) {
+    const u = uiRef.current;
+    const r = has('Info') ? await Info.volume({ step }).catch(() => null) : null;
+    if (!r || r.reason === 'accessibility') return u.say(u.tr('voice.volume.device'), 'system');
+    if (!r.changed) return u.say(u.tr(r.reason === 'max' ? 'voice.volume.max' : 'voice.volume.min'), 'system');
+    u.say(u.tr(step > 0 ? 'voice.volume.louder' : 'voice.volume.quieter'), 'system');
+  }
+
+  // What a voice command does when the screen in front did not take it (S8: "intents run on the client").
+  intentRef.current = (i) => {
+    const u = uiRef.current;
+    const title = () => document.querySelector('main h1')?.textContent ?? '';
+    switch (i) {
+      case 'help':
+        void careRef.current?.press('voice_exact');
+        setPage('care');
+        return;
+      case 'stop':
+        u.speech.stopAll();
+        player.stop();
+        return;
+      case 'repeat':
+        if (!u.speech.repeat()) u.say(u.tr('voice.nothingToRepeat'), 'system');
+        return;
+      case 'back':
+        goBack();
+        return;
+      case 'home':
+        setStack([config.home]);
+        setPage('areas');
+        if (page === 'areas' && stack.length <= 1) u.say(u.tr('where.home'), 'system');
+        return;
+      case 'louder':
+      case 'quieter':
+        void volume(i === 'louder' ? 1 : -1);
+        return;
+      case 'time':
+        u.say(u.tr('time.now', { time: new Date() }), 'system');
+        return;
+      case 'whereAmI':
+        u.say(currentVoice().where?.() ?? u.tr('where.screen', { screen: title(), route: u.tr('area.back.label') }), 'system');
+        return;
+      case 'whatCanIDo':
+        u.say(currentVoice().whatCanIDo?.() ?? `${u.tr('whatcan.page', { screen: title() })} ${u.tr('whatcan.commands')}`, 'system');
+        return;
+      default:
+        // Ja, Nein, Erledigt, Später: nothing is asking.
+        u.say(u.tr('voice.noQuestion'), 'system');
+    }
+  };
 
   /** Help-request events: the person's own requests go to the care client; a helper hears alerts and their outcome. */
   async function careNews(type: string, data: Record<string, unknown>) {
@@ -537,6 +620,37 @@ export function App() {
       />
     );
   else if (page === 'aiAdmin' && me?.isAdmin) content = <AiAdmin session={session} onClose={() => setPage('settings')} />;
+  else if (page === 'helpQuestion')
+    content = (
+      <HelpQuestion
+        config={config}
+        policy={loadFallbacks().unconfirmedPolicy}
+        gesture={gestureRef.current}
+        onSend={(source) => {
+          void careRef.current?.press(source);
+          setPage('care');
+        }}
+        onDone={() => setPage('areas')}
+      />
+    );
+  else if (page === 'leak')
+    content = (
+      <main className="area-screen" aria-label={ui.tr('voice.leak.title')}>
+        <header className="onboard-header">
+          <h1>{ui.tr('voice.leak.title')}</h1>
+          <p>{ui.tr('voice.leak')}</p>
+        </header>
+        <ChoiceGrid
+          id="leak"
+          config={config}
+          choices={[
+            { id: 'new', label: ui.tr('voice.leak.new'), role: 'assistant' },
+            { id: 'later', label: ui.tr('voice.leak.later'), role: 'nav' },
+          ]}
+          onChoose={(id) => setPage(id === 'new' && me ? 'newWords' : 'areas')}
+        />
+      </main>
+    );
   else if (page === 'reminders')
     content = <RemindersPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} canManage canRead refresh={reminderRev} onClose={() => setPage('settings')} />;
   else if (typeof page === 'object' && 'remindersOf' in page)
@@ -628,9 +742,11 @@ export function App() {
 
   return (
     <UiProvider value={ui}>
-      <ErrorBoundary key={pageKey(page)} text={{ title: ui.tr('app.failed'), restart: ui.tr('app.restart') }}>
-        {content}
-      </ErrorBoundary>
+      <VoiceContext.Provider value={{ voice: session ? voiceRef.current : null, state: voiceView.state, heard: voiceView.heard }}>
+        <ErrorBoundary key={pageKey(page)} text={{ title: ui.tr('app.failed'), restart: ui.tr('app.restart') }}>
+          {content}
+        </ErrorBoundary>
+      </VoiceContext.Provider>
     </UiProvider>
   );
 }
