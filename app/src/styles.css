@@ -1,0 +1,357 @@
+/* Every colour and size comes from the theme's tokens (src/theme/apply.ts); nothing here is a fixed colour. */
+
+:root {
+  --c-bg: #f6f7f9;
+  --c-surface: #ffffff;
+  --c-text: #111418;
+  --c-text-muted: #4a5260;
+  --c-border: #5b6472;
+  --c-focus: #1a56db;
+  --border-px: 3px;
+  --focus-px: 4px;
+  --gap-px: 8px;
+  --text-scale: 1;
+  --font-family: 'Atkinson Hyperlegible Next Variable', system-ui, sans-serif;
+  --font-weight: 600;
+  --letter-spacing: 0em;
+  --topbar-h: calc(3rem * min(var(--text-scale), 1.5));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-family);
+  font-weight: var(--font-weight);
+  letter-spacing: var(--letter-spacing);
+  font-size: calc(1rem * var(--text-scale));
+  line-height: 1.4;
+  /* Safe areas on phones with notches and gesture bars (viewport-fit=cover). */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overscroll-behavior: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:focus-visible {
+  outline: var(--focus-px) solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+/* --- The area screens ---------------------------------------------------------------------------------- */
+
+.area-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--topbar-h);
+  padding: 0 calc(var(--gap-px) + 0.25rem);
+}
+
+.topbar-title {
+  flex: 1;
+  margin: 0;
+  font-size: calc(1.1rem * min(var(--text-scale), 1.6));
+}
+
+.topbar-button {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 0.75rem;
+  font: inherit;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: max(2px, var(--border-px)) solid var(--c-border);
+  border-radius: 0.5rem;
+}
+
+.area-grid {
+  flex: 1;
+  display: grid;
+  gap: var(--gap-px);
+  padding: var(--gap-px);
+  /* Physical: the grid never mirrors with the reading direction, only the text inside an area does. */
+  direction: ltr;
+  /* Touch belongs to the engine: no scrolling, no zoom gestures, no text selection on the grid. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  container-type: size;
+}
+
+.area {
+  --area-bg: var(--area-neutral-bg);
+  --area-text: var(--area-neutral-text);
+  --area-border: var(--area-neutral-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.5rem;
+  border: var(--border-px) solid var(--area-border);
+  border-radius: 1rem;
+  background: var(--area-bg);
+  color: var(--area-text);
+  font: inherit;
+  /* Labels fit inside their area whatever its size and the person's text size (container queries). */
+  font-size: clamp(1.25rem, calc(min(9cqw, 9cqh) * var(--text-scale)), 6rem);
+  font-weight: max(600, var(--font-weight));
+  text-align: center;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.area-label {
+  display: block;
+  max-width: 100%;
+}
+
+.area[data-role='help'] { --area-bg: var(--area-help-bg); --area-text: var(--area-help-text); --area-border: var(--area-help-border); }
+.area[data-role='assistant'] { --area-bg: var(--area-assistant-bg); --area-text: var(--area-assistant-text); --area-border: var(--area-assistant-border); }
+.area[data-role='messages'] { --area-bg: var(--area-messages-bg); --area-text: var(--area-messages-text); --area-border: var(--area-messages-border); }
+.area[data-role='notes'] { --area-bg: var(--area-notes-bg); --area-text: var(--area-notes-text); --area-border: var(--area-notes-border); }
+.area[data-role='reminders'] { --area-bg: var(--area-reminders-bg); --area-text: var(--area-reminders-text); --area-border: var(--area-reminders-border); }
+.area[data-role='nav'] { --area-bg: var(--area-nav-bg); --area-text: var(--area-nav-text); --area-border: var(--area-nav-border); }
+
+/* An area's own colour (set inline) wins over its role's. */
+.area[style*='--area-bg'] {
+  background: var(--area-bg);
+}
+
+.area:focus-visible {
+  outline: var(--focus-px) solid var(--c-focus);
+  outline-offset: calc(-1 * var(--focus-px) - var(--border-px));
+}
+
+/* Windows high contrast and other forced colours: system colours, and areas keep visible edges. */
+@media (forced-colors: active) {
+  .area {
+    border: max(3px, var(--border-px)) solid ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+    forced-color-adjust: none;
+  }
+  .area[data-role='help'] {
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
+:root[data-reduced-motion='true'] * {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* --- Pages (setup, settings) ---------------------------------------------------------------------------- */
+
+.page {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1.5rem calc(var(--gap-px) + 0.5rem) 3rem;
+}
+
+.page h1 {
+  font-size: calc(1.6rem * min(var(--text-scale), 1.6));
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field input {
+  font: inherit;
+  padding: 0.75rem;
+  min-height: 3rem;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: max(2px, var(--border-px)) solid var(--c-border);
+  border-radius: 0.5rem;
+}
+
+.button {
+  font: inherit;
+  min-height: 3rem;
+  padding: 0.6rem 1.2rem;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: max(2px, var(--border-px)) solid var(--c-border);
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+
+.button.primary {
+  background: var(--area-assistant-bg);
+  color: var(--area-assistant-text);
+  border-color: var(--area-assistant-border);
+}
+
+.button[data-disabled] {
+  opacity: 0.6;
+}
+
+.status.error {
+  color: var(--c-danger);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.settings-section {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.choice-label {
+  font-weight: 700;
+}
+
+.choice-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3rem;
+  padding: 0.4rem 0.75rem;
+  border: max(2px, var(--border-px)) solid var(--c-border);
+  border-radius: 0.6rem;
+  background: var(--c-surface);
+  cursor: pointer;
+}
+
+.choice-option::before {
+  content: '';
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 50%;
+  border: 2px solid var(--c-text);
+  flex: none;
+}
+
+.choice-option[data-selected]::before {
+  background: var(--c-text);
+  box-shadow: inset 0 0 0 3px var(--c-surface);
+}
+
+.choice-option[data-focus-visible] {
+  outline: var(--focus-px) solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+.range {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+}
+
+.range-track {
+  grid-column: 1 / -1;
+  height: 3rem;
+  position: relative;
+}
+
+.range-track::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 0.4rem;
+  transform: translateY(-50%);
+  background: var(--c-border);
+  border-radius: 0.2rem;
+}
+
+.range-thumb {
+  top: 50%;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--c-text);
+  border: 3px solid var(--c-surface);
+}
+
+.range-thumb[data-focus-visible] {
+  outline: var(--focus-px) solid var(--c-focus);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3rem;
+}
+
+.switch-indicator {
+  width: 3.2rem;
+  height: 1.8rem;
+  border-radius: 1rem;
+  border: 2px solid var(--c-text);
+  position: relative;
+  flex: none;
+}
+
+.switch-indicator::after {
+  content: '';
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: var(--c-text);
+}
+
+.switch[data-selected] .switch-indicator::after {
+  left: auto;
+  right: 0.15rem;
+}
+
+.switch[data-focus-visible] .switch-indicator {
+  outline: var(--focus-px) solid var(--c-focus);
+  outline-offset: 2px;
+}

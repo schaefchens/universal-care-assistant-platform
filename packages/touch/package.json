@@ -1,0 +1,18 @@
+{
+  "name": "@ucap/touch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "UCAP's touch engine: explore-before-activate over large areas, as a pure state machine (no DOM).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "fast-check": "^4.10.2",
+    "typescript": "~6.0.3"
+  }
+}

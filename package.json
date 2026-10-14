@@ -11,7 +11,7 @@
   "scripts": {
     "setup": "node tools/dev/setup-secrets.ts",
     "dev": "docker compose up -d --wait",
-    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tools",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tools && tsc -p app",
     "test": "vitest run",
     "test:docker": "docker compose run --rm --no-deps -e DATABASE_URL=postgres://ucap:ucap@db:5432/ucap_test core npm test"
   },

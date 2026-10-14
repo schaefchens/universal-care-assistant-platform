@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">UCAP</string>
+    <string name="title_activity_main">UCAP</string>
+    <string name="package_name">de.schaefchens.ucap</string>
+    <string name="custom_url_scheme">de.schaefchens.ucap</string>
+</resources>

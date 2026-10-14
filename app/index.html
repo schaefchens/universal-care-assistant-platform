@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <!-- No user-scalable=no: people who zoom must be able to (WCAG 1.4.4); the app has its own text size too. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>UCAP</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Spoken by screen readers: polite for labels and states, assertive for care and confirmations. -->
+    <div id="live-polite" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+    <div id="live-assertive" class="visually-hidden" aria-live="assertive" aria-atomic="true"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

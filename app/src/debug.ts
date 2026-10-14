@@ -1,0 +1,24 @@
+/**
+ * Debug builds only: a bounded record of what the app spoke, played and activated, for driving and checking it on
+ * the emulator (tools/android/cdp.ts reads window.__ucap). Memory only, never sent or logged; release builds
+ * (UCAP_RELEASE=1) leave it out entirely.
+ */
+declare const __UCAP_DEBUG__: boolean;
+
+export interface DebugRecord {
+  spoken: { t: number; channel: string; text: string }[];
+  earcons: { t: number; name: string }[];
+  activations: { t: number; area: string; how: string }[];
+}
+
+const LIMIT = 100;
+
+export const debug: DebugRecord | null = typeof __UCAP_DEBUG__ !== 'undefined' && __UCAP_DEBUG__ ? { spoken: [], earcons: [], activations: [] } : null;
+if (debug) (globalThis as unknown as { __ucap: DebugRecord }).__ucap = debug;
+
+export function record<K extends keyof DebugRecord>(kind: K, entry: Omit<DebugRecord[K][number], 't'>): void {
+  if (!debug) return;
+  const list = debug[kind] as { t: number }[];
+  list.push({ t: Math.round(performance.now()), ...entry });
+  if (list.length > LIMIT) list.shift();
+}

@@ -27,6 +27,20 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'app',
+          root: 'app',
+          include: ['test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'touch',
+          root: 'packages/touch',
+          include: ['test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'shared',
           root: 'packages/shared',
           include: ['test/**/*.test.ts'],

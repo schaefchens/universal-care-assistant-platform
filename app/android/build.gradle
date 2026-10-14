@@ -1,0 +1,39 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'com.google.gms:google-services:4.4.4'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+apply from: "variables.gradle"
+
+allprojects {
+    repositories {
+        // Ask Google's repository only for Google's groups: asked for anything else it answered so slowly that
+        // Gradle timed out instead of trying Maven Central (lookup/findings/android.md). On a network where
+        // dl.google.com answers only HTTP/2, run tools/google-maven-relay.ts and point this at http://127.0.0.1:8098/.
+        google {
+            content {
+                includeGroupByRegex 'androidx.*'
+                includeGroupByRegex 'com\\.android.*'
+                includeGroupByRegex 'com\\.google\\.android.*'
+                includeGroupByRegex 'com\\.google\\.(gms|firebase|testing).*'
+            }
+        }
+        mavenCentral()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

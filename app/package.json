@@ -1,0 +1,35 @@
+{
+  "name": "@ucap/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "UCAP's app: one React UI for Capacitor (Android first, iOS later) and, best effort, the browser.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p .",
+    "sync": "vite build && cap sync android",
+    "apk": "vite build && cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/haptics": "8.0.2",
+    "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
+    "@ucap/shared": "file:../packages/shared",
+    "@ucap/touch": "file:../packages/touch",
+    "react": "19.3.0",
+    "react-aria-components": "1.22.1",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "@types/node": "^24.13.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "typescript": "~6.0.3",
+    "vite": "8.3.4"
+  }
+}
