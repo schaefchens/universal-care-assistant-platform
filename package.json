@@ -13,7 +13,8 @@
     "dev": "docker compose up -d --wait",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tools && tsc -p app",
     "test": "vitest run",
-    "test:docker": "docker compose run --rm --no-deps -e DATABASE_URL=postgres://ucap:ucap@db:5432/ucap_test core npm test"
+    "test:docker": "docker compose run --rm --no-deps -e DATABASE_URL=postgres://ucap:ucap@db:5432/ucap_test core npm test",
+    "admin:invite": "docker compose exec core node server/src/cli.ts admin-invite"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",

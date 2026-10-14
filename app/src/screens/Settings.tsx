@@ -7,6 +7,7 @@ import { type DeviceConfig, THEME_IDS, type ThemeId, type TouchConfig, type Visu
 import type { ReactNode } from 'react';
 import { Button, Label, Radio, RadioGroup, Slider, SliderOutput, SliderThumb, SliderTrack, Switch } from 'react-aria-components';
 import type { AssistiveMode } from '../a11y/assistive.ts';
+import type { Me } from '../identity/account.ts';
 import type { Prefs } from '../state/store.ts';
 import { useUi } from '../ui.tsx';
 
@@ -44,7 +45,16 @@ function Section(p: { title: string; children: ReactNode }) {
   );
 }
 
-export function Settings(p: { config: DeviceConfig; prefs: Prefs; onConfig: (c: DeviceConfig) => void; onPrefs: (p: Prefs) => void; onClose: () => void }) {
+export function Settings(p: {
+  config: DeviceConfig;
+  prefs: Prefs;
+  me: Me | null;
+  onConfig: (c: DeviceConfig) => void;
+  onPrefs: (p: Prefs) => void;
+  onDevices: () => void;
+  onNewWords: () => void;
+  onClose: () => void;
+}) {
   const { tr } = useUi();
   const visual = (patch: Partial<VisualConfig>) => p.onConfig({ ...p.config, visual: { ...p.config.visual, ...patch } });
   const touch = (patch: Partial<TouchConfig>) => p.onConfig({ ...p.config, touch: { ...p.config.touch, ...patch } });
@@ -79,6 +89,23 @@ export function Settings(p: { config: DeviceConfig; prefs: Prefs; onConfig: (c: 
           text={(v) => tr(`settings.assistive.${v}`)}
           onChange={(assistive) => p.onPrefs({ ...p.prefs, assistive })}
         />
+      </Section>
+
+      <Section title={tr('settings.account')}>
+        {p.me && (
+          <p className={p.me.recoveryState === 'confirmed' ? 'status' : 'status warning'}>
+            {p.me.displayName} · {tr(p.me.recoveryState === 'confirmed' ? 'settings.recovery.confirmed' : 'settings.recovery.unconfirmed')}
+          </p>
+        )}
+        <Button className="button" onPress={p.onDevices}>
+          {tr('settings.devices')}
+        </Button>
+        {/* Only once the account's state is known: "einrichten" and "neue" lead to different flows. */}
+        {p.me && (
+          <Button className="button" onPress={p.onNewWords}>
+            {tr(p.me.recoveryState === 'confirmed' ? 'settings.newWords' : 'settings.setupWords')}
+          </Button>
+        )}
       </Section>
 
       <Section title={tr('settings.speech')}>

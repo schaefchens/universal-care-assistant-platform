@@ -17,6 +17,7 @@ export const PURPOSES = [
   'push.action',
   'recovery.confirm',
   'identity.rotate',
+  'identity.reissue',
 ] as const;
 export type Purpose = (typeof PURPOSES)[number];
 

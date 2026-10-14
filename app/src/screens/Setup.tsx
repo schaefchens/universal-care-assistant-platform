@@ -31,7 +31,7 @@ export function Setup(p: { onConnected: (s: ServerRef) => void }) {
       return;
     }
     say(tr('setup.connected', { name: info.name }), 'system');
-    p.onConnected({ url, name: info.name, serverId: info.serverId });
+    p.onConnected({ url, name: info.name, serverId: info.serverId, development: info.development });
   };
 
   return (

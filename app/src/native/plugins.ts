@@ -69,9 +69,27 @@ export interface InfoPlugin {
   get(): Promise<DeviceInfo>;
   /** Light or dark icons in the system bars, to match the app's theme. */
   setSystemBars(o: { dark: boolean }): Promise<void>;
+  /** FLAG_SECURE: no screenshots or screen recording while the recovery words are visible. */
+  setSecure(o: { on: boolean }): Promise<void>;
+}
+
+export interface Jwk {
+  kty: 'EC';
+  crv: 'P-256';
+  x: string;
+  y: string;
+}
+
+export interface DeviceKeyPlugin {
+  ensure(): Promise<{ jwk: Jwk; created: boolean }>;
+  exists(): Promise<{ exists: boolean }>;
+  /** Signs base64url bytes; the signature comes back as P1363, base64url. */
+  sign(o: { data: string }): Promise<{ signature: string }>;
+  remove(): Promise<void>;
 }
 
 export const Earcons = registerPlugin<EarconsPlugin>('Earcons');
 export const DeviceTts = registerPlugin<DeviceTtsPlugin>('DeviceTts');
 export const A11y = registerPlugin<A11yPlugin>('A11y');
 export const Info = registerPlugin<InfoPlugin>('Info');
+export const DeviceKey = registerPlugin<DeviceKeyPlugin>('DeviceKey');

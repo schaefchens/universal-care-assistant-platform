@@ -31,6 +31,17 @@ public class InfoPlugin extends Plugin {
         call.resolve(r);
     }
 
+    /** While the recovery words are on screen: no screenshots, no screen recording, nothing in the Recents preview. */
+    @PluginMethod
+    public void setSecure(PluginCall call) {
+        boolean on = call.getBoolean("on", false);
+        getActivity().runOnUiThread(() -> {
+            if (on) getActivity().getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+            else getActivity().getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+            call.resolve();
+        });
+    }
+
     /** The system bars' icons follow the app's theme: light icons on a dark theme, dark on a light one, so the time and
      *  battery stay readable for people with partial sight (the app draws edge to edge). */
     @PluginMethod

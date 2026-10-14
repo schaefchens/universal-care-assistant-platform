@@ -29,22 +29,22 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
     {
       schema: {
         body: Type.Object({
-          purpose: Type.Union([Type.Literal('device.proof'), Type.Literal('session'), Type.Literal('device.recover'), Type.Literal('identity.rotate')]),
+          purpose: Type.Union([Type.Literal('device.proof'), Type.Literal('session'), Type.Literal('device.recover'), Type.Literal('identity.rotate'), Type.Literal('identity.reissue')]),
           deviceId: Type.Optional(Uuid),
           identityKey: Type.Optional(B64),
         }),
       },
     },
     async (req) => {
-      const b = req.body as { purpose: 'device.proof' | 'session' | 'device.recover' | 'identity.rotate'; deviceId?: string; identityKey?: string };
+      const b = req.body as { purpose: 'device.proof' | 'session' | 'device.recover' | 'identity.rotate' | 'identity.reissue'; deviceId?: string; identityKey?: string };
       if (b.purpose === 'device.recover') {
         if (!b.identityKey) throw new AppError('bad_request');
         return identity.recoveryChallenge(b.identityKey, req.ip);
       }
       if (b.purpose === 'session') return identity.newChallenge('session', { deviceId: b.deviceId });
-      if (b.purpose === 'identity.rotate') {
+      if (b.purpose === 'identity.rotate' || b.purpose === 'identity.reissue') {
         auth(req);
-        return identity.newChallenge('identity.rotate');
+        return identity.newChallenge(b.purpose);
       }
       return identity.newChallenge('device.proof');
     },
@@ -92,7 +92,7 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
     return reply.code(204).send();
   });
 
-  app.get('/api/v1/me', { preHandler: requireAuth }, async (req) => identity.me(auth(req).userId));
+  app.get('/api/v1/me', { preHandler: requireAuth }, async (req) => identity.me(auth(req).userId, auth(req).deviceId));
 
   app.patch(
     '/api/v1/me',
@@ -146,6 +146,15 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
     },
     async (req, reply) => {
       await identity.rotateIdentity(auth(req).userId, req.body as Parameters<IdentityService['rotateIdentity']>[1]);
+      return reply.code(204).send();
+    },
+  );
+
+  app.post(
+    '/api/v1/identity/reissue',
+    { preHandler: requireAuth, schema: { body: Type.Object({ org: Type.String({ maxLength: 200 }), challengeId: Uuid, nonce: B64, newKey: B64, newProof: B64 }) } },
+    async (req, reply) => {
+      await identity.reissueIdentity(auth(req), req.body as Parameters<IdentityService['reissueIdentity']>[1]);
       return reply.code(204).send();
     },
   );

@@ -40,6 +40,8 @@ export interface ServerRef {
   url: string;
   name: string;
   serverId: string;
+  /** A development server: lists still under review (the German words) may be used. Refreshed on every start. */
+  development?: boolean;
 }
 
 export const loadServer = () => read<ServerRef>(KEYS.server);

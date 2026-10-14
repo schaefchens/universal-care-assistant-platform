@@ -17,7 +17,7 @@ export async function ensureServerId(db: Db): Promise<string> {
   return r.rows[0]!.value;
 }
 
-export function registerServerInfo(app: AnyApp, o: { serverId: string; config: Pick<Config, 'serverName' | 'ntfyPublicUrl'>; vapidPublicKey?: () => string | null }): void {
+export function registerServerInfo(app: AnyApp, o: { serverId: string; config: Pick<Config, 'serverName' | 'ntfyPublicUrl' | 'production'>; vapidPublicKey?: () => string | null }): void {
   app.get('/api/v1/server', async (): Promise<ServerInfo> => ({
     name: o.config.serverName,
     serverId: o.serverId,
@@ -26,5 +26,6 @@ export function registerServerInfo(app: AnyApp, o: { serverId: string; config: P
     languages: [...LANGS],
     ntfyUrl: o.config.ntfyPublicUrl,
     vapidPublicKey: o.vapidPublicKey?.() ?? null,
+    development: !o.config.production,
   }));
 }

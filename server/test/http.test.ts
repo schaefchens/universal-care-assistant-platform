@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Type from 'typebox';
 import { buildCore } from '../src/core/app.ts';
+import { loadConfig } from '../src/lib/config.ts';
 import type { Db } from '../src/lib/db.ts';
 import { AppError } from '../src/lib/errors.ts';
 import { parseRange } from '../src/lib/files.ts';
@@ -65,7 +66,8 @@ describe('the HTTP layer', () => {
   it('describes the server', async () => {
     const r = await core.app.inject('/api/v1/server');
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toMatchObject({ name: 'UCAP', serverId: core.serverId, api: ['v1'], languages: ['de', 'en'] });
+    expect(r.json()).toMatchObject({ name: 'UCAP', serverId: core.serverId, api: ['v1'], languages: ['de', 'en'], development: true });
+    expect(loadConfig('core', { NODE_ENV: 'production' }).production).toBe(true);
   });
 
   it('serves a stored file through a signed URL, with ranges, and refuses tampered or expired URLs', async () => {

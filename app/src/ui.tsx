@@ -9,6 +9,7 @@ import type { AssistiveMode } from './a11y/assistive.ts';
 import type { EarconPlayer } from './audio/earcons.ts';
 import type { Channel, SpeechOut } from './audio/speech.ts';
 import { record } from './debug.ts';
+import { ceremony, redactWords } from './identity/ceremony.ts';
 import { has } from './native/plugins.ts';
 
 export interface Ui {
@@ -26,7 +27,7 @@ export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; ea
     lang: o.lang,
     tr: (key, params) => t(o.lang, key, params, o.form),
     say: (text, channel) => {
-      record('spoken', { channel, text });
+      record('spoken', { channel, text: ceremony.active ? redactWords(text) : text });
       o.speech.say(text, o.lang, channel);
     },
     speech: o.speech,

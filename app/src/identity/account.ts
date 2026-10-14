@@ -1,0 +1,232 @@
+/**
+ * Creating an account, recovering a device, confirming the words, and keeping a session (docs/plan.md, Appendix C).
+ * The entropy and the identity key exist only inside these calls and are wiped when they return; the access token
+ * lives in memory only and is renewed by the device key two minutes before it expires.
+ */
+import { b64url, deriveIdentity, inviteDigest, signIdentity, wipe } from '@ucap/identity';
+import { api, ApiError } from '../net/api.ts';
+import { startEventsAt } from '../net/realtime.ts';
+import type { ServerRef } from '../state/store.ts';
+import { deviceKey, thumbprint } from './device-key.ts';
+
+export interface DeviceRef {
+  serverUrl: string;
+  serverId: string;
+  userId: string;
+  deviceId: string;
+}
+
+const KEY = 'ucap.device.v1';
+
+export function loadDeviceRef(): DeviceRef | null {
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? (JSON.parse(raw) as DeviceRef) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDeviceRef(r: DeviceRef | null) {
+  try {
+    if (r) localStorage.setItem(KEY, JSON.stringify(r));
+    else localStorage.removeItem(KEY);
+  } catch {
+    // Without storage the device must sign in again next time.
+  }
+}
+
+export interface DeviceInfo {
+  name: string;
+  platform: 'android' | 'ios' | 'web';
+  formFactor: 'phone' | 'tablet' | 'desktop';
+  appVersion: string;
+}
+
+const org = (s: ServerRef) => new URL(s.url).origin;
+
+async function deviceProof(server: ServerRef, nonce: string) {
+  const jwk = await deviceKey.ensure();
+  const djkt = await thumbprint(jwk);
+  const proof = await deviceKey.sign('device.proof', { srv: server.serverId, org: org(server), nonce, djkt });
+  return { jwk, djkt, proof };
+}
+
+export async function createAccount(o: {
+  server: ServerRef;
+  invite: string;
+  displayName: string;
+  locale: string;
+  addressForm: 'du' | 'Sie';
+  timezone: string;
+  entropy: Uint8Array;
+  device: DeviceInfo;
+}): Promise<{ ref: DeviceRef; session: Session; inviteKind: string }> {
+  const id = deriveIdentity(o.entropy);
+  try {
+    const ch = await api<{ challengeId: string; nonce: string }>(o.server.url, '/api/v1/identity/challenge', { body: { purpose: 'device.proof' } });
+    const dev = await deviceProof(o.server, ch.nonce);
+    const ipk = b64url(id.publicKey);
+    const identityProof = b64url(signIdentity(id.seed, 'account.create', { srv: o.server.serverId, org: org(o.server), inv: inviteDigest(o.invite), ipk, djkt: dev.djkt }));
+    const r = await api<{ userId: string; deviceId: string; token: string; expiresIn: number; seq: number; invite: { kind: string } }>(o.server.url, '/api/v1/accounts', {
+      body: {
+        invite: o.invite,
+        org: org(o.server),
+        displayName: o.displayName,
+        locale: o.locale,
+        addressForm: o.addressForm,
+        timezone: o.timezone,
+        identityKey: ipk,
+        identityProof,
+        challengeId: ch.challengeId,
+        nonce: ch.nonce,
+        device: { jwk: dev.jwk, ...o.device, keyStore: deviceKey.keyStore, proof: dev.proof },
+      },
+    });
+    const ref = { serverUrl: o.server.url, serverId: o.server.serverId, userId: r.userId, deviceId: r.deviceId };
+    saveDeviceRef(ref);
+    startEventsAt(r.deviceId, r.seq);
+    return { ref, session: new Session(ref, r.token, r.expiresIn), inviteKind: r.invite.kind };
+  } finally {
+    wipe(id.seed);
+  }
+}
+
+export async function recoverAccount(o: { server: ServerRef; entropy: Uint8Array; device: DeviceInfo }): Promise<{ ref: DeviceRef; session: Session }> {
+  const id = deriveIdentity(o.entropy);
+  try {
+    const ipk = b64url(id.publicKey);
+    const ch = await api<{ challengeId: string; nonce: string }>(o.server.url, '/api/v1/identity/challenge', { body: { purpose: 'device.recover', identityKey: ipk } });
+    const dev = await deviceProof(o.server, ch.nonce);
+    const identityProof = b64url(signIdentity(id.seed, 'device.recover', { srv: o.server.serverId, org: org(o.server), nonce: ch.nonce, ipk, djkt: dev.djkt }));
+    const r = await api<{ userId: string; deviceId: string; token: string; expiresIn: number; seq: number }>(o.server.url, '/api/v1/devices/recover', {
+      body: { org: org(o.server), identityKey: ipk, identityProof, challengeId: ch.challengeId, nonce: ch.nonce, device: { jwk: dev.jwk, ...o.device, keyStore: deviceKey.keyStore, proof: dev.proof } },
+    });
+    const ref = { serverUrl: o.server.url, serverId: o.server.serverId, userId: r.userId, deviceId: r.deviceId };
+    saveDeviceRef(ref);
+    startEventsAt(r.deviceId, r.seq);
+    return { ref, session: new Session(ref, r.token, r.expiresIn) };
+  } finally {
+    wipe(id.seed);
+  }
+}
+
+/** After the verification quiz: the identity key signs that the person has their words. */
+export async function confirmWords(session: Session, server: ServerRef, entropy: Uint8Array): Promise<void> {
+  const id = deriveIdentity(entropy);
+  try {
+    const proof = b64url(signIdentity(id.seed, 'recovery.confirm', { srv: server.serverId, org: org(server), uid: session.ref.userId, ipk: b64url(id.publicKey) }));
+    await session.call('/api/v1/identity/recovery-confirmed', { body: { org: org(server), proof } });
+  } finally {
+    wipe(id.seed);
+  }
+}
+
+export interface Me {
+  id: string;
+  displayName: string;
+  locale: string;
+  addressForm: 'du' | 'Sie';
+  timezone: string;
+  recoveryState: 'none' | 'unconfirmed' | 'confirmed';
+  isAdmin: boolean;
+  identityKey: string | null;
+  /** Unconfirmed words, and this device created the account: it may replace them without the old words. */
+  canReissue: boolean;
+}
+
+/** Whether typed words belong to this account (checked against its public key before anything changes). */
+export function wordsMatch(me: Me, entropy: Uint8Array): boolean {
+  const id = deriveIdentity(entropy);
+  try {
+    return me.identityKey === b64url(id.publicKey);
+  } finally {
+    wipe(id.seed);
+  }
+}
+
+/** New words replace the current ones; both identity keys sign (docs/plan.md, Appendix C: rotation). */
+export async function rotateWords(session: Session, server: ServerRef, oldEntropy: Uint8Array, newEntropy: Uint8Array): Promise<void> {
+  const old = deriveIdentity(oldEntropy);
+  const next = deriveIdentity(newEntropy);
+  try {
+    const ch = await session.call<{ challengeId: string; nonce: string }>('/api/v1/identity/challenge', { body: { purpose: 'identity.rotate' } });
+    const oldKey = b64url(old.publicKey);
+    const newKey = b64url(next.publicKey);
+    const payload = { srv: server.serverId, org: org(server), uid: session.ref.userId, old_ipk: oldKey, new_ipk: newKey, nonce: ch.nonce };
+    await session.call('/api/v1/identity/rotate', {
+      body: { org: org(server), challengeId: ch.challengeId, nonce: ch.nonce, oldKey, oldProof: b64url(signIdentity(old.seed, 'identity.rotate', payload)), newKey, newProof: b64url(signIdentity(next.seed, 'identity.rotate', payload)) },
+    });
+  } finally {
+    wipe(old.seed, next.seed);
+  }
+}
+
+/** New words when the first were never confirmed: only the device that created the account may do this. */
+export async function reissueWords(session: Session, server: ServerRef, newEntropy: Uint8Array): Promise<void> {
+  const next = deriveIdentity(newEntropy);
+  try {
+    const ch = await session.call<{ challengeId: string; nonce: string }>('/api/v1/identity/challenge', { body: { purpose: 'identity.reissue' } });
+    const newKey = b64url(next.publicKey);
+    const payload = { srv: server.serverId, org: org(server), uid: session.ref.userId, did: session.ref.deviceId, new_ipk: newKey, nonce: ch.nonce };
+    await session.call('/api/v1/identity/reissue', { body: { org: org(server), challengeId: ch.challengeId, nonce: ch.nonce, newKey, newProof: b64url(signIdentity(next.seed, 'identity.reissue', payload)) } });
+  } finally {
+    wipe(next.seed);
+  }
+}
+
+/** A signed-in device. The token stays in memory; a new one is signed for whenever it is about to expire. */
+export class Session {
+  readonly ref: DeviceRef;
+  private token: string | null;
+  private expiresAt: number;
+  private renewing: Promise<string> | null = null;
+
+  constructor(ref: DeviceRef, token: string | null = null, expiresIn = 0) {
+    this.ref = ref;
+    this.token = token;
+    this.expiresAt = Date.now() + expiresIn * 1000;
+  }
+
+  async accessToken(): Promise<string> {
+    if (this.token && Date.now() < this.expiresAt - 120_000) return this.token;
+    this.renewing ??= this.renew().finally(() => (this.renewing = null));
+    return this.renewing;
+  }
+
+  private async renew(): Promise<string> {
+    const base = this.ref.serverUrl;
+    const ch = await api<{ challengeId: string; nonce: string }>(base, '/api/v1/identity/challenge', { body: { purpose: 'session', deviceId: this.ref.deviceId } });
+    const proof = await deviceKey.sign('session', { srv: this.ref.serverId, org: new URL(base).origin, nonce: ch.nonce, did: this.ref.deviceId });
+    const r = await api<{ token: string; expiresIn: number }>(base, '/api/v1/sessions', {
+      body: { org: new URL(base).origin, deviceId: this.ref.deviceId, challengeId: ch.challengeId, nonce: ch.nonce, proof },
+    });
+    this.token = r.token;
+    this.expiresAt = Date.now() + r.expiresIn * 1000;
+    return r.token;
+  }
+
+  /** Forget the current token (the server refused it); the next call signs for a new one. */
+  dropToken(): void {
+    this.token = null;
+  }
+
+  async call<T>(path: string, o: { method?: string; body?: unknown } = {}): Promise<T> {
+    try {
+      return await api<T>(this.ref.serverUrl, path, { ...o, token: await this.accessToken() });
+    } catch (e) {
+      // A token the server no longer knows (restart, clock): one fresh proof, then give up.
+      if (e instanceof ApiError && e.status === 401 && e.params.reason !== 'device_revoked') {
+        this.token = null;
+        return api<T>(this.ref.serverUrl, path, { ...o, token: await this.accessToken() });
+      }
+      throw e;
+    }
+  }
+
+  /** This device was revoked or the person signed out: forget it, and its key. */
+  async forget(): Promise<void> {
+    saveDeviceRef(null);
+    await deviceKey.remove().catch(() => {});
+  }
+}

@@ -6,6 +6,8 @@ export type Role = 'core' | 'assistant';
 
 export interface Config {
   role: Role;
+  /** NODE_ENV=production: no development origins, no lists under review. */
+  production: boolean;
   port: number;
   databaseUrl: string;
   /** The address apps and herde workers use, e.g. https://ucap.example; Caddy in front. */
@@ -44,6 +46,7 @@ export function loadConfig(role: Role, env: NodeJS.ProcessEnv = process.env): Co
   ]);
   return {
     role,
+    production: env.NODE_ENV === 'production',
     publicOrigins: [...publicOrigins],
     port: Number(env.PORT ?? (role === 'core' ? 8820 : 8821)),
     databaseUrl: env.DATABASE_URL ?? 'postgres://ucap:ucap@127.0.0.1:55440/ucap',

@@ -39,7 +39,7 @@ export interface IdentityDeps {
   publicOrigins: string[];
 }
 
-export type ChallengePurpose = 'device.proof' | 'device.recover' | 'session' | 'identity.rotate';
+export type ChallengePurpose = 'device.proof' | 'device.recover' | 'session' | 'identity.rotate' | 'identity.reissue';
 
 export interface DeviceInput {
   jwk: unknown;
@@ -88,6 +88,12 @@ export function createIdentityService(d: IdentityDeps) {
     const row = r.rows[0];
     if (!row) throw bad();
     return row;
+  }
+
+  /** Where a new device starts reading the person's events: nothing from before it existed is replayed to it. */
+  async function eventHead(trx: Trx, userId: string): Promise<number> {
+    const r = await sql<{ seq: string | null }>`select max(seq) as seq from user_events where user_id = ${userId}`.execute(trx);
+    return Number(r.rows[0]?.seq ?? 0);
   }
 
   async function newSession(trx: Trx, userId: string, deviceId: string) {
@@ -212,7 +218,7 @@ export function createIdentityService(d: IdentityDeps) {
         const deviceId = await insertDevice(trx, userId, input.device, key, 'create', { purpose: 'account.create', payload, proof: input.identityProof });
         await audit(trx, d.clock, { actorUser: userId, actorDevice: deviceId, subjectUser: userId, action: 'account.created', targetType: 'invite', targetId: invite.id, detail: { admin: invite.grants_admin } });
         const session = await newSession(trx, userId, deviceId);
-        return { userId, deviceId, invite: { id: invite.id, kind: invite.kind, createdBy: invite.created_by }, ...session };
+        return { userId, deviceId, invite: { id: invite.id, kind: invite.kind, createdBy: invite.created_by }, seq: 0, ...session };
       });
     },
 
@@ -233,10 +239,12 @@ export function createIdentityService(d: IdentityDeps) {
         if (!userId) throw bad();
         const deviceId = await insertDevice(trx, userId, input.device, key, 'recover', { purpose: 'device.recover', payload, proof: input.identityProof });
         await audit(trx, d.clock, { actorUser: userId, actorDevice: deviceId, subjectUser: userId, action: 'device.recovered', targetType: 'device', targetId: deviceId });
+        // Recovering with the words proves the person holds them.
+        await sql`update users set recovery_state = 'confirmed' where id = ${userId}`.execute(trx);
         // Every other device hears that the recovery words added a device (docs/plan.md, Appendix C).
         await emit(trx, { kind: 'device.added', recipients: [userId], payload: { deviceId, name: input.device.name, via: 'recover' } });
         const session = await newSession(trx, userId, deviceId);
-        return { userId, deviceId, ...session };
+        return { userId, deviceId, seq: await eventHead(trx, userId), ...session };
       });
     },
 
@@ -270,12 +278,28 @@ export function createIdentityService(d: IdentityDeps) {
       await sql`update sessions set revoked_at = ${now()} where id = ${sessionId} and revoked_at is null`.execute(d.db);
     },
 
-    async me(userId: string) {
-      const r = await sql<{ id: string; display_name: string; locale: string; address_form: string; timezone: string; recovery_state: string; is_admin: boolean }>`
-        select id, display_name, locale, address_form, timezone, recovery_state, is_admin from users where id = ${userId}`.execute(d.db);
+    async me(userId: string, deviceId?: string) {
+      const r = await sql<{ id: string; display_name: string; locale: string; address_form: string; timezone: string; recovery_state: string; is_admin: boolean; public_key: Buffer | null; enrolled_via: string | null }>`
+        select u.id, u.display_name, u.locale, u.address_form, u.timezone, u.recovery_state, u.is_admin, k.public_key, dv.enrolled_via
+        from users u
+        left join identity_keys k on k.user_id = u.id and k.status = 'active'
+        left join devices dv on dv.id = ${deviceId ?? null} and dv.user_id = u.id
+        where u.id = ${userId}`.execute(d.db);
       const u = r.rows[0];
       if (!u) throw new AppError('not_found');
-      return { id: u.id, displayName: u.display_name, locale: u.locale, addressForm: u.address_form, timezone: u.timezone, recoveryState: u.recovery_state, isAdmin: u.is_admin };
+      return {
+        id: u.id,
+        displayName: u.display_name,
+        locale: u.locale,
+        addressForm: u.address_form,
+        timezone: u.timezone,
+        recoveryState: u.recovery_state,
+        isAdmin: u.is_admin,
+        // The public half only: the app checks typed words against it before anything is changed.
+        identityKey: u.public_key ? b64url(new Uint8Array(u.public_key)) : null,
+        // Whether this device may replace words that were never confirmed (see reissueIdentity).
+        canReissue: u.recovery_state === 'unconfirmed' && u.enrolled_via === 'create',
+      };
     },
 
     async updateMe(userId: string, patch: { displayName?: string; locale?: string; addressForm?: 'du' | 'Sie'; timezone?: string }) {
@@ -347,6 +371,37 @@ export function createIdentityService(d: IdentityDeps) {
                   ${JSON.stringify({ payload, oldProof: input.oldProof, newProof: input.newProof })}::jsonb, ${now()})`.execute(trx);
         await sql`update users set recovery_state = 'unconfirmed' where id = ${userId}`.execute(trx);
         await audit(trx, d.clock, { actorUser: userId, subjectUser: userId, action: 'identity.rotated', targetType: 'identity_key', targetId: old.id });
+      });
+    },
+
+    /**
+     * New words when the first ones were never confirmed (the ceremony was interrupted: the app closed, the battery
+     * ran out). Nobody can hold unconfirmed words, so the device that created the account may replace them, signed by
+     * the new key alone; once the words are confirmed, only a rotation with the old words can change them.
+     */
+    async reissueIdentity(a: { userId: string; deviceId: string }, input: { org: string; challengeId: string; nonce: string; newKey: string; newProof: string }) {
+      checkOrigin(input.org);
+      return d.db.transaction().execute(async (trx) => {
+        await consumeChallenge(trx, input.challengeId, input.nonce, 'identity.reissue');
+        const u = await sql<{ recovery_state: string; enrolled_via: string }>`
+          select u.recovery_state, dv.enrolled_via from users u join devices dv on dv.user_id = u.id
+          where u.id = ${a.userId} and dv.id = ${a.deviceId} and dv.revoked_at is null for update of u`.execute(trx);
+        const row = u.rows[0];
+        if (!row || row.recovery_state !== 'unconfirmed' || row.enrolled_via !== 'create') throw new AppError('forbidden', { params: { reason: 'recovery_confirmed' } });
+        const payload = { srv: d.serverId, org: input.org, uid: a.userId, did: a.deviceId, new_ipk: input.newKey, nonce: input.nonce };
+        if (!verifyIdentity(fromB64url(input.newKey), 'identity.reissue', payload, fromB64url(input.newProof))) throw bad();
+        const cur = await sql<{ id: string }>`
+          update identity_keys set status = 'retired', retired_at = ${now()} where user_id = ${a.userId} and status = 'active' returning id`.execute(trx);
+        try {
+          await sql`
+            insert into identity_keys (id, user_id, public_key, status, rotation_proof, created_at)
+            values (${uuidv7(d.clock())}, ${a.userId}, ${Buffer.from(fromB64url(input.newKey))}, 'active',
+                    ${JSON.stringify({ payload, newProof: input.newProof, reissue: true })}::jsonb, ${now()})`.execute(trx);
+        } catch (e) {
+          if ((e as { code?: string }).code === '23505') throw new AppError('conflict', { params: { reason: 'identity_known' } });
+          throw e;
+        }
+        await audit(trx, d.clock, { actorUser: a.userId, actorDevice: a.deviceId, subjectUser: a.userId, action: 'identity.reissued', targetType: 'identity_key', targetId: cur.rows[0]?.id });
       });
     },
 

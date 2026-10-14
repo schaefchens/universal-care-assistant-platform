@@ -16,5 +16,7 @@ export const ServerInfo = Type.Object({
   languages: Type.Array(Type.String()),
   ntfyUrl: Type.Union([Type.String(), Type.Null()]),
   vapidPublicKey: Type.Union([Type.String(), Type.Null()]),
+  /** A development or test server. Lists that are still under review (the German words `de-dev`) are used only here. */
+  development: Type.Boolean(),
 });
 export type ServerInfo = Type.Static<typeof ServerInfo>;

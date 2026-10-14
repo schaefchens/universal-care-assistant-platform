@@ -3,9 +3,10 @@
  * The test client does what the app does: entropy → identity key (packages/identity), a WebCrypto P-256 device key,
  * statements signed by both.
  */
-import { b64url, deriveIdentity, fromWords, inviteDigest, type Json, newEntropy, type Purpose, signIdentity, statement, toWords } from '@ucap/identity';
+import { b64url, deriveIdentity, fromWords, groupCode, inviteDigest, type Json, newEntropy, type Purpose, signIdentity, statement, toWords } from '@ucap/identity';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { adminInvite } from '../src/cli.ts';
 import { buildCore } from '../src/core/app.ts';
 import { dispatchOnce } from '../src/core/dispatcher.ts';
 import type { Db } from '../src/lib/db.ts';
@@ -130,6 +131,21 @@ describe('identity and devices', () => {
     expect(again.r.statusCode).toBe(401);
   });
 
+  it('ID-10: the bootstrap command prints an admin invitation that lasts one hour and is audited without its code', async () => {
+    const { lines, invite: inv } = await adminInvite({ identity: core.identity, db, clock, publicUrl: ORG });
+    expect(lines.join('\n')).toContain(groupCode(inv.code));
+    const auditRows = JSON.stringify((await sql`select * from audit_events where target_id = ${inv.id}`.execute(db)).rows);
+    expect(auditRows).toContain('invite.created');
+    expect(auditRows).not.toContain(inv.code);
+    expect(auditRows).not.toContain(inv.spoken!);
+    clock.advance(3_601_000);
+    expect((await createAccount(inv.code)).r.statusCode).toBe(401);
+    const fresh = await adminInvite({ identity: core.identity, db, clock, publicUrl: ORG });
+    const { r } = await createAccount(fresh.invite.spoken!);
+    const me = await get('/api/v1/me', (r.json() as { token: string }).token);
+    expect(me.json()).toMatchObject({ isAdmin: true });
+  });
+
   it('ID-11: wrong invitation codes from one address are limited (10 an hour)', async () => {
     let last = 0;
     for (let i = 0; i < 12; i++) last = (await createAccount('0000000000')).r.statusCode;
@@ -154,6 +170,16 @@ describe('identity and devices', () => {
     expect(devices.devices.map((x) => x.enrolledVia)).toEqual(['create', 'recover']);
   });
 
+
+  it('starts a recovered device after the events that came before it', async () => {
+    const inv = await invite();
+    const { entropy } = await createAccount(inv.code);
+    await recover(entropy, 'Erstes');
+    await dispatchOnce(db, clock);
+    const second = (await recover(entropy, 'Zweites')).json() as { seq: number };
+    // The first recovery's announcement is already in the log; the second device does not get it replayed.
+    expect(second.seq).toBeGreaterThan(0);
+  });
   it('answers an unknown identity exactly as a bad proof (nobody learns who exists)', async () => {
     const rec = await recover(newEntropy());
     expect(rec.statusCode).toBe(401);
@@ -236,6 +262,40 @@ describe('identity and devices', () => {
     expect(rot.statusCode).toBe(204);
     expect((await recover(entropy)).statusCode).toBe(401);
     expect((await recover(fresh)).statusCode).toBe(201);
+  });
+
+  it('gives new words while the first were never confirmed, from the creating device only, and never after confirmation', async () => {
+    const inv = await invite();
+    const { r, entropy, ipk } = await createAccount(inv.code);
+    const { token, userId, deviceId } = r.json() as { token: string; userId: string; deviceId: string };
+    expect((await get('/api/v1/me', token)).json()).toMatchObject({ identityKey: ipk, recoveryState: 'unconfirmed', canReissue: true });
+
+    const reissue = async (t: string, did: string) => {
+      const fresh = newEntropy();
+      const next = deriveIdentity(fresh);
+      const ch = await challenge('identity.reissue', {}, t);
+      const payload = { srv, org: ORG, uid: userId, did, new_ipk: b64url(next.publicKey), nonce: ch.nonce };
+      const res = await post('/api/v1/identity/reissue', { org: ORG, challengeId: ch.challengeId, nonce: ch.nonce, newKey: b64url(next.publicKey), newProof: b64url(signIdentity(next.seed, 'identity.reissue', payload)) }, t);
+      return { res, fresh, next };
+    };
+
+    // A device added by recovery may not replace the words; and recovering proves the words are held.
+    const rec = (await recover(entropy)).json() as { token: string; deviceId: string };
+    expect((await get('/api/v1/me', rec.token)).json()).toMatchObject({ recoveryState: 'confirmed', canReissue: false });
+    expect((await reissue(rec.token, rec.deviceId)).res.statusCode).toBe(403);
+    expect((await reissue(token, deviceId)).res.statusCode).toBe(403);
+    await sql`update users set recovery_state = 'unconfirmed' where id = ${userId}`.execute(db);
+
+    const first = await reissue(token, deviceId);
+    expect(first.res.statusCode).toBe(204);
+    expect((await recover(entropy)).statusCode).toBe(401);
+    expect((await recover(first.fresh)).statusCode).toBe(201);
+
+    // Confirmed words can only be changed with the old words (a rotation).
+    const nextIpk = b64url(first.next.publicKey);
+    const proof = b64url(signIdentity(first.next.seed, 'recovery.confirm', { srv, org: ORG, uid: userId, ipk: nextIpk }));
+    expect((await post('/api/v1/identity/recovery-confirmed', { org: ORG, proof }, token)).statusCode).toBe(204);
+    expect((await reissue(token, deviceId)).res.statusCode).toBe(403);
   });
 
   it('lets only admins create account invitations', async () => {

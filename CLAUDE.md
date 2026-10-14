@@ -5,6 +5,7 @@ UCAP is a self-hosted assistive and care platform for disabled people. **CONCEPT
 ## Rules
 
 - **Never reinterpret the owner's text.** When a design departs from CONCEPT.md, quote the sentence and ask first (a silent reinterpretation once cost a project its restart). Cite the CONCEPT section in comments when a rule comes from it.
+- **Departures from `docs/plan.md` go into `docs/decisions.md`**: what the plan said, what was built, why; marked "to confirm" until the owner has.
 - **Stay in this repository.** Reading `../lookup/` (measured facts, reusable code) and `../herde/` is allowed. Never scan other sibling projects.
 - **`../herde` is a live production install** (ARCHE's worker runs from its working tree): read only. Never run tests, check out branches or apply patches there. Joining herde to UCAP is done by the owner.
 - **The help path depends on nothing optional.** The core process imports no AI, speech, messaging or herde code (`tools/test/import-graph.test.ts`). Care must keep working with the assistant and connectors stopped.
