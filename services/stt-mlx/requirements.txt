@@ -1,0 +1,3 @@
+# The versions measured in lookup/findings/speech.md (2026-10-13).
+mlx-whisper==0.4.3
+numpy

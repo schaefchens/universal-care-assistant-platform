@@ -1,0 +1,157 @@
+# UCAP's development stack. `npm run setup` once (secrets outside the repository), then `docker compose up -d --wait`.
+# The AI engines are not in here on a Mac: Ollama, herde and services/stt-mlx run natively, because Docker cannot
+# reach Metal; the assistant reaches them at host.docker.internal. Ports: docs/plan.md, Appendix G.
+name: ucap-dev
+
+x-node: &node
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    target: dev
+  image: ucap-dev:latest
+  working_dir: /app
+  volumes:
+    - ./:/app
+    # Linux node_modules in a named volume; the host's node_modules are for macOS.
+    - node-modules:/app/node_modules
+  depends_on:
+    deps:
+      condition: service_completed_successfully
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ucap
+      POSTGRES_PASSWORD: ucap
+      POSTGRES_DB: ucap
+    ports:
+      - "127.0.0.1:55440:5432"
+    # A named volume, never a bind mount (radio-app hit SIGBUS with one on Docker Desktop).
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./tools/dev/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ucap -d ucap"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # The UnifiedPush distributor for Android devices (measured in lookup: 6 of 6 alarms in deep Doze).
+  # S4 adds access control (only UCAP may publish); until then it listens on loopback only.
+  ntfy:
+    image: binwiederhier/ntfy:v2.29.0
+    command: serve
+    environment:
+      NTFY_BASE_URL: ${NTFY_PUBLIC_URL:-http://localhost:8811}
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_CACHE_DURATION: 12h
+      NTFY_LOG_LEVEL: warn
+      # Every push comes from the server's address: exempt it, or an escalation to several helpers hits HTTP 429.
+      NTFY_VISITOR_REQUEST_LIMIT_EXEMPT_HOSTS: 172.30.0.0/24
+    ports:
+      - "127.0.0.1:8811:80"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost/v1/health | grep -q true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Installs the Linux node_modules into their volume, then exits.
+  deps:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: dev
+    image: ucap-dev:latest
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+    command: npm install --no-audit --no-fund
+
+  core:
+    <<: *node
+    command: node --watch server/src/core/main.ts
+    secrets: [master_key, pepper]
+    environment:
+      PORT: "8820"
+      DATABASE_URL: postgres://ucap:ucap@db:5432/ucap
+    ports:
+      - "127.0.0.1:8816:8820"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8820/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  assistant:
+    <<: *node
+    command: node --watch server/src/assistant/main.ts
+    secrets: [master_key, pepper, connectors_token]
+    environment:
+      PORT: "8821"
+      DATABASE_URL: postgres://ucap:ucap@db:5432/ucap
+      OLLAMA_URL: http://host.docker.internal:11434
+      STT_URL: http://host.docker.internal:8813
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8817:8821"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8821/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # TDLib holds a lock on its database: restarted by hand (docker compose restart connectors), never by --watch.
+  connectors:
+    <<: *node
+    command: node connectors/src/main.ts
+    secrets: [connectors_token]
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8822/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  caddy:
+    image: caddy:2.11
+    ports:
+      - "127.0.0.1:8810:8810"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      core:
+        condition: service_healthy
+      assistant:
+        condition: service_healthy
+
+# Created once by `npm run setup`, outside the repository; the services refuse to start without them.
+secrets:
+  master_key:
+    file: ${UCAP_SECRETS_DIR:?run npm run setup first}/master_key
+  pepper:
+    file: ${UCAP_SECRETS_DIR:?run npm run setup first}/pepper
+  connectors_token:
+    file: ${UCAP_SECRETS_DIR:?run npm run setup first}/connectors_token
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  pgdata:
+  ntfy-cache:
+  node-modules:
+  caddy-data:
+  caddy-config:

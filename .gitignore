@@ -1,0 +1,29 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+
+# Local configuration and secrets never enter the repository (secrets live outside it: npm run setup).
+.env
+.env.*
+!.env.example
+
+# Android build output and files that `cap sync` generates.
+app/android/.gradle/
+app/android/build/
+app/android/app/build/
+app/android/local.properties
+app/android/capacitor-cordova-android-plugins/
+app/android/app/src/main/assets/public/
+app/android/app/src/main/assets/capacitor.config.json
+app/android/app/src/main/assets/capacitor.plugins.json
+
+# The native speech server's environment and model cache.
+services/stt-mlx/.venv/
+services/stt-mlx/data/
+
+# Results of local runs (spikes keep their reports in docs/spikes/).
+data/

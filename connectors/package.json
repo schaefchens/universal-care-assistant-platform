@@ -1,0 +1,23 @@
+{
+  "name": "@ucap/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "UCAP's messaging connectors (Telegram via TDLib in M1): a separate process without database credentials.",
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p .",
+    "spike:tdlib": "node spikes/tdlib-check.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "prebuilt-tdlib": "0.1008067.0",
+    "tdl": "8.1.0"
+  }
+}

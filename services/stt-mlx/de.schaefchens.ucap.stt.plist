@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A launchd template: replace /path/to/universal-care-assistant-platform and USERNAME before installing (see README.md). -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>de.schaefchens.ucap.stt</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/path/to/universal-care-assistant-platform/services/stt-mlx/run.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/USERNAME/Library/Logs/ucap-stt.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/USERNAME/Library/Logs/ucap-stt.log</string>
+</dict>
+</plist>

@@ -1,0 +1,23 @@
+{
+  // Node runs this TypeScript by type stripping, which only erases annotations: enums, namespaces
+  // and constructor parameter properties would be a syntax error at run time (erasableSyntaxOnly).
+  // Every workspace extends this file; none of them emits JavaScript.
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "erasableSyntaxOnly": true,
+    "types": ["node"]
+  }
+}

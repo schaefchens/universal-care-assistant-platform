@@ -1,0 +1,6 @@
+UCAP — Universal (AI) Care Assistant & Platform
+
+packages/herde-project
+  The project side of the herde worker protocol v2, ported from ARCHE (schaefchens) to TypeScript and Postgres.
+  Licensed under the Apache License, Version 2.0. Vendored from lookup/code/herde-project on 2026-10-14;
+  the only changes are noted in packages/herde-project/README.md.

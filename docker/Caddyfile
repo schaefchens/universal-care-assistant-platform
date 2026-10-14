@@ -1,0 +1,32 @@
+# UCAP's single entry in development: http://localhost:8810 (the emulator and USB phones through `adb reverse`).
+# It routes by path to the core and assistant processes. Production adds a site with a domain and automatic HTTPS.
+{
+	auto_https off
+}
+
+:8810 {
+	# herde workers poll here. Never redirect this path: herde treats a 3xx as a project error.
+	handle /api/worker/v2/* {
+		reverse_proxy assistant:8821
+	}
+
+	# Voice turns stream NDJSON, so responses are flushed at once.
+	@assistant path /api/v1/assistant/* /api/v1/speech/* /api/v1/messaging/* /api/v1/ai-admin/*
+	handle @assistant {
+		reverse_proxy assistant:8821 {
+			flush_interval -1
+		}
+	}
+
+	handle /api/* {
+		reverse_proxy core:8820
+	}
+
+	handle /healthz {
+		reverse_proxy core:8820
+	}
+
+	handle {
+		respond "UCAP" 200
+	}
+}
