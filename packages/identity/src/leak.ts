@@ -4,7 +4,8 @@
  * the transcript is dropped before it reaches the LLM or any storage, a warning is spoken, and new words are offered.
  *
  * A transcript is scanned for runs of twelve list words (in either language, read in order, ignoring other words
- * between them and the spoken numbering "Wort eins", "word one"). A run whose checksum is valid is a phrase; when it
+ * between them and the spoken numbering "Wort eins", "word one", even where a word of the phrase is itself a
+ * numbering word). A run whose checksum is valid is a phrase; when it
  * also derives one of the person's identity keys, it is a match. Both are dropped. Nine or more list words without a
  * valid run are reported as suspicious, for the caller's policy: a shopping list can contain nine nouns.
  */
@@ -50,6 +51,30 @@ function joinSplit(ts: string[], set: Set<string>): string[] {
   return out;
 }
 
+const CARDINALS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth'];
+// After a numeral only these may stand before the word ("word one is abandon"); "word" and "number" come before it.
+const FILLER = new Set(['is', 'the']);
+
+/**
+ * Words read out with numbers ("word one: abandon, word two: first, …"): after each numeral in order, the next word
+ * is that position's, even when it is itself a numbering word (BIP39 has "one", "first", "word", "number").
+ */
+function numbered(ts: string[]): string[] | null {
+  const out: string[] = [];
+  let i = 0;
+  for (let k = 0; k < 12; k++) {
+    let j = i;
+    while (j < ts.length && ts[j] !== CARDINALS[k] && ts[j] !== ORDINALS[k]) j++;
+    let w = j + 1;
+    while (w < ts.length && FILLER.has(ts[w]!)) w++;
+    if (w >= ts.length) return null;
+    out.push(ts[w]!);
+    i = w + 1;
+  }
+  return out;
+}
+
 function runs(words: string[]): string[][] {
   const out: string[][] = [];
   for (let i = 0; i + PHRASE_WORDS <= words.length; i++) out.push(words.slice(i, i + PHRASE_WORDS));
@@ -67,7 +92,11 @@ export function scanForPhrase(text: string, identityKeys: readonly Uint8Array[] 
     const all = joinSplit(ts, set).filter((t) => set.has(t));
     listWords = Math.max(listWords, all.length);
     const candidates = [all];
-    if (lang === 'en') candidates.push(all.filter((t) => !FRAMING.has(t)));
+    if (lang === 'en') {
+      candidates.push(all.filter((t) => !FRAMING.has(t)));
+      const n = numbered(joinSplit(ts, set));
+      if (n) candidates.push(n);
+    }
     for (const words of candidates) {
       for (const run of runs(words)) {
         const r = fromWords(run);

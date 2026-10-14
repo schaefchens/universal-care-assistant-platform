@@ -17,7 +17,6 @@ describe('the recovery-word detector', () => {
   const key = deriveIdentity(entropy).publicKey;
   const other = deriveIdentity(newEntropy()).publicKey;
   const de = toWords(entropy, 'de');
-  const en = toWords(entropy, 'en');
 
   it('finds the German words as a transcript writes them, and matches them to the person', () => {
     const text = `Meine Wörter sind ${de.map(cap).join(', ')}.`;
@@ -27,11 +26,24 @@ describe('the recovery-word detector', () => {
     expect(mustDrop(scanForPhrase(text, [other]))).toBe(true);
   });
 
-  it('finds them read out with numbers, in either language', () => {
-    const numberedDe = de.map((w, i) => `Wort ${NUMBERS_DE[i]}: ${cap(w)}.`).join(' ');
-    expect(scanForPhrase(numberedDe, [key]).kind).toBe('match');
-    const numberedEn = en.map((w, i) => `Word number ${NUMBERS_EN[i]}, ${w}.`).join(' ');
-    expect(scanForPhrase(numberedEn, [key]).kind).toBe('match');
+  it('finds them read out with numbers, in either language, also when a word of the phrase is a numbering word', () => {
+    // Many phrases, since only some contain "one", "first", "word" or "number" (all BIP39 words).
+    for (let i = 0; i < 200; i++) {
+      const e = newEntropy();
+      const k = deriveIdentity(e).publicKey;
+      const numberedDe = toWords(e, 'de').map((w, j) => `Wort ${NUMBERS_DE[j]}: ${cap(w)}.`).join(' ');
+      expect(scanForPhrase(numberedDe, [k]).kind).toBe('match');
+      const numberedEn = toWords(e, 'en').map((w, j) => `Word number ${NUMBERS_EN[j]}, ${w}.`).join(' ');
+      expect(scanForPhrase(numberedEn, [k]).kind, numberedEn).toBe('match');
+    }
+    // One that surely has such words: find entropy whose English rendering includes "first".
+    for (let i = 0; i < 5000; i++) {
+      const e = newEntropy();
+      const words = toWords(e, 'en');
+      if (!words.some((w) => ['first', 'one', 'word', 'number'].includes(w))) continue;
+      expect(scanForPhrase(words.map((w, j) => `${NUMBERS_EN[j]}: ${w}`).join(', '), [deriveIdentity(e).publicKey]).kind).toBe('match');
+      return;
+    }
   });
 
   it('finds them in a longer utterance and when the recogniser splits a compound', () => {

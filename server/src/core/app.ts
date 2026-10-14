@@ -12,12 +12,18 @@ import { deriveKey, type Secrets } from '../lib/secrets.ts';
 import { CLOSE } from '@ucap/shared';
 import { createIdentityService } from '../domain/identity/service.ts';
 import { createPeopleService } from '../domain/people/service.ts';
+import { createHeartbeats } from '../domain/care/heartbeat.ts';
+import { createPush } from '../domain/care/push.ts';
+import { createCareService } from '../domain/care/service.ts';
+import { createSealer } from '../lib/sealed.ts';
 import { pruneLimits } from '../lib/rate-limit.ts';
 import { registerAuth } from './auth.ts';
 import { createDispatcher, pruneEvents } from './dispatcher.ts';
 import { registerRealtime } from './realtime.ts';
 import { registerIdentityRoutes } from './routes/identity.ts';
 import { registerPeopleRoutes } from './routes/people.ts';
+import { registerCareRoutes } from './routes/care.ts';
+import { createSignedCheck } from './signed.ts';
 import { ensureServerId, registerServerInfo } from './server-info.ts';
 
 export async function buildCore(o: {
@@ -30,6 +36,9 @@ export async function buildCore(o: {
   logger?: boolean;
   logStream?: { write(line: string): void };
   dispatcherLock?: string;
+  /** Tests: a fake push service's host, and the fetch that reaches it. */
+  pushAllowHosts?: RegExp[];
+  pushFetch?: typeof fetch;
 }) {
   const app = createHttp(o.config, { logger: o.logger, logStream: o.logStream });
   const log = (msg: string) => app.log.warn(msg);
@@ -45,6 +54,13 @@ export async function buildCore(o: {
     await people.openFromInvite(trx, { ...pair, inviteId: invite.id, proposed: invite.proposedScopes });
   });
   registerAuth(app, identity);
+  app.decorateRequest('signed', null);
+  const requireSigned = createSignedCheck({ db: o.db, serverId, publicOrigins: o.config.publicOrigins });
+  let jobsRef: { wake(): void } | null = null;
+  const care = createCareService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, people, wake: () => jobsRef?.wake() });
+  const push = await createPush({ db: o.db, clock: o.clock, sealer: createSealer(o.secrets.masterKey), care, publicUrl: o.config.publicUrl, allowHosts: o.pushAllowHosts, fetch: o.pushFetch });
+  const heartbeats = createHeartbeats({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, nonceFor: care.nonceFor });
+  care.setHeartbeatHook((exec, deviceId) => heartbeats.answered(exec, deviceId));
   const hub = await registerRealtime(app, {
     db: o.db,
     allowedOrigins: o.config.allowedOrigins,
@@ -56,6 +72,8 @@ export async function buildCore(o: {
       }),
     clock: o.clock,
   });
+  // A device's acknowledgement of an alert event is that channel's receipt.
+  hub.onAck((a, seq) => void care.acked(a.userId, a.deviceId, seq).catch((e) => log(`ack failed: ${(e as Error).name}`)));
   const dispatcher = createDispatcher({
     db: o.db,
     databaseUrl: o.config.databaseUrl,
@@ -73,8 +91,14 @@ export async function buildCore(o: {
       await pruneLimits(o.db, o.clock);
       await enqueue(o.db, { queue: 'core', kind: 'events.prune', key: 'events.prune', runAt: o.clock() + 86_400_000 });
     },
+    'care.tick': async (job) => care.tick(String(job.payload.requestId)),
+    'care.reach': async (job) => care.reachCheck(String(job.payload.requestId), Number(job.payload.episode)),
+    'push.send': async (job) => push.deliver(String(job.payload.deliveryId), job.attempts),
+    'heartbeat.round': async () => heartbeats.round(),
+    'heartbeat.check': async (job) => heartbeats.check(String(job.payload.deliveryId)),
   };
   const jobs = createJobRunner({ db: o.db, queue: 'core', handlers, clock: o.clock, log });
+  jobsRef = jobs;
 
   app.get('/healthz', async () => ({ ok: true, service: 'core' }));
   app.get('/readyz', async (_req, reply) => {
@@ -82,10 +106,11 @@ export async function buildCore(o: {
     const ready = db && dispatcher.active;
     return reply.code(ready ? 200 : 503).send({ ok: ready, db, dispatcher: dispatcher.active });
   });
-  registerServerInfo(app, { serverId, config: o.config });
+  registerServerInfo(app, { serverId, config: o.config, vapidPublicKey: () => push.publicKey });
   registerFileRoutes(app, { db: o.db, store: files, dir: o.config.filesDir });
   registerIdentityRoutes(app, { identity, closeDevice: (deviceId) => hub.closeDevice(deviceId, CLOSE.revoked) });
   registerPeopleRoutes(app, { people });
+  registerCareRoutes(app, { db: o.db, clock: o.clock, pepper: o.secrets.pepper, care, people, push, heartbeats, requireSigned });
 
   return {
     app,
@@ -95,6 +120,9 @@ export async function buildCore(o: {
     files,
     identity,
     people,
+    care,
+    push,
+    heartbeats,
     serverId,
     async start() {
       await dispatcher.start();
