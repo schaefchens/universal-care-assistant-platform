@@ -59,6 +59,9 @@ export class VoiceController {
   /** Each turn's answer is said in order; a new turn, or a part cut off, drops the rest. */
   private gen = 0;
   private parts: Promise<void> = Promise.resolve();
+  /** "Einen Moment" when the answer is slow (the dialogue model loading: 6–18 s cold, S0 spike C). */
+  private moment: ReturnType<typeof setTimeout> | null = null;
+  private warmedAt = 0;
 
   constructor(h: VoiceHost) {
     this.h = h;
@@ -118,6 +121,13 @@ export class VoiceController {
     if (!session || ceremony.active) return;
     // What the last answer still had to say is dropped: the person is talking now.
     this.gen++;
+    if (this.moment) clearTimeout(this.moment);
+    this.moment = null;
+    // The assistant loads its model while the person speaks (at most once a minute).
+    if (Date.now() - this.warmedAt > 60_000) {
+      this.warmedAt = Date.now();
+      void session.call('/api/v1/assistant/warmup', { method: 'POST' }).catch(() => {});
+    }
     if (this.down && Date.now() - this.down < 30_000) return this.unavailable();
     this.heard = null;
     this.starting = true;
@@ -219,6 +229,10 @@ export class VoiceController {
 
   private event(e: TurnEvent) {
     const ui = this.h.ui();
+    if (this.moment && e.t !== 'transcript') {
+      clearTimeout(this.moment);
+      this.moment = null;
+    }
     // The debug record keeps the events, never the words heard.
     const { t: event, ...rest } = e;
     record('turn', { event, ...(event === 'transcript' ? {} : rest) });
@@ -226,6 +240,11 @@ export class VoiceController {
       case 'transcript':
         this.heard = e.text;
         this.h.onState(this.state, e.text);
+        // Nothing yet after a moment: said, so the silence is not mistaken for nothing happening.
+        this.moment = setTimeout(() => {
+          this.moment = null;
+          ui.say(ui.tr('assistant.moment'), 'system');
+        }, 2500);
         return;
       case 'heard':
         ui.say(ui.tr('voice.nothing'), 'system');

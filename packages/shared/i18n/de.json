@@ -907,5 +907,6 @@
   "admin.function.llm": "Assistent (Sprachmodell)",
   "admin.type.ollama": "Ollama auf eigenen Rechnern",
   "admin.type.anthropic": "Claude (Anthropic)",
-  "admin.field.price.llm": "Preis pro 1000 Tokens in Euro"
+  "admin.field.price.llm": "Preis pro 1000 Tokens in Euro",
+  "assistant.moment": "Einen Moment."
 }
