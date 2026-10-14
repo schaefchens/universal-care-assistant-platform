@@ -9,6 +9,8 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 /** The device and its WebView, and the system's font scale and dark mode: the defaults for the app's own settings. */
 @CapacitorPlugin(name = "Info")
@@ -27,5 +29,18 @@ public class InfoPlugin extends Plugin {
         r.put("fontScale", c.fontScale);
         r.put("nightMode", (c.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES);
         call.resolve(r);
+    }
+
+    /** The system bars' icons follow the app's theme: light icons on a dark theme, dark on a light one, so the time and
+     *  battery stay readable for people with partial sight (the app draws edge to edge). */
+    @PluginMethod
+    public void setSystemBars(PluginCall call) {
+        boolean dark = call.getBoolean("dark", false);
+        getActivity().runOnUiThread(() -> {
+            WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getActivity().getWindow(), getActivity().getWindow().getDecorView());
+            c.setAppearanceLightStatusBars(!dark);
+            c.setAppearanceLightNavigationBars(!dark);
+            call.resolve();
+        });
     }
 }

@@ -67,6 +67,8 @@ export interface DeviceInfo {
 
 export interface InfoPlugin {
   get(): Promise<DeviceInfo>;
+  /** Light or dark icons in the system bars, to match the app's theme. */
+  setSystemBars(o: { dark: boolean }): Promise<void>;
 }
 
 export const Earcons = registerPlugin<EarconsPlugin>('Earcons');

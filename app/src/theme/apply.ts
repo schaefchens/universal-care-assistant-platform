@@ -4,6 +4,7 @@
  * with the label colour picked for contrast.
  */
 import { AREA_ROLES, type VisualConfig } from '@ucap/shared';
+import { has, Info } from '../native/plugins.ts';
 import { labelColourFor } from './contrast.ts';
 import type { Theme } from './themes.ts';
 
@@ -56,4 +57,5 @@ export function applyTheme(theme: Theme, v: VisualConfig, opts: { fontScale?: nu
   root.style.colorScheme = theme.scheme;
   const reduced = v.reducedMotion === 'system' ? platformPrefs().reducedMotion : v.reducedMotion;
   root.dataset.reducedMotion = String(reduced);
+  if (has('Info')) void Info.setSystemBars({ dark: theme.scheme === 'dark' }).catch(() => {});
 }
