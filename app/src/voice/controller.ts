@@ -38,6 +38,8 @@ export interface VoiceHost {
   onAction(a: { id: string; contentHash: string; prompt: string }): void;
   /** Says a part of an answer in the person's voice for it; false: the device voice must (the chosen one cannot). */
   speakAs(text: string, purpose: 'reply' | 'reading'): Promise<boolean>;
+  /** Plays a recording (a voice message's original); true when it played to its end. */
+  playRecording(url: string): Promise<boolean>;
 }
 
 const MIC_ASKED = 'ucap.mic.v1';
@@ -67,11 +69,12 @@ export class VoiceController {
     this.h = h;
   }
 
-  /** For the next turn only: the words of a new note, say (the notes screen's "Neue Notiz"). */
+  /** For the next turn only: the words of a new note (the notes screen's "Neue Notiz"), a reply to a conversation. */
   private nextContext: CommandContext | null = null;
+  private nextConversation: string | null = null;
 
   /** The talk button or area: start, end the utterance, or abandon an answer and listen again. */
-  talk(o: { context?: CommandContext } = {}): void {
+  talk(o: { context?: CommandContext; conversation?: string } = {}): void {
     if (this.starting) return;
     if (this.state === 'listening') return this.recorder?.finish();
     if (this.state === 'working') {
@@ -79,6 +82,7 @@ export class VoiceController {
       this.turn = null;
     }
     this.nextContext = o.context ?? null;
+    this.nextConversation = o.conversation ?? null;
     void this.listen();
   }
 
@@ -198,8 +202,10 @@ export class VoiceController {
     this.turn = turn;
     try {
       const context = this.nextContext ?? currentVoice().context;
+      const conversation = this.nextConversation ?? undefined;
       this.nextContext = null;
-      await postTurn(session, { wav: rec.wav, context, lang: ui.lang, signal: turn.signal }, (e) => this.event(e));
+      this.nextConversation = null;
+      await postTurn(session, { wav: rec.wav, context, lang: ui.lang, conversation, signal: turn.signal }, (e) => this.event(e));
     } catch {
       if (turn.signal.aborted) return;
       this.unavailable();
@@ -212,18 +218,36 @@ export class VoiceController {
   }
 
   /** A part of the answer, after the ones before it; dropped once one was cut off or the person talks again. */
-  private part(text: string, kind: 'reply' | 'summary' | 'original' | 'system') {
+  private part(e: Extract<TurnEvent, { t: 'segment' }>) {
+    const { text, kind } = e;
     const gen = this.gen;
     this.parts = this.parts.then(async () => {
       if (gen !== this.gen) return;
       const ui = this.h.ui();
-      // UCAP's own words (readbacks, questions) in the device voice; the assistant's in the person's chosen one.
-      if (kind !== 'system' && (await this.h.speakAs(text, kind === 'original' ? 'reading' : 'reply'))) return;
-      if (gen !== this.gen) return;
-      const said = await ui.sayAndWait(text, kind === 'system' ? 'system' : 'assistant');
-      // A screen reader's live region answers at once: its own speech takes about this long.
-      if (said && ui.speech.kind === 'live') await sleep(Math.min(15_000, 400 + text.length * 70));
-      if (!said) this.gen++;
+      // UCAP's own words (readbacks, questions) in the device voice; the assistant's in the person's chosen one, and
+      // what others wrote (originals, transcripts) in the voice for reading.
+      let said = kind !== 'system' && (await this.h.speakAs(text, kind === 'original' || kind === 'transcript' ? 'reading' : 'reply'));
+      if (!said) {
+        if (gen !== this.gen) return;
+        // At most as long as it takes to say: an engine that never tells its end must not hold the rest of the answer.
+        said = await Promise.race([ui.sayAndWait(text, kind === 'system' ? 'system' : 'assistant'), sleep(2000 + text.length * 140).then(() => true)]);
+        // A screen reader's live region answers at once: its own speech takes about this long.
+        if (said && ui.speech.kind === 'live') await sleep(Math.min(15_000, 400 + text.length * 70));
+      }
+      if (!said) {
+        this.gen++;
+        return;
+      }
+      if (e.audio) {
+        if (gen !== this.gen) return;
+        const session = this.h.session();
+        if (!session || !(await this.h.playRecording(`${session.ref.serverUrl}${e.audio}`))) {
+          this.gen++;
+          return;
+        }
+      }
+      // An original heard to its end: now it counts as read, also on the service (Appendix E).
+      if (e.source?.message && gen === this.gen) void this.h.session()?.call('/api/v1/messaging/messages/heard', { method: 'POST', body: { ids: [e.source.message] } }).catch(() => {});
     });
   }
 
@@ -262,7 +286,7 @@ export class VoiceController {
         if (e.reason === 'assistant' || !currentVoice().onOther?.()) this.h.onAsk(e.reason);
         return;
       case 'segment':
-        this.part(e.text, e.kind);
+        this.part(e);
         return;
       case 'action':
         this.h.onAction({ id: e.id, contentHash: e.contentHash, prompt: e.prompt });

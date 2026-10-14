@@ -10,6 +10,7 @@
  * - help: unmistakable, for the help area wherever it sits.
  * - The care states (care-press … care-failed) say what happened before any voice does, and still work when no voice
  *   does. confirm precedes every confirmation question: LLM output can never play it.
+ * - message: a new message arrived (announced by who sent it).
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 
@@ -46,6 +47,8 @@ export const EARCONS: Record<string, Note[]> = {
   'care-cancelled': [tone('sine', 784, 100, 0, 0.45, 523)],
   'care-failed': [tone('triangle', 330, 160), tone('triangle', 330, 160, 220)],
   error: [tone('triangle', 220, 140, 0, 0.5, 200)],
+  // A new message (S10): two soft rising notes, unlike any care sound.
+  message: [tone('sine', 587, 70, 0, 0.4), tone('sine', 880, 110, 80, 0.4)],
 };
 
 function render(notes: Note[]): Int16Array {

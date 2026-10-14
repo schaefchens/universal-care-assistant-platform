@@ -31,9 +31,23 @@ export function registerAssistantRoutes(app: AnyApp, o: { actions: Actions; llm:
       return r.ok ? { ok: true, say: r.say } : { ok: false, reason: r.reason };
     },
   );
-  app.post('/api/v1/assistant/actions/:id/cancel', { preHandler: requireAuth, schema: { params: Id } }, async (req) => ({
-    ok: await o.actions.cancel(auth(req).userId, auth(req).deviceId, (req.params as { id: string }).id),
-  }));
+  app.post(
+    '/api/v1/assistant/actions/:id/cancel',
+    {
+      preHandler: requireAuth,
+      schema: {
+        params: Id,
+        body: Type.Optional(
+          Type.Object({ why: Type.Optional(Type.Union([Type.Literal('no'), Type.Literal('silence')])), lang: Type.Optional(Type.Union([Type.Literal('de'), Type.Literal('en')])) }, { additionalProperties: false }),
+        ),
+      },
+    },
+    async (req) => {
+      const a = auth(req);
+      const b = (req.body ?? {}) as { why?: 'no' | 'silence'; lang?: 'de' | 'en' };
+      return o.actions.cancel(await o.contextFor(a.userId, a.deviceId, b.lang), (req.params as { id: string }).id, b.why ?? 'no');
+    },
+  );
   app.post('/api/v1/assistant/undo', { preHandler: requireAuth }, async (req) => ({ say: await o.actions.undoLast(await o.contextFor(auth(req).userId, auth(req).deviceId)) }));
 
   // Which language model hears the person: the operator's own, or an external one they chose (with consent).

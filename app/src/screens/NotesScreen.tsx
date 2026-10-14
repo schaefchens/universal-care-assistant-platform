@@ -1,6 +1,6 @@
 /**
  * The person's notes (docs/plan.md, S9: "notes with screen and tools"), in large areas: read the current one out in
- * the voice for reading, go to the next, dictate a new one, back home. Reading needs only the server's core, so it
+ * the voice for reading, go to the next, dictate a new one, back home, and help (every screen has it: Appendix H). Reading needs only the server's core, so it
  * works with the assistant stopped; a new note is dictated through the assistant ("Notiere: …"). The note shown is
  * also on screen as text, for partial sight and screen readers.
  */
@@ -9,7 +9,7 @@ import { useContext, useEffect, useRef, useState } from 'react';
 import { ChoiceGrid } from '../areas/ChoiceGrid.tsx';
 import type { Session } from '../identity/account.ts';
 import { useUi } from '../ui.tsx';
-import { VoiceContext } from '../voice/TalkButton.tsx';
+import { TalkButton, VoiceContext } from '../voice/TalkButton.tsx';
 
 interface Note {
   id: string;
@@ -18,7 +18,7 @@ interface Note {
   updatedAt: string;
 }
 
-export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (text: string) => void; onHome: () => void }) {
+export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (text: string) => void; onHome: () => void; onHelp: () => void }) {
   const ui = useUi();
   const { tr, say } = ui;
   const { voice } = useContext(VoiceContext);
@@ -55,8 +55,11 @@ export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (
   const current = notes?.[i];
   return (
     <main className="area-screen" aria-label={tr('notes.title')}>
-      <header className="onboard-header">
-        <h1>{tr('notes.title')}</h1>
+      <header className="topbar">
+        <h1 className="topbar-title">{tr('notes.title')}</h1>
+        <TalkButton />
+      </header>
+      <div className="onboard-header">
         {current ? (
           <>
             <h2>
@@ -67,7 +70,7 @@ export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (
         ) : (
           notes && <p>{tr('notes.empty')}</p>
         )}
-      </header>
+      </div>
       {notes && (
         <ChoiceGrid
           id="notes"
@@ -81,6 +84,8 @@ export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (
               : []),
             { id: 'new', label: tr('notes.area.new'), role: 'assistant' as const },
             { id: 'back', label: tr('notes.area.back'), role: 'nav' as const },
+            // Every screen has a way to help that needs no speech (Appendix H).
+            { id: 'help', label: tr('area.help.label'), role: 'help' as const },
           ]}
           onChoose={(id) => {
             // The title is often the note's first words: then the note alone.
@@ -96,6 +101,7 @@ export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (
                 voice?.talk({ context: 'dictation' });
               });
             } else if (id === 'back') p.onHome();
+            else if (id === 'help') p.onHelp();
           }}
         />
       )}

@@ -17,7 +17,8 @@ import { sql } from 'kysely';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
 import { AppError } from '../lib/errors.ts';
-import { type ActTool, type Focus, type ToolContext, toolByName } from './tools.ts';
+import { toolByName } from './registry.ts';
+import type { ActTool, Focus, ToolContext } from './tools.ts';
 
 export const CONFIRM_MS = 120_000;
 export const UNDO_MS = 10 * 60_000;
@@ -41,7 +42,7 @@ export function createActions(d: { db: Db; clock: Clock; log: (m: string) => voi
   async function attempt(ctx: ToolContext, id: string, tool: ActTool, args: Record<string, unknown>): Promise<Outcome> {
     await sql`update assistant_actions set status = 'attempting', attempt_started_at = ${now()}, updated_at = ${now()} where id = ${id}`.execute(d.db);
     try {
-      const r = await tool.run(ctx, args);
+      const r = await tool.run({ ...ctx, actionId: id }, args);
       await sql`
         update assistant_actions set status = 'completed', result = ${JSON.stringify({ say: r.say })}::jsonb, undo = ${r.undo ? JSON.stringify(r.undo) : null}::jsonb, updated_at = ${now()}
         where id = ${id}`.execute(d.db);
@@ -102,11 +103,19 @@ export function createActions(d: { db: Db; clock: Clock; log: (m: string) => voi
       return attempt(ctx, id, tool, a.args);
     },
 
-    /** The person's no (or silence, from the app): nothing happens. */
-    async cancel(userId: string, deviceId: string, id: string): Promise<boolean> {
-      const r = await sql`
-        update assistant_actions set status = 'cancelled', updated_at = ${now()} where id = ${id} and user_id = ${userId} and device_id = ${deviceId} and status = 'awaiting_confirmation' returning id`.execute(d.db);
-      return r.rows.length > 0;
+    /**
+     * The person's no (or silence, from the app): nothing happens. What the tool says then (a message kept as a draft:
+     * C7, C8), if it has its own words for it.
+     */
+    async cancel(ctx: ToolContext, id: string, why: 'no' | 'silence' = 'no'): Promise<{ ok: boolean; say: string | null }> {
+      const r = await sql<{ tool: string; args: Record<string, unknown> }>`
+        update assistant_actions set status = 'cancelled', updated_at = ${now()} where id = ${id} and user_id = ${ctx.userId} and device_id = ${ctx.deviceId} and status = 'awaiting_confirmation'
+        returning tool, args`.execute(d.db);
+      const a = r.rows[0];
+      if (!a) return { ok: false, say: null };
+      const tool = toolByName.get(a.tool);
+      const say = tool?.kind === 'act' && tool.cancelled ? await tool.cancelled(ctx, a.args, why).catch(() => null) : null;
+      return { ok: true, say };
     },
 
     /** "Rückgängig": the last thing done for this person in the last ten minutes, undone; null when there is none. */

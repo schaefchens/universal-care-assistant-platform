@@ -37,7 +37,9 @@ import { CareScreen } from './screens/CareScreen.tsx';
 import { HelperAlert, HelperInbox } from './screens/HelperInbox.tsx';
 import { ConfirmAction } from './screens/ConfirmAction.tsx';
 import { HelpQuestion } from './screens/HelpQuestion.tsx';
+import { MessagesScreen } from './screens/MessagesScreen.tsx';
 import { NotesScreen } from './screens/NotesScreen.tsx';
+import { TelegramPage } from './screens/TelegramPage.tsx';
 import { Devices } from './screens/Devices.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
@@ -82,8 +84,11 @@ type Page =
   | { help: { fromAssistant: boolean; occurrenceId?: string } }
   /** The person's notes (S9). */
   | 'notes'
-  /** An action of the assistant waiting for the person's yes. */
-  | { confirm: { id: string; contentHash: string; prompt: string } }
+  /** The person's messages, and connecting their Telegram (S10). */
+  | 'messages'
+  | 'telegram'
+  /** An action of the assistant waiting for the person's yes; then back where it was asked (the messages). */
+  | { confirm: { id: string; contentHash: string; prompt: string }; back?: 'messages' | 'notes' }
   /** The recovery words were said to the assistant: a warning, and new words offered (Appendix C). */
   | 'leak'
   | { approve: string }
@@ -124,6 +129,7 @@ export function App() {
   const [peopleRev, setPeopleRev] = useState(0);
   const [careRev, setCareRev] = useState(0);
   const [reminderRev, setReminderRev] = useState(0);
+  const [messagingRev, setMessagingRev] = useState(0);
   const [careState, setCareState] = useState<CareState>({ pending: false, request: null });
   const [isHelper, setIsHelper] = useState(false);
   const careRef = useRef<CareClient | null>(null);
@@ -226,6 +232,8 @@ export function App() {
           emitAppEvent(e.type, e.data);
         } else if (e.type.startsWith('reminder.')) {
           void reminderNews(e.type, e.data);
+        } else if (e.type.startsWith('messaging.')) {
+          void messagingNews(e.type, e.data);
         }
       },
       onRevoked: () => void session.forget().then(() => signedOut(ui.tr('devices.signedOut'))),
@@ -281,12 +289,13 @@ export function App() {
     onAsk: (reason) =>
       setPage((pg) => (pg === 'care' ? pg : { help: { fromAssistant: reason === 'assistant', ...(typeof pg === 'object' && 'reminder' in pg ? { occurrenceId: pg.reminder } : {}) } })),
     onLeak: () => setPage('leak'),
-    onAction: (a) => setPage((pg) => (pg === 'care' ? pg : { confirm: a })),
+    onAction: (a) => setPage((pg) => (pg === 'care' ? pg : { confirm: a, ...(pg === 'messages' || pg === 'notes' ? { back: pg } : typeof pg === 'object' && 'confirm' in pg && pg.back ? { back: pg.back } : {}) })),
     speakAs: (text, purpose) => {
       const s = sessionRef.current;
       if (!s) return Promise.resolve(false);
       return speakAs({ session: s, text, purpose, player, screenReader: assistiveRef.current === 'screen-reader', notice: (reason) => uiRef.current.say(uiRef.current.tr(`voices.fallback.${reason}`), 'system') });
     },
+    playRecording: (url) => player.play([url]),
   });
   useEffect(() => () => voiceRef.current?.cancel(), [session]);
 
@@ -351,6 +360,12 @@ export function App() {
   }, [session]);
 
   const player = useMemo(() => new ClipPlayer(), []);
+  /** Messages read aloud in the voice for reading, else the device voice; true when said to their end. */
+  const readAloud = async (text: string, isCurrent: () => boolean): Promise<boolean> => {
+    if (session && (await speakAs({ session, text, purpose: 'reading', player, screenReader: assistive === 'screen-reader', notice: (reason) => uiRef.current.say(uiRef.current.tr(`voices.fallback.${reason}`), 'system') })))
+      return true;
+    return isCurrent() ? uiRef.current.sayAndWait(text, 'assistant') : false;
+  };
   /** Speech in the person's voice for this purpose, else the device voice (S7); never with a screen reader on. */
   const speakVoice = (text: string, purpose: 'reply' | 'reading' | 'reminder') => {
     if (!session) return uiRef.current.say(text, 'system');
@@ -420,7 +435,7 @@ export function App() {
 
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
-    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin') setPage('settings');
+    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin' || page === 'telegram') setPage('settings');
     else if (typeof page === 'object' && 'remindersOf' in page) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
@@ -546,6 +561,30 @@ export function App() {
     }
   }
 
+  /**
+   * Messaging events (S10): the screens fetch again; a new message is announced by who sent it (never what it says,
+   * and never from a muted chat); what became of a message sent from this device is said here (C3–C6).
+   */
+  const announcedAt = useRef(new Map<string, number>());
+  async function messagingNews(type: string, data: Record<string, unknown>) {
+    if (!session) return;
+    const u = uiRef.current;
+    setMessagingRev((n) => n + 1);
+    if (type === 'messaging.message' && data.announce === true) {
+      // One announcement per conversation in a burst.
+      const conv = String(data.conversationId ?? '');
+      if (Date.now() - (announcedAt.current.get(conv) ?? 0) < 20_000) return;
+      announcedAt.current.set(conv, Date.now());
+      const m = await session.call<{ from: string; conversation: string }>(`/api/v1/messaging/messages/${String(data.messageId)}?lang=${u.lang}`).catch(() => null);
+      if (!m) return;
+      u.earcons.play('message');
+      u.say(u.tr('messages.announce', { name: m.from || m.conversation }), 'system');
+    } else if (type === 'messaging.outbound' && data.deviceId === session.ref.deviceId) {
+      const o = await session.call<{ say: string | null }>(`/api/v1/messaging/outbound/${String(data.outboundId)}?lang=${u.lang}`).catch(() => null);
+      if (o?.say) u.say(o.say, 'system');
+    }
+  }
+
   /** What a change in a relationship means for this person, said once (the event carries ids only). */
   async function relationshipNews(id: string, state: string) {
     if (!session) return;
@@ -656,8 +695,41 @@ export function App() {
     );
   }
   else if (typeof page === 'object' && 'confirm' in page)
-    content = <ConfirmAction key={page.confirm.id} session={session} config={config} action={page.confirm} onDone={() => setPage('areas')} />;
-  else if (page === 'notes') content = <NotesScreen session={session} config={config} read={(text) => speakVoice(text, 'reading')} onHome={() => setPage('areas')} />;
+    content = <ConfirmAction key={page.confirm.id} session={session} config={config} action={page.confirm} onDone={() => setPage(page.back ?? 'areas')} />;
+  else if (page === 'notes')
+    content = (
+      <NotesScreen
+        session={session}
+        config={config}
+        read={(text) => speakVoice(text, 'reading')}
+        onHome={() => setPage('areas')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+      />
+    );
+  else if (page === 'messages')
+    content = (
+      <MessagesScreen
+        session={session}
+        config={config}
+        refresh={messagingRev}
+        read={readAloud}
+        play={(url) => player.play([url])}
+        stop={() => {
+          player.stop();
+          uiRef.current.speech.stop('assistant');
+        }}
+        onHome={() => setPage('areas')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+        onConnect={() => setPage('telegram')}
+      />
+    );
+  else if (page === 'telegram') content = <TelegramPage session={session} refresh={messagingRev} onClose={() => setPage('settings')} />;
   else if (page === 'leak')
     content = (
       <main className="area-screen" aria-label={ui.tr('voice.leak.title')}>
@@ -740,6 +812,7 @@ export function App() {
         onPeople={() => setPage('helpers')}
         onReminders={() => setPage('reminders')}
         onVoices={() => setPage('voices')}
+        onTelegram={() => setPage('telegram')}
         onAiAdmin={me?.isAdmin ? () => setPage('aiAdmin') : undefined}
         onNewWords={() => setPage('newWords')}
         onClose={() => setPage('areas')}
@@ -762,7 +835,7 @@ export function App() {
         careOpen={careOpen}
         onCare={() => setPage('care')}
         onInbox={isHelper ? () => setPage('inbox') : undefined}
-        pages={{ notes: () => setPage('notes') }}
+        pages={{ notes: () => setPage('notes'), messages: () => setPage('messages') }}
       />
     );
 

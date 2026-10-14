@@ -21,7 +21,8 @@ import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
 import type { Actions } from './actions.ts';
 import type { Assistant, AssistantEvent } from './loop.ts';
-import { type ToolContext, toolByName } from './tools.ts';
+import { toolByName } from './registry.ts';
+import { type ToolContext, ToolError } from './tools.ts';
 
 export type TurnEvent =
   | { t: 'turn'; id: string }
@@ -73,7 +74,7 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
   return {
     /** Runs one turn, telling each step to `emit`; resolves when it is done (or was aborted by the app). */
     async run(
-      o: { userId: string; deviceId: string; id: string; context: CommandContext; lang: 'de' | 'en'; audio?: Uint8Array<ArrayBuffer>; text?: string; signal: AbortSignal },
+      o: { userId: string; deviceId: string; id: string; context: CommandContext; lang: 'de' | 'en'; conversation?: string; audio?: Uint8Array<ArrayBuffer>; text?: string; signal: AbortSignal },
       emit: (e: TurnEvent) => void,
     ): Promise<void> {
       const t0 = performance.now();
@@ -142,6 +143,23 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
             const prepared = await tool.prepare(ctx, { body: text }, false);
             const out = await d.actions.runNow(ctx, o.id, tool, prepared.args, false);
             emit({ t: 'segment', kind: 'system', text: out.ok ? out.say : t(ctx.lang, 'assistant.failed', {}, ctx.form) });
+          }
+        } else if (m.kind === 'none' && o.context === 'reply' && o.conversation && d.actions && d.contextFor) {
+          // A reply dictated on the messages screen: the words as said, read back and asked about (C1), never sent
+          // without the person's yes; the language model is not involved.
+          outcome = 'command';
+          detail = 'reply';
+          const ctx = await d.contextFor(o.userId, o.deviceId, o.lang);
+          const tool = toolByName.get('messages.send');
+          if (tool?.kind === 'act') {
+            try {
+              const prepared = await tool.prepare(ctx, { chat: `chat:${o.conversation}`, text }, false);
+              const w = await d.actions.prepare(ctx, o.id, tool, prepared.args, prepared.confirm!, false);
+              emit({ t: 'action', id: w.id, contentHash: w.contentHash, prompt: w.prompt, expiresAt: w.expiresAt });
+            } catch (e) {
+              if (!(e instanceof ToolError)) throw e;
+              emit({ t: 'segment', kind: 'system', text: t(ctx.lang, e.reason === 'chat_unknown' ? 'messages.reply.notReady' : 'messages.reply.none', {}, ctx.form) });
+            }
           }
         } else if (m.kind === 'none' && d.assistant) {
           outcome = 'assistant';

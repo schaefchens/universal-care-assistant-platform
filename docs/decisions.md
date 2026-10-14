@@ -425,3 +425,88 @@ then they stay as built, and nothing here is frozen.
   note.
 - In Maria's browser: a note dictated through the assistant, the notes screen.
 
+
+## S10: Telegram (2026-10-14)
+
+### To confirm
+
+1. **Disconnecting deletes UCAP's copies.** "Telegram trennen" logs out of Telegram, then deletes the messages kept on
+   the server, the voice-message recordings and TDLib's database; Telegram keeps its own. The page says so before it
+   asks. The plan does not say what disconnecting keeps; export comes in M8.
+2. **A new message is announced by who sent it, never by what it says** ("Neue Nachricht von Anna Beispiel."), after a
+   new earcon `message`; once per conversation in 20 s; muted chats and channels not (Appendix F only says muted chats
+   are not announced).
+3. **Every screen has its help area, the notes and messages screens too** (Appendix H: "Every screen has a help path
+   that needs no speech"). The plan names the messages screen's areas "Nächste / Wiederholen / Antworten / Zurück";
+   Hilfe is a fifth, across the bottom. The notes screen (S9) had none: added. Both screens also got the talk button.
+4. **A reply dictated on the messages screen is taken word for word**, without the language model (like "Neue Notiz"),
+   and asked about as C1. Through the assistant, a message is written as the person would write it, in the first
+   person ("Antworte Anna, dass morgen passt" → „Morgen passt.“).
+5. **What was not sent is kept as the conversation's draft for a day**, so C4, C7 and C8 ("Der Entwurf ist
+   gespeichert") are true. The assistant sees the draft; there is no draft screen yet.
+
+### Decided (within the plan)
+
+- **The connectors process dials the assistant** (`/internal/connectors`): the token in its first frame, a newer process
+  replaces an older one, a request with an Origin or through a proxy is refused before the upgrade. Events are handled
+  in order; while the assistant is away they wait in the connectors process (up to 10 000). After a restart the
+  assistant starts every connection that was logged in or logging in; TDLib's own session brings it back ready.
+- **TDLib:** `tdl` 8.1.0 and `prebuilt-tdlib` (TDLib 1.8.67), one client per connection, one directory per connection
+  on the volume `ucap-tdlib`, its database key 32 random bytes sealed in the assistant's database. The test servers are
+  an admin setting for new connections.
+- **Login** on the person's device: phone, code (where it went, its length, a new one), the password with its hint, or
+  a QR code; one step at a time (TDLib refuses a second: "Another authorization query has started"). Errors are said
+  by TDLib's name for them (`phone_code_invalid`) or how long to wait (`flood_wait_N`); a login left waiting ends after
+  ten minutes; a number without an account is told, never registered.
+- **Messages** are kept with their sender, service, time and conversation; edits fetched whole; deletions only when
+  permanent and not from TDLib's cache; read states from the chat's read positions (the history fetched at login is
+  mostly read). The last 50 messages of chats active in 30 days are fetched at login.
+- **Sending:** the row is written before the connectors are asked; pending until Telegram confirms (sent, C3) or
+  refuses (failed, C4); results are matched by request or by TDLib's temporary id (TDLib still sends what was pending
+  after a restart); a result that comes before sendMessage's own answer is held, not lost. C5 after 15 s; uncertain
+  (C6) after 60 s without Telegram accepting it or 10 minutes without a result, and a confirmation that still comes is
+  told (C3). Never sent again on its own. Without the connectors process: confirmed and waiting (C9), sent when the
+  connection is back, not sent after a day (C4).
+- **Recipients:** by the conversation's ref or id, its exact name, the whole name among other words, or a first name;
+  two that fit are named back to the model, never guessed; a chat with someone not in the person's contacts is named as
+  such before C1 ("Achtung: … ist nicht in deinen Kontakten."); channels are never written to.
+- **Tools:** `messages.overview`, `messages.read` (one conversation, or all of them: "Lies meine neuen Nachrichten" in
+  one round), `messages.search` (words, and whose messages: a name in the wrong place is taken as meant),
+  `messages.send` (always asks). Offered only to a person with a connection.
+- **Speech:** an original is inserted by the server and framed ("Anna Beispiel schrieb heute um 14:02 auf Telegram:",
+  "… in „Familie“ …", "Du hast … an Anna geschrieben:"); a voice message's original is its recording; its transcript is
+  announced as automatic ("Automatisch abgeschrieben:"); summaries as summaries. Only an original heard to its end is
+  marked read on Telegram, on the screen and from the assistant.
+- **Voice messages** up to 5 MB are fetched at once and kept 30 days (fetched again when played later), transcribed in
+  the background on the operator's own recognition (data classes `voice_audio` and `communication`: an external one
+  only with policy and consent), in pieces of at most 30 s cut where it is quietest, filtered like turns, and **without
+  a language hint**: measured, German speech with the hint "en" (Maria's account) came back as an English translation.
+- **The messages screen:** unread first, oldest first, then the newest message of each other conversation; UCAP's frame,
+  then the original in the voice for reading; a voice message's recording follows the frame (when it was said, or after
+  as long as it takes: Chrome never ends speech in a hidden tab). A refresh keeps the message in front.
+- **The assistant never ends a turn in silence:** rounds that end without words, a question or an action say that it did
+  not work. Help is proposed only for what the person says about themself, never for what a message says.
+- **Logs:** a tool's refusal by the tool's name and the error's code only (a reason may name people).
+- **`tools/dev/fake-telegram.ts`**, a stand-in for the connectors process for development: an invented account (code
+  22222), sends that are confirmed, refused or never answered, voice messages from a file. Never reaches Telegram.
+
+### Measured
+
+- **The real TDLib, end to end short of a login:** on the emulator, Clara's "Telegram verbinden" started TDLib in the
+  connectors container on Telegram's test servers; the phone step came back as Telegram's `API_ID_INVALID` for the
+  deliberately invalid test credentials, said on her page. A login with an account needs the operator's api_id and
+  api_hash (my.telegram.org), and then `connectors/test/testdc.test.ts` (opt-in, not run yet).
+- **With the stand-in, on the emulator:** login by phone, a wrong code ("Der Code stimmt nicht."), the password with
+  its hint, "Verbunden als …"; on the home screen "Neue Nachricht von Anna Beispiel."; the messages screen ("Nachrichten.
+  Eine neue Nachricht." and the message framed); a voice message fetched, transcribed by whisper word for word, played
+  (Range requests) and only then marked read; a reply dictated → C1 → "Ja" → C2, C3 only after the stand-in confirmed,
+  the answer announced; a refused message (C4) with its draft; "Nein" (C7); silence twice (C8); a stranger named; from
+  the assistant: "Lies meine neuen Nachrichten" as a summary, "Lies sie genau vor" as the original, the transcript, the
+  recording.
+- **In Maria's browser:** the login (typed), a new code by SMS, the messages screen, a voice message played to its end.
+- **Evaluation** (`npm run evals`, now 60 cases with 12 for messages, seeded with unread messages, a voice message, a
+  stranger and an injected instruction): the messaging cases 12 of 12, median 3.5 s, after the prompt said to look
+  before answering, to write messages in the first person and not to propose help for what a message says.
+- **Ollama stalls under memory pressure:** one of ten identical requests paused 23.7 s in the middle of its answer, with
+  no thinking; three turns of a full evaluation failed at the 15 s limit. The Mac was swapping (Docker's VM 13 GB, the
+  emulator 8 GB, the model 22 GB, 15 GB in swap). The limit stays; the plan's memory budget did not count the emulator.

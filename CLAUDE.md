@@ -62,6 +62,15 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 **Providers**
 - A fetch's signal also aborts the body: a limit on how long a provider may take to start answering must be cleared
   once it started, or every long streamed answer is cut off. Give every streamed reply its own total and idle limits.
+- Whisper given a language hint that is not the speech's translates it: someone else's voice message is transcribed
+  without a hint. Under memory pressure Ollama's MLX runner can pause 20 s or more in the middle of an answer.
+
+**Messaging (TDLib)**
+- TDLib refuses a second login step while one runs ("Another authorization query has started"): one at a time.
+- A message being sent has a temporary id until `updateMessageSendSucceeded`, which can come before `sendMessage`'s own
+  answer and, after a restart, for a message sent by the process before. `Acknowledged` is not sent.
+- A WebSocket client may close with 1000 or 3000–4999 only: `close(1001)` throws (it crashed the connectors' shutdown).
+- Develop and try the app's messaging with `tools/dev/fake-telegram.ts`; real logins need the owner's api_id/api_hash.
 
 **Capacitor and Android**
 - Never `await` or return a Capacitor plugin object (it is a Proxy that answers `then`).
@@ -80,5 +89,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   again, or the dev browser ignores every answer while the production app works.
 - ntfy 2.29 declares users, tokens and access in its environment (`NTFY_AUTH_*`); a VAPID `Authorization` header
   without UCAP's token is refused, so the token goes in that header and no VAPID is sent to ntfy.
+- Chrome pauses `speechSynthesis` in a hidden tab and never fires `onend`: nothing (a recording, the rest of an
+  answer) may wait on speech without a bound.
+- On a busy emulator, `adb shell input text` key events pile up behind a slow WebView and freeze input to the app
+  ("isn't responding"); insert text over DevTools (`Input.insertText`) instead, and tap with `adb shell input tap`.
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.
 - `dl.google.com` needs the HTTP/2 relay on this network (`tools/google-maven-relay.ts`).

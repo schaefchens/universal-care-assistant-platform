@@ -21,6 +21,7 @@ import type { Db } from '../lib/db.ts';
 import { AppError } from '../lib/errors.ts';
 import { MAX_BODY, type Notes, titleFrom } from '../domain/notes/service.ts';
 import type { Category, ReminderService } from '../domain/reminders/service.ts';
+import type { Messaging } from '../messaging/service.ts';
 
 export interface ToolContext {
   userId: string;
@@ -32,6 +33,10 @@ export interface ToolContext {
   notes: Notes;
   reminders: ReminderService;
   db: Db;
+  /** The person's messaging (S10); absent where it is not set up. */
+  messaging?: Messaging;
+  /** The action being carried out (set while it runs): one confirmation, one message. */
+  actionId?: string;
 }
 
 /** Said back to the language model as data (a wrong id, an impossible time), never to the person directly. */
@@ -46,6 +51,8 @@ export class ToolError extends Error {
 export interface Focus {
   note?: { id: string; title: string };
   reminder?: { id: string; title: string };
+  /** The conversation being read or answered (messages, S10). */
+  chat?: { id: string; title: string };
 }
 
 export interface ReadTool {
@@ -71,6 +78,8 @@ export interface ActTool {
   prepare(ctx: ToolContext, args: Record<string, unknown>, tainted: boolean): Promise<Prepared>;
   run(ctx: ToolContext, args: Record<string, unknown>): Promise<{ say: string; undo?: Record<string, unknown>; focus?: Focus }>;
   undo?(ctx: ToolContext, undo: Record<string, unknown>): Promise<string>;
+  /** The person said no, or nothing (`silence`): what is said then, and what is kept (a message's draft). */
+  cancelled?(ctx: ToolContext, args: Record<string, unknown>, why: 'no' | 'silence'): Promise<string | null>;
 }
 
 export type Tool = ReadTool | ActTool;
@@ -120,7 +129,8 @@ function scheduleOf(ctx: ToolContext, date: unknown, time: unknown): { schedule:
   return { schedule: { kind: 'once', date: ds, time: hhmm }, dateText, timeText };
 }
 
-export const TOOLS: Tool[] = [
+/** Notes and reminders; the registry (registry.ts) adds messaging. */
+export const BASE_TOOLS: Tool[] = [
   {
     kind: 'read',
     name: 'notes.search',
@@ -280,4 +290,3 @@ export const TOOLS: Tool[] = [
   },
 ];
 
-export const toolByName = new Map(TOOLS.map((x) => [x.name, x]));

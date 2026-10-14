@@ -1,7 +1,8 @@
 /**
  * Speech recognition over HTTP (docs/plan.md, S8): OpenAI's transcription API, which UCAP's own whisper server on the
  * Mac speaks too (services/stt-mlx; measured 0.39 s p50 for the owner's German commands, lookup/findings/speech.md).
- * The language is always given: whisper guesses wrong on short words. Whisper's per-segment doubt (no_speech_prob,
+ * A person's turns always give their language: whisper guesses wrong on short words. Someone else's voice message
+ * gives none, so it is written in the language it was spoken in. Whisper's per-segment doubt (no_speech_prob,
  * avg_logprob, compression_ratio) comes back for the filter; OpenAI's newer models do not give it.
  */
 import type { SttSegment } from '@ucap/speech-text';
@@ -15,7 +16,8 @@ export interface Transcript {
 }
 
 export interface SttAdapter {
-  transcribe(r: { wav: Uint8Array<ArrayBuffer>; lang: string }, signal: AbortSignal): Promise<Transcript>;
+  /** `lang` null: whisper finds the language itself (someone else's voice message). */
+  transcribe(r: { wav: Uint8Array<ArrayBuffer>; lang: string | null }, signal: AbortSignal): Promise<Transcript>;
   /** A cheap call that proves the address (and the key) work. */
   check(signal: AbortSignal): Promise<void>;
 }
@@ -36,7 +38,7 @@ export function openAiTranscribe(o: { baseUrl: string; apiKey: string | null; mo
       const form = new FormData();
       form.set('file', new Blob([r.wav], { type: 'audio/wav' }), 'turn.wav');
       form.set('model', o.model);
-      form.set('language', r.lang);
+      if (r.lang) form.set('language', r.lang);
       form.set('response_format', VERBOSE(o.model) ? 'verbose_json' : 'json');
       const res = await call(f, `${base}/v1/audio/transcriptions`, { method: 'POST', headers: auth, body: form, signal }, o.answerWithinMs ?? 8000, o.attempts);
       const body = (await res.json().catch(() => null)) as { text?: unknown; segments?: SttSegment[]; engine_ms?: number } | null;

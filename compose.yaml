@@ -124,11 +124,20 @@ services:
       retries: 30
 
   # TDLib holds a lock on its database: restarted by hand (docker compose restart connectors), never by --watch.
+  # No database credentials: it dials the assistant (internal WebSocket) and passes files through the files volume.
   connectors:
     <<: *node
     command: node connectors/src/main.ts
     secrets: [connectors_token]
     stop_grace_period: 20s
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+      - ucap-files:/data/files
+      # TDLib's databases, one directory per connection, encrypted with a key only the assistant holds.
+      - ucap-tdlib:/data/tdlib
+    environment:
+      UCAP_ASSISTANT_WS: ws://assistant:8821/internal/connectors
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8822/healthz"]
       interval: 3s
@@ -169,6 +178,7 @@ networks:
 volumes:
   pgdata:
   ucap-files:
+  ucap-tdlib:
   ntfy-cache:
   node-modules:
   caddy-data:

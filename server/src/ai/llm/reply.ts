@@ -2,8 +2,9 @@
  * What a language model answers, whichever one it is (docs/plan.md: "Every provider answers JSON in one schema"):
  *
  * - `say`: what UCAP says, each part with its kind: the assistant's own words (`reply`), a summary of the person's
- *   content (`summary`, announced as one), or an original read word for word (`original`, with `ref`; its text is
- *   inserted by the server from the source, never retyped by the model: CONCEPT §3, §11);
+ *   content (`summary`, announced as one), an original read word for word (`original`, with `ref`; its text is
+ *   inserted by the server from the source, never retyped by the model: CONCEPT §3, §11; a voice message's original
+ *   is its recording), or a voice message's automatic transcript (`transcript`, with `ref`, announced as one);
  * - `calls`: tools to use, each with its own arguments (a read tool's results come back for another round; an
  *   action is prepared, and confirmed where its policy says);
  * - `help`: a person is needed; UCAP then asks whether to send a help request (A17), and never sends on its own.
@@ -13,10 +14,13 @@
  */
 
 export interface SayItem {
-  kind: 'reply' | 'summary' | 'original';
+  /** `transcript`: a voice message's automatic transcript, inserted by the server and announced as one (S10). */
+  kind: 'reply' | 'summary' | 'original' | 'transcript';
   text: string;
   ref: string | null;
 }
+
+const KINDS = ['reply', 'summary', 'original', 'transcript'];
 
 export interface Call {
   tool: string;
@@ -59,7 +63,7 @@ export function replySchema(tools: { name: string; args: Record<string, JsonSche
           type: 'object',
           additionalProperties: false,
           required: ['kind', 'text', 'ref'],
-          properties: { kind: { type: 'string', enum: ['reply', 'summary', 'original'] }, text: { type: 'string' }, ref: nullable({ type: 'string' }) },
+          properties: { kind: { type: 'string', enum: KINDS }, text: { type: 'string' }, ref: nullable({ type: 'string' }) },
         },
       },
     },
@@ -90,7 +94,7 @@ export function parseReply(text: string): Reply | null {
   for (const s of say) {
     if (!s || typeof s !== 'object') return null;
     const x = s as Record<string, unknown>;
-    if (!['reply', 'summary', 'original'].includes(String(x.kind)) || typeof x.text !== 'string') return null;
+    if (!KINDS.includes(String(x.kind)) || typeof x.text !== 'string') return null;
     items.push({ kind: x.kind as SayItem['kind'], text: x.text, ref: typeof x.ref === 'string' ? x.ref : null });
   }
   const cs: Call[] = [];
@@ -129,7 +133,7 @@ export function finishedSay(partial: string): SayItem[] {
     if (j >= partial.length) return out;
     try {
       const x = JSON.parse(partial.slice(i, j + 1)) as Record<string, unknown>;
-      if (['reply', 'summary', 'original'].includes(String(x.kind)) && typeof x.text === 'string') out.push({ kind: x.kind as SayItem['kind'], text: x.text, ref: typeof x.ref === 'string' ? x.ref : null });
+      if (KINDS.includes(String(x.kind)) && typeof x.text === 'string') out.push({ kind: x.kind as SayItem['kind'], text: x.text, ref: typeof x.ref === 'string' ? x.ref : null });
     } catch {
       return out;
     }

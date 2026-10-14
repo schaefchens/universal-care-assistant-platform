@@ -14,7 +14,7 @@ import type { Clock } from '../../lib/clock.ts';
 import type { Db } from '../../lib/db.ts';
 import { AppError } from '../../lib/errors.ts';
 import { ProviderError } from '../http.ts';
-import { decide, type Refusal } from '../policy.ts';
+import { type DataClass, decide, type Refusal } from '../policy.ts';
 import type { Provider, Providers } from '../providers.ts';
 import { openAiTranscribe, type SttAdapter, type Transcript } from './adapters.ts';
 
@@ -82,14 +82,14 @@ export function createStt(d: { db: Db; clock: Clock; providers: Providers; fetch
   }
 
   /** May this provider hear this person now? (An own one may even while marked failing: it may be back.) */
-  async function allowed(userId: string, p: Provider, seconds: number) {
+  async function allowed(userId: string, p: Provider, seconds: number, classes: readonly DataClass[] = ['voice_audio']) {
     return decide({
       location: p.location,
       enabled: p.enabled,
       health: own(p) ? 'unknown' : p.health,
       allowedClasses: p.allowedClasses,
       consented: await d.providers.consent(userId, p.id),
-      classes: ['voice_audio'],
+      classes,
       spentMicros: await d.providers.spentThisMonth(p.id),
       capMicros: p.monthlyCapMicros,
       costMicros: Math.ceil((seconds / 1000) * p.priceMicrosPerUnit),
@@ -141,7 +141,19 @@ export function createStt(d: { db: Db; clock: Clock; providers: Providers; fetch
      * The person's words from their voice. `seconds` is the audio's length (for the cap). Nothing is retried on
      * another provider: the person's choice, else the operator's own, else nothing.
      */
-    async transcribe(userId: string, o: { wav: Uint8Array<ArrayBuffer>; lang: string; seconds: number; priority: SttPriority; signal: AbortSignal }): Promise<SttResult> {
+    async transcribe(
+      userId: string,
+      o: {
+        wav: Uint8Array<ArrayBuffer>;
+        /** The person's own language for their turns; null for someone else's voice message (whisper finds it). */
+        lang: string | null;
+        seconds: number;
+        priority: SttPriority;
+        signal: AbortSignal;
+        /** A voice message is also communication. */
+        classes?: readonly DataClass[];
+      },
+    ): Promise<SttResult> {
       if (o.signal.aborted) return { ok: false, reason: 'aborted', providerId: null };
       const all = (await d.providers.list('stt')).filter((p) => p.enabled);
       const chosen = await chosenOf(userId);
@@ -149,13 +161,13 @@ export function createStt(d: { db: Db; clock: Clock; providers: Providers; fetch
       let refusal: Refusal | null = null;
       const pick = chosen ? all.find((p) => p.id === chosen) : undefined;
       if (pick) {
-        const v = await allowed(userId, pick, o.seconds);
+        const v = await allowed(userId, pick, o.seconds, o.classes);
         if (v.ok) candidates.push(pick);
         else refusal = v.reason;
       }
       // The operator's own: also when the person's external choice may not hear them now (more private, never less).
       if (!candidates.length) {
-        for (const p of all.filter(own)) if ((await allowed(userId, p, o.seconds)).ok) candidates.push(p);
+        for (const p of all.filter(own)) if ((await allowed(userId, p, o.seconds, o.classes)).ok) candidates.push(p);
       }
       const p = candidates[0];
       if (!p) return { ok: false, reason: refusal ?? 'none', providerId: pick?.id ?? null };

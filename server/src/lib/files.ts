@@ -27,6 +27,8 @@ export interface FileStore {
   verify(id: string, e: string | undefined, s: string | undefined): boolean;
   /** Deletes the files of this kind past their expiry, rows and bytes; how many. */
   sweep(exec: Exec, kind: string): Promise<number>;
+  /** Deletes these files, rows and bytes. */
+  remove(exec: Exec, ids: string[]): Promise<void>;
 }
 
 export function createFileStore(o: { dir: string; key: Buffer; clock: Clock }): FileStore {
@@ -60,6 +62,11 @@ export function createFileStore(o: { dir: string; key: Buffer; clock: Clock }): 
       const gone = await sql<{ path: string }>`delete from files where kind = ${kind} and expires_at < ${new Date(o.clock())} returning path`.execute(exec);
       for (const f of gone.rows) await rm(join(o.dir, f.path), { force: true });
       return gone.rows.length;
+    },
+    async remove(exec, ids) {
+      if (!ids.length) return;
+      const gone = await sql<{ path: string }>`delete from files where id = any(${ids}::uuid[]) returning path`.execute(exec);
+      for (const f of gone.rows) await rm(join(o.dir, f.path), { force: true });
     },
   };
 }

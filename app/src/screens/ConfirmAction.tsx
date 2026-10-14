@@ -50,18 +50,19 @@ export function ConfirmAction(p: { session: Session; config: DeviceConfig; actio
     else say(tr(r?.reason === 'expired' ? 'assistant.action.expired' : r ? 'assistant.action.gone' : 'assistant.failed'), 'system');
     p.onDone();
   }
-  async function no(text: string) {
+  /** No, or silence: nothing happens; the action may say what it kept (a message's draft: C7, C8). */
+  async function no(text: string, why: 'no' | 'silence' = 'no') {
     if (over.current) return;
     finish();
-    await p.session.call(`/api/v1/assistant/actions/${p.action.id}/cancel`, { method: 'POST' }).catch(() => null);
-    say(text, 'system');
+    const r = await p.session.call<{ ok: boolean; say: string | null }>(`/api/v1/assistant/actions/${p.action.id}/cancel`, { method: 'POST', body: { why, lang: ui.lang } }).catch(() => null);
+    say(r?.say ?? text, 'system');
     p.onDone();
   }
   function unanswered() {
     if (over.current) return;
     if (asks.current < 2) return ask();
     // Silence never confirms anything.
-    void no(tr('assistant.action.expired'));
+    void no(tr('assistant.action.expired'), 'silence');
   }
 
   useEffect(() => {

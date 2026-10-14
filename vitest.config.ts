@@ -62,6 +62,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'connectors',
+          root: 'connectors',
+          include: ['test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'repo',
           root: 'tools',
           include: ['test/**/*.test.ts'],

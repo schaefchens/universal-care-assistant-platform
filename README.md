@@ -7,9 +7,10 @@ An AI-powered assistive and care platform for disabled people and people who nee
 
 ## Status
 
-Milestone 1, step S9 done: identity and devices, people and permissions, help requests with helpers' browsers and the
+Milestone 1, step S10 done: identity and devices, people and permissions, help requests with helpers' browsers and the
 Android app's alarm, interactive reminders, speech providers and each person's voices, push-to-talk with commands and
-the help question, and the assistant (notes, reminders, confirmed actions, help it proposes). Next: S10, Telegram.
+the help question, the assistant (notes, reminders, confirmed actions, help it proposes), and Telegram (reading,
+voice messages, replies confirmed by the person and by Telegram). Next: S11, remote configuration.
 Departures from the plan are in [docs/decisions.md](docs/decisions.md).
 
 ## Running the development stack
@@ -22,7 +23,7 @@ npm install
 docker compose up -d --wait   # Postgres, ntfy, Caddy, and the core, assistant and connectors processes
 curl -s localhost:8810/healthz
 npm test
-npm run evals                 # the assistant against the dialogue model on Ollama (48 German utterances)
+npm run evals                 # the assistant against the dialogue model on Ollama (60 German utterances)
 ```
 
 `npm run setup` keeps existing secrets and adds missing ones: run it again after an update that needs a new one
@@ -46,6 +47,26 @@ Speech providers are set up by an administrator in the app (Einstellungen → KI
 speech API or a local server that speaks it, ElevenLabs, and herde workers, joined with the command the page shows.
 Keys are stored encrypted and never shown again. A provider outside the server receives personal speech only when
 the page allows its data classes and the person agreed when choosing its voice.
+
+**Telegram** needs the operator's own API credentials: log in at [my.telegram.org](https://my.telegram.org), open
+"API development tools", create an application, and enter its `api_id` and `api_hash` in the app (Einstellungen → KI
+und Stimmen verwalten → Telegram). The `api_hash` is stored encrypted and never shown again. Then each person
+connects their own account on their own device (Einstellungen → Telegram: phone number and code, or a QR code); their
+helpers get no access to it. The connectors process runs TDLib; restart it by hand after a change
+(`docker compose restart connectors`).
+
+Without credentials, a stand-in shows the messaging in the app (an invented account, code 22222; it never reaches
+Telegram):
+
+```sh
+docker compose stop connectors
+docker compose run --rm -d --name ucap-fake-telegram -p 127.0.0.1:8823:8823 connectors node tools/dev/fake-telegram.ts
+curl -X POST localhost:8823/incoming -d '{"chat":"anna","text":"Kommst du morgen zum Kaffee?"}'
+docker stop ucap-fake-telegram && docker compose start connectors
+```
+
+With credentials, `UCAP_TG_TEST=1 TG_API_ID=… TG_API_HASH=… npx vitest run --project connectors testdc` logs two test
+accounts in on Telegram's test servers and sends a message between them.
 
 ## Licence
 

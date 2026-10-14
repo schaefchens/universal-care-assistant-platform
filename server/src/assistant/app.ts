@@ -25,6 +25,9 @@ import { createHttp } from '../lib/http.ts';
 import { createJobRunner, enqueue, type Handler } from '../lib/jobs.ts';
 import { createSealer } from '../lib/sealed.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
+import { registerConnectorHub } from '../messaging/hub.ts';
+import { registerMessagingRoutes } from '../messaging/routes.ts';
+import { createMessaging } from '../messaging/service.ts';
 import { createActions } from './actions.ts';
 import { createAssistant } from './loop.ts';
 import { registerAiAdminRoutes } from './routes/ai-admin.ts';
@@ -62,6 +65,8 @@ export async function buildAssistant(o: {
   /** Tests: the fetch that reaches fake speech providers. */
   providerFetch?: typeof fetch;
   claimTimeoutMs?: number;
+  /** Tests: ffmpeg's path for voice messages. */
+  ffmpeg?: string;
 }) {
   const app = createHttp(o.config, { logger: o.logger, logStream: o.logStream });
   const log = (msg: string) => app.log.warn(msg);
@@ -87,7 +92,8 @@ export async function buildAssistant(o: {
   // Never behind a redirect, and outside UCAP's /api/v1 (herde treats a 3xx as a project error).
   await app.register(herde.routes, { prefix: '/api/worker/v2' });
   const voice = createVoiceActivity((active) => herde.setVoiceActivity(active));
-  const providers = createProviders({ db: o.db, clock: o.clock, sealer: createSealer(o.secrets.masterKey) });
+  const sealer = createSealer(o.secrets.masterKey);
+  const providers = createProviders({ db: o.db, clock: o.clock, sealer });
   const speech = createSpeech({ db: o.db, clock: o.clock, providers, herde, files, fetch: o.providerFetch, log, claimTimeoutMs: o.claimTimeoutMs });
   const stt = createStt({ db: o.db, clock: o.clock, providers, fetch: o.providerFetch, log, sttUrl: o.config.sttUrl });
   // The assistant's tools reach the person's notes and reminders through the same domain code as core; reminders'
@@ -97,7 +103,11 @@ export async function buildAssistant(o: {
   const reminders = createReminderService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, people, nonceFor: deliveryNonce(o.secrets.pepper) });
   const llm = createLlm({ db: o.db, clock: o.clock, providers, fetch: o.providerFetch, log, ollamaUrl: o.config.ollamaUrl, ollamaModel: o.config.ollamaModel });
   const actions = createActions({ db: o.db, clock: o.clock, log });
-  const assistant = createAssistant({ db: o.db, clock: o.clock, llm, actions, notes, reminders, log });
+  // The person's Telegram (S10): the connectors process dials in; without its token there is no messaging.
+  const messaging = createMessaging({ db: o.db, clock: o.clock, sealer, files, filesDir: o.config.filesDir, stt, log, ffmpeg: o.ffmpeg });
+  if (o.secrets.connectorsToken)
+    messaging.attach(await registerConnectorHub(app, { token: o.secrets.connectorsToken, onHello: (running) => messaging.onHello(running), onEvent: (e) => messaging.onEvent(e), log }));
+  const assistant = createAssistant({ db: o.db, clock: o.clock, llm, actions, notes, reminders, messaging, log });
   const contextFor = async (userId: string, deviceId: string, lang?: 'de' | 'en') => {
     const r = await sql<{ locale: string; address_form: 'du' | 'Sie'; timezone: string }>`select locale, address_form, timezone from users where id = ${userId}`.execute(o.db);
     const u = r.rows[0]!;
@@ -111,12 +121,14 @@ export async function buildAssistant(o: {
       notes,
       reminders,
       db: o.db,
+      messaging,
     };
   };
   const turns = createTurns({ db: o.db, clock: o.clock, stt, assistant, actions, contextFor });
   registerSpeechRoutes(app, { speech, providers, stt });
   registerTurnRoutes(app, { turns, stt, llm });
   registerAssistantRoutes(app, { actions, llm, contextFor });
+  registerMessagingRoutes(app, { messaging, identity, actions, contextFor });
   registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, stt, llm, herde, publicUrl: o.config.publicUrl });
 
   const handlers: Record<string, Handler> = {
@@ -129,8 +141,11 @@ export async function buildAssistant(o: {
     // Questions nobody answered, attempts that never finished, and old contents of actions.
     'assistant.sweep': async () => {
       await actions.sweep();
+      await messaging.sweep();
       await enqueue(o.db, { queue: 'assistant', kind: 'assistant.sweep', key: 'assistant.sweep', runAt: o.clock() + 60_000 });
     },
+    'messaging.transcribe': async (job) => messaging.transcribe(String(job.payload.messageId)),
+    'messaging.slow': async (job) => messaging.slow(String(job.payload.outboundId)),
     'speech.sweep': async () => {
       await speech.sweep();
       await enqueue(o.db, { queue: 'assistant', kind: 'speech.sweep', key: 'speech.sweep', runAt: o.clock() + SWEEP_EVERY_MS });
@@ -165,6 +180,7 @@ export async function buildAssistant(o: {
     turns,
     identity,
     files,
+    messaging,
     async start() {
       await stt.ensureConfigured();
       await llm.ensureConfigured();

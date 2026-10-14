@@ -64,6 +64,63 @@ function Field(p: { label: string; value: string; onChange: (v: string) => void;
   );
 }
 
+/**
+ * Telegram's API credentials for this server (docs/plan.md, S10): the operator's own from my.telegram.org. The
+ * api_hash is written only; the page shows whether it is set.
+ */
+function TelegramAdmin(p: { session: Session; tell: (text: string, show: (t: string) => void) => void }) {
+  const { tr } = useUi();
+  const [s, setS] = useState<{ configured: boolean; apiId: number | null; testDc: boolean } | null>(null);
+  const [apiId, setApiId] = useState('');
+  const [apiHash, setApiHash] = useState('');
+  const [testDc, setTestDc] = useState(false);
+  const [status, setStatus] = useState('');
+  useEffect(() => {
+    void p.session.call<{ configured: boolean; apiId: number | null; testDc: boolean }>('/api/v1/ai-admin/telegram').then(
+      (r) => {
+        setS(r);
+        setApiId(r.apiId ? String(r.apiId) : '');
+        setTestDc(r.testDc);
+      },
+      () => {},
+    );
+  }, [p.session]);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    const id = Number(apiId.trim());
+    const hash = apiHash.trim().toLowerCase();
+    if (!Number.isInteger(id) || id <= 0 || (hash && !/^[0-9a-f]{32}$/.test(hash)) || (!hash && !s?.configured)) return p.tell(tr('admin.telegram.invalid'), setStatus);
+    try {
+      const r = await p.session.call<{ configured: boolean; apiId: number | null; testDc: boolean }>('/api/v1/ai-admin/telegram', { method: 'PUT', body: { apiId: id, ...(hash ? { apiHash: hash } : {}), testDc } });
+      setS(r);
+      setApiHash('');
+      p.tell(tr('admin.telegram.saved'), setStatus);
+    } catch (err) {
+      p.tell(tr(`error.${err instanceof ApiError ? err.code : 'internal'}`), setStatus);
+    }
+  }
+  return (
+    <section className="settings-section">
+      <h2>{tr('admin.telegram.title')}</h2>
+      <p className="muted">{tr('admin.telegram.intro')}</p>
+      <p className="status">{s === null ? '' : s.configured ? tr(s.testDc ? 'admin.telegram.configuredTest' : 'admin.telegram.configured', { apiId: String(s.apiId) }) : tr('admin.telegram.missing')}</p>
+      <Form className="stack" onSubmit={save}>
+        <Field label={tr('admin.telegram.apiId')} value={apiId} onChange={setApiId} />
+        <Field label={tr('admin.telegram.apiHash')} type="password" value={apiHash} onChange={setApiHash} description={s?.configured ? tr('admin.telegram.apiHash.keep') : undefined} />
+        <Checkbox className="choice-option checkbox" isSelected={testDc} onChange={setTestDc}>
+          {tr('admin.telegram.testDc')}
+        </Checkbox>
+        <Button type="submit" className="button primary">
+          {tr('admin.telegram.save')}
+        </Button>
+        <p role="status" className="status">
+          {status}
+        </p>
+      </Form>
+    </section>
+  );
+}
+
 export function AiAdmin(p: { session: Session; onClose: () => void }) {
   const ui = useUi();
   const { tr, say } = ui;
@@ -255,6 +312,8 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
           </p>
         </Form>
       </section>
+
+      <TelegramAdmin session={p.session} tell={tell} />
 
       <section className="settings-section">
         <h2>{tr('admin.herde')}</h2>

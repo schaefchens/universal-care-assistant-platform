@@ -17,16 +17,22 @@ import type { Notes } from '../domain/notes/service.ts';
 import type { ReminderService } from '../domain/reminders/service.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
+import { CAPTIONED, type Messaging } from '../messaging/service.ts';
 import type { Actions } from './actions.ts';
 import { dataBlock, systemPrompt } from './prompt.ts';
-import { type Focus, TOOLS, type ToolContext, ToolError, toolByName } from './tools.ts';
+import { toolsFor } from './registry.ts';
+import { type Focus, type ToolContext, ToolError } from './tools.ts';
 
 export const MAX_ROUNDS = 4;
 const HISTORY_MS = 30 * 60_000;
 const HISTORY_TURNS = 6;
 
 export type AssistantEvent =
-  | { t: 'segment'; kind: 'reply' | 'summary' | 'original' | 'system'; text: string }
+  /**
+   * A part of the answer. `audio`: a recording to play after the words (a voice message's original); `source`: the
+   * message whose original this is, reported back once the person heard it (then it is read on Telegram).
+   */
+  | { t: 'segment'; kind: 'reply' | 'summary' | 'original' | 'transcript' | 'system'; text: string; audio?: string; source?: { message: string } }
   | { t: 'action'; id: string; contentHash: string; prompt: string; expiresAt: string }
   | { t: 'ask'; kind: 'help_confirm'; reason: 'assistant' }
   | { t: 'error'; code: 'assistant_unavailable' | 'assistant_failed' };
@@ -38,8 +44,7 @@ export type AssistantEvent =
 const PROMISE = /\b(kommt|kommen|unterwegs|gleich da|coming|on (?:the|her|his|their) way)\b/i;
 const ABOUT_HELP = /\b(hilfe|helfer|helferin|jemand|niemand|keiner|help|helper|someone|somebody|nobody|no one)\b/i;
 
-export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Actions; notes: Notes; reminders: ReminderService; log: (m: string) => void }) {
-  const schema = replySchema(TOOLS.map((x) => ({ name: x.name, args: x.args })));
+export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Actions; notes: Notes; reminders: ReminderService; messaging?: Messaging; log: (m: string) => void }) {
 
   async function person(userId: string) {
     const r = await sql<{ display_name: string; locale: string; address_form: AddressForm; timezone: string }>`
@@ -88,15 +93,51 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       const s = await session(o.userId, o.deviceId);
       const names = await helperNames(o.userId);
       let focus = s.focus;
-      const ctx = (): ToolContext => ({ userId: o.userId, deviceId: o.deviceId, lang: who.lang, form: who.form, timezone: who.timezone, now: new Date(d.clock()), notes: d.notes, reminders: d.reminders, db: d.db });
+      // The messaging tools only for a person with a connection (what is kept here can be read while it reconnects).
+      const messaging = d.messaging && (await d.messaging.connection(o.userId)) ? d.messaging : undefined;
+      const tools = toolsFor({ messaging: messaging !== undefined });
+      const offered = new Map(tools.map((x) => [x.name, x]));
+      const schema = replySchema(tools.map((x) => ({ name: x.name, args: x.args })));
+      const ctx = (): ToolContext => ({ userId: o.userId, deviceId: o.deviceId, lang: who.lang, form: who.form, timezone: who.timezone, now: new Date(d.clock()), notes: d.notes, reminders: d.reminders, db: d.db, messaging });
       const messages: LlmMessage[] = [];
       for (const h of s.history) messages.push({ role: 'user', content: h.u }, { role: 'assistant', content: JSON.stringify({ say: [{ kind: 'reply', text: h.a, ref: null }], calls: [], help: false }) });
       messages.push({ role: 'user', content: o.text });
       const said: string[] = [];
+      /** A question (help, a confirmation) was asked: that is the answer. */
+      let acted = false;
       let tainted = false;
+
+      /** A message's original (or transcript), from the store: framed with who, when and where (CONCEPT §3). */
+      const fromMessage = async (item: SayItem): Promise<boolean> => {
+        const ref = /^msg:([0-9a-f-]{36})$/.exec(item.ref ?? '');
+        if (!ref) return false;
+        const m = messaging ? await messaging.message(o.userId, ref[1]!) : null;
+        if (!m) return true;
+        focus = { ...focus, chat: { id: m.conversationId, title: m.conversation } };
+        const frame = messaging!.frame(who.lang, who.form, who.timezone, m);
+        if (item.kind === 'transcript') {
+          const text = m.kind === 'voice' && m.transcriptState === 'done' && m.transcript ? `${tr('messages.transcript')} ${m.transcript}` : tr('messages.transcript.none');
+          emit({ t: 'segment', kind: m.transcript ? 'transcript' : 'system', text });
+          said.push(text);
+          return true;
+        }
+        if (m.kind === 'voice') {
+          // The original is the recording.
+          const a = await messaging!.audio(o.userId, m.id);
+          if (a && 'url' in a) emit({ t: 'segment', kind: 'original', text: frame, audio: a.url, source: { message: m.id } });
+          else emit({ t: 'segment', kind: 'system', text: tr(a ? 'messages.audio.pending' : 'messages.audio.unavailable') });
+        } else {
+          const text = !m.text ? frame : CAPTIONED.has(m.kind) ? `${frame} ${tr('messages.frame.caption')} ${m.text}` : `${frame} ${m.text}`;
+          emit({ t: 'segment', kind: 'original', text, source: { message: m.id } });
+        }
+        said.push(`[${m.from || m.conversation}]`);
+        return true;
+      };
 
       /** One part of the reply, as it goes out: originals from the source, summaries announced, promises dropped. */
       const speak = async (item: SayItem) => {
+        if ((item.kind === 'original' || item.kind === 'transcript') && (await fromMessage(item))) return;
+        if (item.kind === 'transcript') return;
         if (item.kind === 'original') {
           const ref = item.ref?.replace(/^note:/, '') ?? '';
           const n = /^[0-9a-f-]{36}$/.test(ref) ? await d.notes.get(o.userId, ref).catch(() => null) : null;
@@ -131,7 +172,7 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
               streaming = streaming.then(() => speak(item));
             }
           };
-          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools: TOOLS });
+          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: messaging !== undefined });
           const r = await d.llm.complete(o.userId, pick.provider, pick.adapter, { system, messages, schema, signal: o.signal, onText });
           await streaming;
           const reply = parseReply(r.text);
@@ -139,20 +180,22 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
             if (!said.length) emit({ t: 'error', code: 'assistant_failed' });
             return 'failed';
           }
-          const unknown = reply.calls.filter((c) => !toolByName.has(c.tool)).map((c) => c.tool);
-          const reads = reply.calls.filter((c) => toolByName.get(c.tool)?.kind === 'read');
-          const acts = reply.calls.filter((c) => toolByName.get(c.tool)?.kind === 'act');
+          const unknown = reply.calls.filter((c) => !offered.has(c.tool)).map((c) => c.tool);
+          const reads = reply.calls.filter((c) => offered.get(c.tool)?.kind === 'read');
+          const acts = reply.calls.filter((c) => offered.get(c.tool)?.kind === 'act');
           // When something happens, UCAP says it: the help question, the readback or the confirmation question. The
           // model's own words about it would come first, and claim what has not happened yet ("erstellt").
           if (!reply.help && !acts.length) for (const item of reply.say.slice(streamed)) await speak(item);
           if (reply.help) {
             emit({ t: 'ask', kind: 'help_confirm', reason: 'assistant' });
+            acted = true;
             break;
           }
           const back: { tool: string; data?: unknown; error?: string }[] = unknown.map((tool) => ({ tool, error: 'no_such_tool' }));
+          if (unknown.length) d.log(`assistant model called ${unknown.length} unknown tools`);
           if (reads.length && round < MAX_ROUNDS) {
             for (const c of reads) {
-              const tool = toolByName.get(c.tool)!;
+              const tool = offered.get(c.tool)!;
               if (tool.kind !== 'read') continue;
               try {
                 const out = await tool.run(ctx(), c);
@@ -160,6 +203,8 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
                 if (out.focus) focus = { ...focus, ...out.focus };
               } catch (e) {
                 if (!(e instanceof ToolError)) throw e;
+                // The tool and the code only: a reason may name people ("chat_ambiguous: Anna Müller, …").
+                d.log(`assistant tool ${c.tool} refused: ${e.reason.split(':')[0]}`);
                 back.push({ tool: c.tool, error: e.reason });
               }
             }
@@ -170,7 +215,7 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
           }
           let asked = false;
           for (const c of acts) {
-            const tool = toolByName.get(c.tool)!;
+            const tool = offered.get(c.tool)!;
             if (tool.kind !== 'act') continue;
             try {
               const prepared = await tool.prepare(ctx(), c, tainted);
@@ -180,16 +225,21 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
                 asked = true;
                 const w = await d.actions.prepare(ctx(), o.turnId, tool, prepared.args, prepared.confirm, tainted);
                 emit({ t: 'action', id: w.id, contentHash: w.contentHash, prompt: w.prompt, expiresAt: w.expiresAt });
+                acted = true;
               } else {
                 const out = await d.actions.runNow(ctx(), o.turnId, tool, prepared.args, tainted);
                 if (out.ok) {
                   emit({ t: 'segment', kind: 'system', text: out.say });
                   said.push(out.say);
                   if (out.focus) focus = { ...focus, ...out.focus };
-                } else emit({ t: 'segment', kind: 'system', text: tr('assistant.failed') });
+                } else {
+                  emit({ t: 'segment', kind: 'system', text: tr('assistant.failed') });
+                  acted = true;
+                }
               }
             } catch (e) {
               if (!(e instanceof ToolError)) throw e;
+              d.log(`assistant tool ${c.tool} refused: ${e.reason.split(':')[0]}`);
               back.push({ tool: c.tool, error: e.reason });
             }
           }
@@ -204,6 +254,12 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
         if (o.signal.aborted) return 'aborted';
         d.log(`assistant turn failed: ${(e as Error).name}`);
         if (!said.length) emit({ t: 'error', code: 'assistant_unavailable' });
+        return 'failed';
+      }
+      // Never silence: rounds that ended without words, a question or an action are said to have failed.
+      if (!said.length && !acted) {
+        d.log('assistant turn ended without an answer');
+        emit({ t: 'error', code: 'assistant_failed' });
         return 'failed';
       }
       await save(o.userId, o.deviceId, focus, [...s.history, { u: o.text, a: said.join(' ') }]);

@@ -55,6 +55,8 @@ export function Settings(p: {
   onPeople: () => void;
   onReminders: () => void;
   onVoices: () => void;
+  /** The person's own Telegram (S10). */
+  onTelegram: () => void;
   /** Administrators only: providers, keys, usage, herde. */
   onAiAdmin?: () => void;
   onNewWords: () => void;
@@ -112,6 +114,9 @@ export function Settings(p: {
         </Button>
         <Button className="button" onPress={p.onDevices}>
           {tr('settings.devices')}
+        </Button>
+        <Button className="button" onPress={p.onTelegram}>
+          {tr('settings.telegram')}
         </Button>
         {/* Only once the account's state is known: "einrichten" and "neue" lead to different flows. */}
         {p.me && (

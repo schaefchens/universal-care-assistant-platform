@@ -6,3 +6,4 @@ export * from './server-info.ts';
 export * from './i18n.ts';
 export * from './device-config.ts';
 export * from './schedule.ts';
+export * from './connectors.ts';
