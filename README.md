@@ -45,8 +45,9 @@ providers there (KI und Stimmen verwalten).
 **The Android app** (emulator or USB phone, JDK 21, Android SDK):
 
 ```sh
-sh tools/android/install.sh                    # build, install, adb reverse to the stack, start
+npm run android:install                        # build, install, adb reverse to the stack, start
 npm run test:android                           # the app's JVM unit tests
+npm run android:check                          # checks on the running emulator, the DND matrix included
 node tools/android/axe.ts                      # accessibility audit of the screen in front
 node tools/android/a11y-tree.ts --dom          # its accessibility tree (compare TalkBack on and off)
 node tools/android/fake-distributor.ts register  # without the ntfy app: stand in for it (debug builds)

@@ -26,6 +26,7 @@ npm test                          # vitest: herde-project, server, tools (needs 
 npm run typecheck
 npm run test:docker               # the same suite inside the image
 npm run test:e2e                  # Playwright: a person and a helper in two browsers, against the stack (Vite on 8812)
+npm run android:install           # build and install the app on the emulator; npm run android:check checks it there
 npm run backup:check              # backup, restore into a scratch database, compare every table
 docker compose logs -f core       # core restarts on save (node --watch); connectors: docker compose restart connectors
 services/stt-mlx/run.sh           # native whisper on 127.0.0.1:8813 (Docker cannot reach the Mac's GPU)

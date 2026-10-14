@@ -17,6 +17,8 @@
     "test:docker": "docker compose run --rm --no-deps -e DATABASE_URL=postgres://ucap:ucap@db:5432/ucap_test -e UCAP_SECRETS_DIR=/run/secrets core npm test",
     "admin:invite": "docker compose exec core node server/src/cli.ts admin-invite",
     "test:android": "sh tools/android/unit-test.sh",
+    "android:install": "sh tools/android/install.sh",
+    "android:check": "node tools/android/check.ts",
     "evals": "node tools/assistant-evals/run.ts",
     "backup": "node tools/backup/backup.ts backup",
     "backup:check": "node tools/backup/backup.ts check",

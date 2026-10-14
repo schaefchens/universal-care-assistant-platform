@@ -10,6 +10,7 @@ npm run test:docker                  # the same suite inside the image
 npm run test:e2e                     # a person and a helper in two browsers against the dev stack (Playwright)
 npm run evals                        # the assistant against the dialogue model (60 German utterances)
 npm run backup:check                 # backup, restore into a scratch database, compare every table
+npm run android:check                # on the emulator: AN-12, UI-08, UI-01, Help first, AN-08, the DND matrix (AN-02)
 node tools/android/axe.ts            # accessibility audit of the screen the emulator shows (UI-01)
 node tools/android/a11y-tree.ts --dom   # its accessibility tree and DOM, to compare TalkBack on and off (UI-02)
 ```
@@ -98,7 +99,7 @@ Mac's memory pressure.
 | Id | Check | Where | State |
 |---|---|---|---|
 | AN-01 | 10 of 10 receipts in deep Doze | needs the ntfy app on the emulator (a download the owner has not yet allowed) or a real phone | open |
-| AN-02 | DND matrix, `delivered_silenced` | total silence on the emulator (S5); the full matrix on a real phone | emulator, open |
+| AN-02 | DND matrix, `delivered_silenced` | `npm run android:check`: in each mode (off, alarms, priority, total silence) a heartbeat comes back and the phone reports the mode; the decision is `SilenceTest` (JVM); a real alert in total silence came back `delivered_silenced` (S5, again 2026-10-15). The makers' DND variants on a real phone | test, emulator; real phone open |
 | AN-03 | one notification per request; no quietening at 120 s | emulator: the same notification from alarm to update (S5); on 2026-10-15 a re-alert 136 s after the first rang again in the same notification (a new alarm-usage sound), and the cancel moved it to the quiet channel | emulator (S5, S12) |
 | AN-04 | "Annehmen" needs the unlock; "Wird übermittelt" while offline | the unlock needs a phone with a screen lock | open |
 | AN-05 | killed after the press: exactly one request | emulator (S5) | emulator |

@@ -626,6 +626,9 @@ then they stay as built, and nothing here is frozen.
   the other, and the person hears A1, A2 (or, within the reopen window, that the helpers are asked again), A6 and
   A12. It runs on the dev stack with its real clock: the plan's fake clock and fake providers are not built, since
   the help path uses no provider; they come when the e2e covers the assistant.
+- **`npm run android:check`** runs on the emulator what can be checked there by itself: backups off, the security
+  policy, axe, Help first in focus order, earcon usage, and Do Not Disturb in each mode through real heartbeats (a
+  heartbeat never rings, so the phone reports the mode rather than "silenced"). Doze stays with the ntfy app.
 - **`npm run test:docker` runs the whole suite in the image**, the ntfy tests included (at ntfy's internal address,
   with the mounted secrets).
 - **Docs:** [operator.md](operator.md) (running a server), [helper-onboarding.md](helper-onboarding.md) (for helpers),

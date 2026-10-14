@@ -9,14 +9,31 @@
 import { readFileSync } from 'node:fs';
 import { evaluate } from './cdp.ts';
 
-const all = process.argv.includes('--all');
-const source = readFileSync(new URL('../../node_modules/axe-core/axe.min.js', import.meta.url), 'utf8');
-await evaluate(`(() => { if (!window.axe) { (0, eval)(${JSON.stringify(source)}); } return typeof window.axe; })()`);
-const r = (await evaluate(`(async () => {
-  const res = await window.axe.run(document, { resultTypes: ['violations'] });
-  return { title: document.querySelector('h1')?.textContent ?? document.title, violations: res.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length, targets: v.nodes.slice(0, 3).map((n) => n.target.join(' ')) })) };
-})()`)) as { title: string; violations: { id: string; impact: string; help: string; nodes: number; targets: string[] }[] };
-const shown = r.violations.filter((v) => all || v.impact === 'serious' || v.impact === 'critical');
-console.log(`${r.title}: ${shown.length ? '' : 'no '}${all ? '' : 'serious '}violations${shown.length ? ':' : ''}`);
-for (const v of shown) console.log(`  ${v.impact} ${v.id} (${v.nodes}): ${v.help} — ${v.targets.join(', ')}`);
-process.exit(r.violations.some((v) => v.impact === 'serious' || v.impact === 'critical') ? 1 : 0);
+export interface Violation {
+  id: string;
+  impact: string;
+  help: string;
+  nodes: number;
+  targets: string[];
+}
+
+/** axe's violations on the screen in front, and that screen's heading. */
+export async function audit(): Promise<{ title: string; violations: Violation[] }> {
+  const source = readFileSync(new URL('../../node_modules/axe-core/axe.min.js', import.meta.url), 'utf8');
+  await evaluate(`(() => { if (!window.axe) { (0, eval)(${JSON.stringify(source)}); } return typeof window.axe; })()`);
+  return (await evaluate(`(async () => {
+    const res = await window.axe.run(document, { resultTypes: ['violations'] });
+    return { title: document.querySelector('h1')?.textContent ?? document.title, violations: res.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length, targets: v.nodes.slice(0, 3).map((n) => n.target.join(' ')) })) };
+  })()`)) as { title: string; violations: Violation[] };
+}
+
+export const serious = (v: Violation) => v.impact === 'serious' || v.impact === 'critical';
+
+if (import.meta.main) {
+  const all = process.argv.includes('--all');
+  const r = await audit();
+  const shown = r.violations.filter((v) => all || serious(v));
+  console.log(`${r.title}: ${shown.length ? '' : 'no '}${all ? '' : 'serious '}violations${shown.length ? ':' : ''}`);
+  for (const v of shown) console.log(`  ${v.impact} ${v.id} (${v.nodes}): ${v.help} — ${v.targets.join(', ')}`);
+  process.exit(r.violations.some(serious) ? 1 : 0);
+}
