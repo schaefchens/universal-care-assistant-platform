@@ -61,8 +61,12 @@ export interface Authenticated {
 
 const bad = () => new AppError('unauthorised');
 
+/** Called in the account's own transaction when an invitation creates it (people/service.ts opens the relationship). */
+export type AccountHook = (trx: Trx, o: { userId: string; invite: { id: string; kind: string; createdBy: string | null; proposedScopes: string[] } }) => Promise<void>;
+
 export function createIdentityService(d: IdentityDeps) {
   const now = () => new Date(d.clock());
+  let accountHook: AccountHook | null = null;
 
   function checkOrigin(org: string) {
     if (!d.publicOrigins.includes(org)) throw new AppError('forbidden', { params: { reason: 'origin' } });
@@ -155,6 +159,9 @@ export function createIdentityService(d: IdentityDeps) {
 
   return {
     db: d.db,
+    setAccountHook(fn: AccountHook) {
+      accountHook = fn;
+    },
     newChallenge: (purpose: ChallengePurpose, bind?: { deviceId?: string; identityKey?: Uint8Array }) => newChallenge(d.db, purpose, bind),
 
     /** Recovery starts from the identity's public key: the challenge is bound to it. Unknown keys get one too, so
@@ -203,7 +210,7 @@ export function createIdentityService(d: IdentityDeps) {
         if (ipk.length !== 32 || !verifyIdentity(ipk, 'account.create', payload, fromB64url(input.identityProof))) throw bad();
 
         const userId = uuidv7(d.clock());
-        const invite = await redeemInvite(trx, input.invite, userId, input.ip, ['account', 'supported_person']);
+        const invite = await redeemInvite(trx, input.invite, userId, input.ip, ['account', 'supported_person', 'helper']);
         await sql`
           insert into users (id, display_name, locale, address_form, timezone, recovery_state, is_admin, created_at)
           values (${userId}, ${input.displayName}, ${input.locale}, ${input.addressForm}, ${input.timezone}, 'unconfirmed', ${invite.grants_admin}, ${now()})`.execute(trx);
@@ -217,6 +224,8 @@ export function createIdentityService(d: IdentityDeps) {
         }
         const deviceId = await insertDevice(trx, userId, input.device, key, 'create', { purpose: 'account.create', payload, proof: input.identityProof });
         await audit(trx, d.clock, { actorUser: userId, actorDevice: deviceId, subjectUser: userId, action: 'account.created', targetType: 'invite', targetId: invite.id, detail: { admin: invite.grants_admin } });
+        // A helper's or supported person's invitation also opens the relationship it was made for.
+        if (accountHook && invite.kind !== 'account') await accountHook(trx, { userId, invite: { id: invite.id, kind: invite.kind, createdBy: invite.created_by, proposedScopes: invite.proposed_scopes } });
         const session = await newSession(trx, userId, deviceId);
         return { userId, deviceId, invite: { id: invite.id, kind: invite.kind, createdBy: invite.created_by }, seq: 0, ...session };
       });

@@ -11,11 +11,13 @@ import { createJobRunner, enqueue, type Handler } from '../lib/jobs.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
 import { CLOSE } from '@ucap/shared';
 import { createIdentityService } from '../domain/identity/service.ts';
+import { createPeopleService } from '../domain/people/service.ts';
 import { pruneLimits } from '../lib/rate-limit.ts';
 import { registerAuth } from './auth.ts';
 import { createDispatcher, pruneEvents } from './dispatcher.ts';
 import { registerRealtime } from './realtime.ts';
 import { registerIdentityRoutes } from './routes/identity.ts';
+import { registerPeopleRoutes } from './routes/people.ts';
 import { ensureServerId, registerServerInfo } from './server-info.ts';
 
 export async function buildCore(o: {
@@ -35,6 +37,13 @@ export async function buildCore(o: {
 
   const files = createFileStore({ dir: o.config.filesDir, key: deriveKey(o.secrets.masterKey, 'files'), clock: o.clock });
   const identity = createIdentityService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, serverId, publicOrigins: o.config.publicOrigins });
+  const people = createPeopleService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, identity });
+  // An invitation for a helper or a supported person opens its relationship when it creates the account.
+  identity.setAccountHook(async (trx, { userId, invite }) => {
+    if (!invite.createdBy) return;
+    const pair = invite.kind === 'helper' ? { personId: invite.createdBy, helperId: userId } : { personId: userId, helperId: invite.createdBy };
+    await people.openFromInvite(trx, { ...pair, inviteId: invite.id, proposed: invite.proposedScopes });
+  });
   registerAuth(app, identity);
   const hub = await registerRealtime(app, {
     db: o.db,
@@ -76,6 +85,7 @@ export async function buildCore(o: {
   registerServerInfo(app, { serverId, config: o.config });
   registerFileRoutes(app, { db: o.db, store: files, dir: o.config.filesDir });
   registerIdentityRoutes(app, { identity, closeDevice: (deviceId) => hub.closeDevice(deviceId, CLOSE.revoked) });
+  registerPeopleRoutes(app, { people });
 
   return {
     app,
@@ -84,6 +94,7 @@ export async function buildCore(o: {
     jobs,
     files,
     identity,
+    people,
     serverId,
     async start() {
       await dispatcher.start();

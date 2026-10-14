@@ -79,3 +79,26 @@ then they stay as built, and nothing here is frozen.
 - **AN-13** (voice data removed blocks the ceremony with TalkBack): the check is built and passes on the emulator,
   whose German voices are installed. Removing them needs Google's settings app; the test runs in S5 together with
   the bundled care clips that the same test covers.
+
+## S3: people and permissions (2026-10-14)
+
+### To confirm
+
+1. **Only administrators prepare accounts for supported persons** (helper-led setup, invitation kind
+   `supported_person`). The plan leaves open who may do this; an account on the server is a decision of whoever runs
+   it. The person still approves that helper on their own device.
+2. **A helper invitation can also create the helper's account.** Someone without an account enters the code on the
+   onboarding screen and becomes a helper of the person who invited them, still pending until that person approves.
+   Without this, every new helper would first need an account invitation from an administrator.
+
+### Decided (within the plan)
+
+- **Codes go in request bodies.** The plan names `GET /invites/preview`; it is `POST /invites/preview {code}`, so a code
+  never reaches an access log through a query string.
+- **Approval takes the proposed scopes as a whole**, on a screen of large areas (Erlauben, Ablehnen, Noch einmal
+  anhören, Später); the person can change them afterwards under Helfer. A helper can give scopes back, never take
+  more.
+- **The spoken summary names what the helper may do, and that they may not read messages or notes.** Other scopes
+  that were not given are not listed: read aloud, a long list with commas inside its items was hard to follow. The
+  sentences use the helper's name, never a pronoun.
+- **Relationship events carry who acted**, so whoever acted is not told again what they just did.

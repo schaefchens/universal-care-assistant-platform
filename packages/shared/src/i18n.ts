@@ -1,7 +1,8 @@
 /**
  * Messages in German and English, written once and spoken by server and app alike (ICU MessageFormat).
  * German has two forms of address: the default text uses "du"; a key with an `@Sie` variant has a "Sie" text,
- * chosen per person (users.address_form). A missing key falls back to English, then to the key itself.
+ * chosen per person (users.address_form). A missing key falls back to English, then to the key itself; a missing
+ * parameter leaves a gap instead of throwing.
  */
 import { IntlMessageFormat } from 'intl-messageformat';
 import de from '../i18n/de.json' with { type: 'json' };
@@ -41,5 +42,14 @@ export function t(lang: Lang, key: string, params: Params = {}, form: AddressFor
   }
   if (text === undefined && lang !== 'en') return t('en', key, params, form);
   if (text === undefined) return key;
-  return String(compiled(lang, useKey, text).format(params));
+  try {
+    return String(compiled(lang, useKey, text).format(params));
+  } catch {
+    // A message whose parameter is missing is still said, with a gap where the parameter belongs, rather than thrown: a text
+    // must never take a screen down (the help area included).
+    return text.replace(/\{(\w+)[^{}]*\}/g, (_m, name: string) => (params[name] === undefined ? '' : String(params[name]))).replace(/\s{2,}/g, ' ').trim();
+  }
 }
+
+/** Whether a message exists (in this language or the English fallback). */
+export const hasMessage = (lang: Lang, key: string): boolean => key in CATALOGS[lang] || key in CATALOGS.en;

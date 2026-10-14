@@ -52,6 +52,7 @@ export function Settings(p: {
   onConfig: (c: DeviceConfig) => void;
   onPrefs: (p: Prefs) => void;
   onDevices: () => void;
+  onPeople: () => void;
   onNewWords: () => void;
   onClose: () => void;
 }) {
@@ -97,6 +98,9 @@ export function Settings(p: {
             {p.me.displayName} · {tr(p.me.recoveryState === 'confirmed' ? 'settings.recovery.confirmed' : 'settings.recovery.unconfirmed')}
           </p>
         )}
+        <Button className="button" onPress={p.onPeople}>
+          {tr('settings.people')}
+        </Button>
         <Button className="button" onPress={p.onDevices}>
           {tr('settings.devices')}
         </Button>

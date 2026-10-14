@@ -29,6 +29,8 @@ export interface OnboardingProps {
   onSignedIn: (s: Session) => void;
   onChangeServer: () => void;
   onPrefs: (p: Prefs) => void;
+  /** The notice has been heard; it is not repeated once the person moves on. */
+  onNoticeSeen?: () => void;
 }
 
 export function Onboarding(p: OnboardingProps) {
@@ -110,6 +112,7 @@ export function Onboarding(p: OnboardingProps) {
             { id: 'server', label: tr('onboard.choice.server'), role: 'nav' },
           ]}
           onChoose={(id) => {
+            if (id === 'invite' || id === 'recover') p.onNoticeSeen?.();
             if (id === 'invite') setStep({ kind: 'invite' });
             else if (id === 'recover') setStep({ kind: 'recover' });
             else if (id === 'language') p.onPrefs({ ...p.prefs, lang: p.prefs.lang === 'de' ? 'en' : 'de' });

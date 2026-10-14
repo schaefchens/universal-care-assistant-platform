@@ -34,6 +34,12 @@ describe('the message catalogs', () => {
     expect(t('de', 'no.such.key')).toBe('no.such.key');
   });
 
+  it('never throw for a missing parameter: the message is said with a gap', () => {
+    expect(t('de', 'screen.announce', {})).toBeTypeOf('string');
+    expect(() => t('de', 'people.may', {})).not.toThrow();
+    expect(t('de', 'people.may', { name: 'Maria' })).toBe('Maria darf .');
+  });
+
   it('never say that someone is coming in a system text (CONCEPT §4)', () => {
     const forbidden = /\b(kommt|unterwegs|gleich da|coming|on the way|on their way)\b/i;
     for (const [lang, catalog] of Object.entries(CATALOGS)) {

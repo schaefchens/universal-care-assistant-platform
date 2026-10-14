@@ -14,14 +14,18 @@ import { type AssistiveMode, modeFrom, watchAssistive } from './a11y/assistive.t
 import { createEarcons } from './audio/earcons.ts';
 import { pickBackend, SpeechOut } from './audio/speech.ts';
 import { loadDeviceRef, type Me, Session } from './identity/account.ts';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { deviceKey } from './identity/device-key.ts';
+import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
 import { has, Info } from './native/plugins.ts';
 import { ApiError } from './net/api.ts';
 import { Realtime } from './net/realtime.ts';
 import { defaultServerUrl, fetchServerInfo } from './net/server.ts';
 import { AreaScreen } from './screens/AreaScreen.tsx';
+import { Approve } from './screens/Approve.tsx';
 import { Devices } from './screens/Devices.tsx';
+import { Helpers } from './screens/Helpers.tsx';
 import { NewWords } from './screens/NewWords.tsx';
 import { Onboarding } from './screens/Onboarding.tsx';
 import { Settings } from './screens/Settings.tsx';
@@ -32,7 +36,7 @@ import { applyTheme, platformPrefs } from './theme/apply.ts';
 import { resolveTheme } from './theme/themes.ts';
 import { makeUi, UiProvider } from './ui.tsx';
 
-type Page = 'areas' | 'settings' | 'devices' | 'newWords';
+type Page = 'areas' | 'settings' | 'devices' | 'newWords' | 'helpers' | { approve: string };
 
 /** An invitation opened as a link in the browser (`…/#invite=CODE`): taken once and removed from the address bar
  *  and history. The code sits in the fragment, so it never reaches a server's access log. */
@@ -60,6 +64,8 @@ export function App() {
   const [fontScale, setFontScale] = useState(1);
   const [stack, setStack] = useState<string[]>(() => [config.home]);
   const [page, setPage] = useState<Page>('areas');
+  /** Bumped by realtime events, so open pages fetch again. */
+  const [peopleRev, setPeopleRev] = useState(0);
 
   const assistive: AssistiveMode = modeFrom(a11y, prefs.assistive);
   const earcons = useMemo(() => createEarcons(), []);
@@ -144,6 +150,10 @@ export function App() {
           ui.say(ui.tr('devices.added', { name: String(e.data.name ?? '') }), 'system');
         } else if (e.type === 'device.revoked' && e.data.deviceId === session.ref.deviceId) {
           void session.forget().then(() => signedOut(ui.tr('devices.signedOut')));
+        } else if (e.type === 'relationship.changed') {
+          setPeopleRev((n) => n + 1);
+          // Whoever acted already heard what they did.
+          if (e.data.by !== session.ref.userId) void relationshipNews(String(e.data.relationshipId), String(e.data.state));
         }
       },
       onRevoked: () => void session.forget().then(() => signedOut(ui.tr('devices.signedOut'))),
@@ -179,13 +189,34 @@ export function App() {
   useEffect(() => {
     if (!has('App')) return;
     const handle = CapApp.addListener('backButton', () => {
-      if (page === 'devices' || page === 'newWords') setPage('settings');
+      if (page === 'devices' || page === 'newWords' || page === 'helpers') setPage('settings');
+      else if (typeof page === 'object') setPage('areas');
       else if (page === 'settings') setPage('areas');
       else if (stack.length > 1) setStack((s) => s.slice(0, -1));
       else ui.say(ui.tr('where.home'), 'system');
     });
     return () => void handle.then((h) => h.remove());
   }, [page, stack.length, ui]);
+
+  /** What a change in a relationship means for this person, said once (the event carries ids only). */
+  async function relationshipNews(id: string, state: string) {
+    if (!session) return;
+    const r = await people(session).relationship(id).catch(() => null);
+    if (!r) return;
+    const iAmPerson = r.person.id === session.ref.userId;
+    const other = iAmPerson ? r.helper.displayName : r.person.displayName;
+    if (state === 'pending' && iAmPerson) {
+      ui.earcons.play('screen');
+      ui.say(ui.tr('people.event.pending', { name: other }), 'system');
+      // Straight to the question when nothing else is open; otherwise it waits under Helfer.
+      setPage((pg) => (pg === 'areas' ? { approve: id } : pg));
+    } else if (state === 'active' && !iAmPerson && r.approvedAt && Date.now() - Date.parse(r.approvedAt) < 120_000) {
+      // Approved just now (a later change of scopes is also 'active', and is not news of approval).
+      ui.say(ui.tr('people.event.approved', { name: other }), 'system');
+    } else if (state === 'ended') {
+      ui.say(ui.tr('people.event.ended', { name: other }), 'system');
+    }
+  }
 
   function connect(s: ServerRef) {
     saveServer(s);
@@ -233,9 +264,12 @@ export function App() {
           setServer(null);
         }}
         onPrefs={updatePrefs}
+        onNoticeSeen={() => setNotice(null)}
       />
     );
   else if (page === 'devices') content = <Devices session={session} onSignedOut={() => signedOut(ui.tr('devices.signedOut'))} onClose={() => setPage('settings')} />;
+  else if (page === 'helpers') content = <Helpers session={session} server={server} refresh={peopleRev} onApprove={(id) => setPage({ approve: id })} onClose={() => setPage('settings')} />;
+  else if (typeof page === 'object') content = <Approve session={session} relationshipId={page.approve} config={config} onDone={() => setPage('helpers')} />;
   else if (page === 'newWords' && me)
     content = (
       <NewWords
@@ -261,11 +295,18 @@ export function App() {
         onConfig={updateConfig}
         onPrefs={updatePrefs}
         onDevices={() => setPage('devices')}
+        onPeople={() => setPage('helpers')}
         onNewWords={() => setPage('newWords')}
         onClose={() => setPage('areas')}
       />
     );
   else content = <AreaScreen config={config} stack={stack} onNavigate={setStack} onSettings={() => setPage('settings')} />;
 
-  return <UiProvider value={ui}>{content}</UiProvider>;
+  return (
+    <UiProvider value={ui}>
+      <ErrorBoundary key={typeof page === 'object' ? 'approve' : page} text={{ title: ui.tr('app.failed'), restart: ui.tr('app.restart') }}>
+        {content}
+      </ErrorBoundary>
+    </UiProvider>
+  );
 }

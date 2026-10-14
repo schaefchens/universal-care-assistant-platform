@@ -489,3 +489,30 @@ body {
 .onboard-header.recovery-card {
   max-height: 65%;
 }
+
+.checkbox::before {
+  border-radius: 0.25rem;
+}
+
+.checkbox[data-selected]::before {
+  background: var(--c-text);
+  box-shadow: inset 0 0 0 3px var(--c-surface);
+}
+
+.invite-code {
+  font-size: calc(2.4rem * min(var(--text-scale), 1.8));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+
+.invite-link {
+  overflow-wrap: anywhere;
+}
+
+.history {
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
