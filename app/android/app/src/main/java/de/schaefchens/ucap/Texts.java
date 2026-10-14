@@ -47,6 +47,20 @@ final class Texts {
         put("test.title", "Test-Alarm", "Test alarm");
         put("test.text", "So klingt ein Hilferuf auf diesem Gerät.", "This is how a help request sounds on this device.");
         put("someone", "jemandem", "someone");
+        put("reminder.channel", "Erinnerungen", "Reminders");
+        put("reminder.channel.desc", "Deine Erinnerungen, zur eingestellten Zeit.", "Your reminders, at their time.");
+        DE.put("reminder.channel.desc@Sie", "Ihre Erinnerungen, zur eingestellten Zeit.");
+        put("reminder.done", "Erledigt", "Done");
+        put("reminder.later", "Später", "Later");
+        put("reminder.missed", "%1$s hat auf die Erinnerung „%2$s“ nicht geantwortet.", "%1$s has not answered the reminder “%2$s”.");
+        put("reminder.title", "Erinnerung", "Reminder");
+        put("reminder.category.drink", "Trinken", "Drinking");
+        put("reminder.category.meal", "Essen", "Meal");
+        put("reminder.category.medication", "Medikamente", "Medication");
+        put("reminder.category.movement", "Bewegung", "Movement");
+        put("reminder.category.wellbeing", "Befinden", "Wellbeing");
+        put("reminder.category.appointment", "Termin", "Appointment");
+        put("reminder.category.other", "Sonstiges", "Other");
     }
 
     static String get(String lang, String key) {

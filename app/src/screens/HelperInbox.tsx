@@ -5,7 +5,7 @@
  * person (A5).
  */
 import type { DeviceConfig } from '@ucap/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Heading } from 'react-aria-components';
 import { ChoiceGrid } from '../areas/ChoiceGrid.tsx';
 import { helperCare, type HelperRequest, whenPressed } from '../care/helper.ts';
@@ -20,6 +20,8 @@ export function HelperAlert(p: { session: Session; requestId: string; config: De
   const { tr, say } = ui;
   const api = helperCare(p.session);
   const [r, setR] = useState<HelperRequest | null>(null);
+  // Said once per request and episode, also where an effect runs twice (React's development checks).
+  const announced = useRef('');
 
   useEffect(() => {
     void api.get(p.requestId).then(
@@ -27,6 +29,8 @@ export function HelperAlert(p: { session: Session; requestId: string; config: De
         // Accepted from the alarm itself, or over: the inbox has its replies and "Erledigt".
         if (x.status !== 'open') return p.onDone();
         setR(x);
+        if (announced.current === `${x.id}:${x.episode}`) return;
+        announced.current = `${x.id}:${x.episode}`;
         ui.earcons.play('care-press');
         say(`${tr('care.helper.alert', { person: x.person.displayName })}${x.unconfirmed ? ` ${tr('care.helper.unconfirmed')}` : ''}`, 'care');
         void api.act(x.id, 'seen', x.episode).catch(() => {});

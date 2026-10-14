@@ -194,3 +194,52 @@ then they stay as built, and nothing here is frozen.
 - **Needs a phone with a screen lock**: that "Annehmen" asks for the unlock (the emulator has no lock screen).
 - **Not yet run:** re-alerts two minutes apart are not quietened (AN-03, second half); `pm clear` (AN-06); the voice
   data checks AN-13/AN-15 (the bundled clips come with S7).
+
+## S6: interactive reminders (2026-10-14)
+
+### To confirm
+
+1. **"Später" at most six times per reminder.** CONCEPT §9: "The user should retain control over ordinary reminders
+   and voluntary routines." Without a limit, a medication reminder could be put off forever without anyone hearing of
+   it, since "later" is an answer and only silence leads to a follow-up. After six snoozes "Später" is refused ("Später
+   geht nicht mehr. Bitte wähle Erledigt, Nein oder Hilfe holen."). The person can still change, pause or delete the
+   reminder.
+2. **Who hears of a missed reminder:** the helpers who may read the person's answers (reminders.responses.read), if
+   the reminder says so (a switch, on by default). CONCEPT §9 asks for "agreed rules"; this is the one rule M1 has.
+   It is quiet everywhere (a spoken line in the app, a silent notification), never an alarm and never a help request.
+
+### Decided (within the plan)
+
+- **Answers are signed by the person's device**, so the app's native code can answer from the notification with the
+  app closed, and an offline answer waits in the native outbox. "Hilfe holen" is a help request carrying the
+  reminder's occurrence: it goes through the help path and its outbox, and records the answer "help", linked to it.
+- **A late answer still counts**: after a reminder was missed, what the person says is recorded.
+- **An empty title or question is the category's own**, said by the person's device in their language and form of
+  address. Otherwise a helper writing in English, or with "du", would set the words a German person addressed with
+  "Sie" hears.
+- **Every reminder of the person is theirs to change**, also those a helper made (CONCEPT §9); a helper needs
+  reminders.manage, and every change by a helper is audited.
+- **The device's own alarms:** exact where the person allowed them in Android's settings (Android 12+ asks), inexact
+  otherwise; set again after a restart. The notification uses the notification sound, never the alarm tone, hides its
+  text on a locked screen, and has "Erledigt" and "Später"; the app has all four answers. A reminder never takes the
+  screen from a help request or a helper's alert: it is asked again at its next prompt.
+- **Time zones without Temporal**: Intl arithmetic with Temporal's "compatible" rule, so the code runs on every
+  Node and WebView UCAP supports. It agrees with Temporal (Node 26.11) at every quarter hour around every 2026
+  transition in eight zones, Lord Howe's half-hour shift included.
+- **No "provide additional information" by touch yet**: it comes with voice (S9); the screen has the plan's four
+  answers.
+
+### Measured on the emulator
+
+- A reminder made on the phone, read back ("Erinnerung „Trinken“ gespeichert: Einmal am 14. Oktober 2026 um
+  17:31."); the phone's alarms exact after the person allowed them (before: windows of 1.5 and 9 minutes).
+- At its time, with the app open: the question spoken; "Erledigt" recorded as `user_reported` from the phone.
+- With the app closed and the server stopped: the phone's own alarm asked at 17:34; "Erledigt" on the notification
+  waited in the outbox and reached the server 3 s after it came back.
+- After a restart of the phone (no connection, the app never opened): the alarm rang; the answer arrived 3 s after
+  the connection came back.
+- "Später": the server's next question and the phone's alarm 15 minutes later. "Hilfe holen": a help request linked
+  to the reminder, alerted in Maria's browser.
+- In Maria's browser: Clara's reminders and answers ("Clara reported: taken"), a reminder made for Clara; left
+  unanswered, it was missed after its last question, Maria heard "Clara has not answered the reminder …", and no
+  help request was made.

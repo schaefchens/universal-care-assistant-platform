@@ -52,6 +52,14 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver android:name=".ActionReceiver" android:exported="false" />
+        <!-- Reminders on the device (S6): their alarms, and setting them again after a restart. -->
+        <receiver android:name=".ReminderReceiver" android:exported="false" />
+        <receiver android:name=".BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -76,6 +84,8 @@
     <!-- JobScheduler refuses a job that waits for a network without it (Android 14+). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Reminders at their exact time where the person allows it (Android 12+ asks; otherwise inexact alarms). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- The phone fallback (A3b): asked for only when the person chose direct calls; otherwise the dialler opens. -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
 </manifest>

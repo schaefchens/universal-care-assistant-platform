@@ -56,7 +56,15 @@ function Confirm(p: { question: string; yes: string; onYes: () => void; onNo: ()
   );
 }
 
-export function Helpers(p: { session: Session; server: ServerRef; onApprove: (relationshipId: string) => void; onClose: () => void; refresh: number }) {
+export function Helpers(p: {
+  session: Session;
+  server: ServerRef;
+  onApprove: (relationshipId: string) => void;
+  onClose: () => void;
+  refresh: number;
+  /** The reminders of someone this helper supports, as far as their scopes reach. */
+  onReminders?: (person: { id: string; displayName: string }, canManage: boolean, canRead: boolean) => void;
+}) {
   const ui = useUi();
   const { tr, say } = ui;
   const api = people(p.session);
@@ -309,9 +317,16 @@ export function Helpers(p: { session: Session; server: ServerRef; onApprove: (re
               {ending?.id === r.id ? (
                 <Confirm question={tr('people.end.confirm.helper', { name: r.person.displayName })} yes={tr('people.end.yes')} onYes={() => void end(r)} onNo={() => setEnding(null)} />
               ) : (
-                <Button className="button" onPress={() => setEnding(r)}>
-                  {tr('people.end')}
-                </Button>
+                <div className="row">
+                  {r.state === 'active' && (r.scopes.includes('reminders.manage') || r.scopes.includes('reminders.responses.read')) && (
+                    <Button className="button" onPress={() => p.onReminders?.(r.person, r.scopes.includes('reminders.manage'), r.scopes.includes('reminders.responses.read'))}>
+                      {tr('reminder.page.of', { name: r.person.displayName })}
+                    </Button>
+                  )}
+                  <Button className="button" onPress={() => setEnding(r)}>
+                    {tr('people.end')}
+                  </Button>
+                </div>
               )}
             </li>
           ))}

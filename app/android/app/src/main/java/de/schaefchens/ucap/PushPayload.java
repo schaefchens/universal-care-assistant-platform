@@ -14,7 +14,7 @@ import org.json.JSONObject;
  * Pure Java over org.json, so it is unit-tested on the JVM (PushPayloadTest).
  */
 final class PushPayload {
-    static final Set<String> TYPES = new HashSet<>(Arrays.asList("care.alert", "care.update", "care.cancel", "care.watchdog", "hb", "test"));
+    static final Set<String> TYPES = new HashSet<>(Arrays.asList("care.alert", "care.update", "care.cancel", "care.watchdog", "hb", "test", "reminder.due", "reminder.followup"));
     private static final Pattern ID = Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     /** Grace for clocks that differ a little between server and phone. */
     static final long SKEW_S = 60;
@@ -32,6 +32,12 @@ final class PushPayload {
     final long at;
     final int ttl;
     final boolean late;
+    /** Reminders: the occurrence, the prompt's number, its words. */
+    final String oid;
+    final int prompt;
+    final String title;
+    final String text;
+    final String category;
 
     private PushPayload(JSONObject o, String type, long nowS) {
         this.type = type;
@@ -47,6 +53,11 @@ final class PushPayload {
         at = o.optLong("at", 0);
         ttl = o.optInt("ttl", 900);
         late = at > 0 && nowS - at > ttl + SKEW_S;
+        oid = str(o, "oid", 36);
+        prompt = o.optInt("p", 0);
+        title = str(o, "title", 80);
+        text = str(o, "prompt", 240);
+        category = str(o, "cat", 20);
     }
 
     private static String str(JSONObject o, String key, int max) {
@@ -65,6 +76,7 @@ final class PushPayload {
             PushPayload p = new PushPayload(o, t, nowS);
             if (!ID.matcher(p.dlv).matches() || p.nonce.length() < 10 || p.nonce.length() > 40) return null;
             if (p.care() && (!ID.matcher(p.rid).matches() || p.ep < 1)) return null;
+            if (p.type.startsWith("reminder.") && !ID.matcher(p.oid).matches()) return null;
             return p;
         } catch (Exception e) {
             return null;
@@ -75,8 +87,8 @@ final class PushPayload {
         return type.startsWith("care.");
     }
 
-    /** Whether this push is meant to ring: an alert or a test that is not late. */
+    /** Whether this push is meant to sound: an alert, a test or a reminder's question, none of them late. */
     boolean rings() {
-        return ("care.alert".equals(type) || "test".equals(type)) && !late;
+        return ("care.alert".equals(type) || "test".equals(type) || "reminder.due".equals(type)) && !late;
     }
 }

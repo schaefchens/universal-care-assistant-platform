@@ -23,7 +23,7 @@ import { WebPushSetup } from './care/WebPushSetup.tsx';
 import { deviceKey, shareRefWithWorker } from './identity/device-key.ts';
 import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
-import { Alerts, has, Info, Keys } from './native/plugins.ts';
+import { Alerts, has, Info, Keys, Reminders } from './native/plugins.ts';
 import { ApiError } from './net/api.ts';
 import { emitAppEvent } from './net/events.ts';
 import { Realtime } from './net/realtime.ts';
@@ -37,6 +37,11 @@ import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
 import { NewWords } from './screens/NewWords.tsx';
 import { Onboarding } from './screens/Onboarding.tsx';
+import { ReminderScreen } from './screens/ReminderScreen.tsx';
+import { RemindersPage } from './screens/Reminders.tsx';
+import { reminders as reminderApi } from './reminders/api.ts';
+import { syncDeviceAlarms as syncAlarms } from './reminders/sync.ts';
+import { promptOf, titleOf } from './reminders/words.ts';
 import { Settings } from './screens/Settings.tsx';
 import { Setup } from './screens/Setup.tsx';
 import { wordLanguage } from './screens/words/common.ts';
@@ -45,8 +50,11 @@ import { applyTheme, platformPrefs } from './theme/apply.ts';
 import { resolveTheme } from './theme/themes.ts';
 import { makeUi, UiProvider } from './ui.tsx';
 
-type Page = 'areas' | 'settings' | 'devices' | 'newWords' | 'helpers' | 'care' | 'inbox' | { approve: string } | { alert: string };
-const pageKey = (p: Page) => (typeof p === 'string' ? p : 'approve' in p ? 'approve' : 'alert');
+type RemindersOf = { id: string; displayName: string; canManage: boolean; canRead: boolean };
+type Page = 'areas' | 'settings' | 'devices' | 'newWords' | 'helpers' | 'care' | 'inbox' | 'reminders' | { approve: string } | { alert: string } | { reminder: string } | { remindersOf: RemindersOf };
+const pageKey = (p: Page) => (typeof p === 'string' ? p : Object.keys(p)[0]!);
+/** Pages a due reminder does not interrupt: a help request in progress, a helper's alert. It waits for its next prompt. */
+const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p));
 
 /** An invitation opened as a link in the browser (`…/#invite=CODE`): taken once and removed from the address bar
  *  and history. The code sits in the fragment, so it never reaches a server's access log. */
@@ -77,6 +85,7 @@ export function App() {
   /** Bumped by realtime events, so open pages fetch again. */
   const [peopleRev, setPeopleRev] = useState(0);
   const [careRev, setCareRev] = useState(0);
+  const [reminderRev, setReminderRev] = useState(0);
   const [careState, setCareState] = useState<CareState>({ pending: false, request: null });
   const [isHelper, setIsHelper] = useState(false);
   const careRef = useRef<CareClient | null>(null);
@@ -175,6 +184,8 @@ export function App() {
           void careNews(e.type, e.data);
         } else if (e.type === 'push.test') {
           emitAppEvent(e.type, e.data);
+        } else if (e.type.startsWith('reminder.')) {
+          void reminderNews(e.type, e.data);
         }
       },
       onRevoked: () => void session.forget().then(() => signedOut(ui.tr('devices.signedOut'))),
@@ -273,6 +284,25 @@ export function App() {
     };
   }, [session]);
 
+  const syncDeviceAlarms = (s: Session) => syncAlarms(s, (o) => promptOf(uiRef.current.tr, o), (o) => titleOf(uiRef.current.tr, o));
+
+  // Reminders ring on the device itself too (with the app closed, offline): its alarms follow the schedule. A local
+  // alarm while the app is in front, and a tap on a reminder's notification, open its question here.
+  useEffect(() => {
+    if (!session) return;
+    void syncDeviceAlarms(session).catch(() => {});
+    if (!has('Reminders')) return;
+    void Reminders.takeOpened().then((r) => r.occurrenceId && setPage({ reminder: r.occurrenceId }), () => {});
+    const due = Reminders.addListener('due', (e) => setPage((pg) => (busy(pg) ? pg : { reminder: e.occurrenceId })));
+    const opened = Reminders.addListener('opened', (e) => setPage({ reminder: e.occurrenceId }));
+    const resume = has('App') ? CapApp.addListener('resume', () => void syncDeviceAlarms(session).catch(() => {})) : null;
+    return () => {
+      void due.then((h) => h.remove());
+      void opened.then((h) => h.remove());
+      void resume?.then((h) => h.remove());
+    };
+  }, [session]);
+
   // The hardware help key: one press sends help at once (docs/plan.md, Appendix D: "The hardware help key and exact
   // help phrases act at once").
   useEffect(() => {
@@ -305,7 +335,8 @@ export function App() {
   useEffect(() => {
     if (!has('App')) return;
     const handle = CapApp.addListener('backButton', () => {
-      if (page === 'devices' || page === 'newWords' || page === 'helpers') setPage('settings');
+      if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders') setPage('settings');
+      else if (typeof page === 'object' && 'remindersOf' in page) setPage('helpers');
       else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
       else if (typeof page === 'object' || page === 'settings' || page === 'care' || page === 'inbox') setPage('areas');
       else if (stack.length > 1) setStack((s) => s.slice(0, -1));
@@ -350,6 +381,29 @@ export function App() {
     }
     // An alert screen for a request someone else took, or that ended, closes.
     setPage((pg) => (typeof pg === 'object' && 'alert' in pg && pg.alert === id ? 'inbox' : pg));
+  }
+
+  /** Reminder events: the person's own (a question is due, answered elsewhere, changed) and a helper's follow-ups. */
+  async function reminderNews(type: string, data: Record<string, unknown>) {
+    if (!session) return;
+    const u = uiRef.current;
+    const oid = String(data.occurrenceId ?? '');
+    setReminderRev((n) => n + 1);
+    if (type === 'reminder.due') {
+      void syncDeviceAlarms(session).catch(() => {});
+      setPage((pg) => (busy(pg) ? pg : { reminder: oid }));
+    } else if (type === 'reminder.answered') {
+      // Answered on another device, missed or deleted: this one stops asking.
+      void syncDeviceAlarms(session).catch(() => {});
+      setPage((pg) => (typeof pg === 'object' && 'reminder' in pg && pg.reminder === oid ? 'areas' : pg));
+    } else if (type === 'reminder.changed') {
+      if (data.personId === session.ref.userId) void syncDeviceAlarms(session).catch(() => {});
+    } else if (type === 'reminder.followup') {
+      // To a helper, quietly: never an alarm, never a help request (CONCEPT §9).
+      const o = await reminderApi(session, String(data.personId)).occurrence(oid).catch(() => null);
+      const person = await people(session).relationships().then((r) => r.asHelper.find((x) => x.person.id === data.personId)?.person.displayName ?? '', () => '');
+      if (o) u.say(u.tr('reminder.followup', { name: person, title: titleOf(u.tr, o), time: new Date(o.dueAt) }), 'system');
+    }
   }
 
   /** What a change in a relationship means for this person, said once (the event carries ids only). */
@@ -422,7 +476,33 @@ export function App() {
       />
     );
   else if (page === 'devices') content = <Devices session={session} onSignedOut={() => signedOut(ui.tr('devices.signedOut'))} onClose={() => setPage('settings')} />;
-  else if (page === 'helpers') content = <Helpers session={session} server={server} refresh={peopleRev} onApprove={(id) => setPage({ approve: id })} onClose={() => setPage('settings')} />;
+  else if (page === 'helpers')
+    content = (
+      <Helpers
+        session={session}
+        server={server}
+        refresh={peopleRev}
+        onApprove={(id) => setPage({ approve: id })}
+        onReminders={(person, canManage, canRead) => setPage({ remindersOf: { ...person, canManage, canRead } })}
+        onClose={() => setPage('settings')}
+      />
+    );
+  else if (page === 'reminders')
+    content = <RemindersPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} canManage canRead refresh={reminderRev} onClose={() => setPage('settings')} />;
+  else if (typeof page === 'object' && 'remindersOf' in page)
+    content = (
+      <RemindersPage
+        session={session}
+        personId={page.remindersOf.id}
+        personName={page.remindersOf.displayName}
+        canManage={page.remindersOf.canManage}
+        canRead={page.remindersOf.canRead}
+        refresh={reminderRev}
+        onClose={() => setPage('helpers')}
+      />
+    );
+  else if (typeof page === 'object' && 'reminder' in page)
+    content = <ReminderScreen session={session} occurrenceId={page.reminder} config={config} care={careRef.current} onDone={() => setPage('areas')} onHelp={() => setPage('care')} />;
   else if (typeof page === 'object' && 'approve' in page) content = <Approve session={session} relationshipId={page.approve} config={config} onDone={() => setPage('helpers')} />;
   else if (typeof page === 'object') content = <HelperAlert session={session} requestId={page.alert} config={config} onDone={() => setPage('inbox')} />;
   else if (page === 'care' && careRef.current) content = <CareScreen care={careRef.current} state={careState} config={config} onHome={() => setPage('areas')} />;
@@ -459,6 +539,7 @@ export function App() {
         onPrefs={updatePrefs}
         onDevices={() => setPage('devices')}
         onPeople={() => setPage('helpers')}
+        onReminders={() => setPage('reminders')}
         onNewWords={() => setPage('newWords')}
         onClose={() => setPage('areas')}
       >

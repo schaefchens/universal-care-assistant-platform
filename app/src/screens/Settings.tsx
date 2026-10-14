@@ -53,6 +53,7 @@ export function Settings(p: {
   onPrefs: (p: Prefs) => void;
   onDevices: () => void;
   onPeople: () => void;
+  onReminders: () => void;
   onNewWords: () => void;
   onClose: () => void;
   /** Sections that need the session or the native app: the alarm checklist, the help key. */
@@ -102,6 +103,9 @@ export function Settings(p: {
         )}
         <Button className="button" onPress={p.onPeople}>
           {tr('settings.people')}
+        </Button>
+        <Button className="button" onPress={p.onReminders}>
+          {tr('reminder.page.own')}
         </Button>
         <Button className="button" onPress={p.onDevices}>
           {tr('settings.devices')}

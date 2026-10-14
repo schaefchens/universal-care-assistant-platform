@@ -7,8 +7,8 @@ An AI-powered assistive and care platform for disabled people and people who nee
 
 ## Status
 
-Milestone 1, step S5 done: identity and devices, people and permissions, help requests with helpers' browsers and the
-Android app's alarm. Next: S6, interactive reminders. Departures from the plan are in
+Milestone 1, step S6 done: identity and devices, people and permissions, help requests with helpers' browsers and the
+Android app's alarm, interactive reminders. Next: S7, providers and speech output. Departures from the plan are in
 [docs/decisions.md](docs/decisions.md).
 
 ## Running the development stack

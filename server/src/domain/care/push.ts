@@ -31,6 +31,8 @@ export const WEB_PUSH_HOSTS = [/(^|\.)fcm\.googleapis\.com$/, /(^|\.)push\.servi
 const UP_TOPIC = /^\/up[A-Za-z0-9_-]{1,64}$/;
 
 const PAYLOAD_BYTES = 512;
+/** Reminders carry their own words (a title and a question): one larger size for all of them. */
+const REMINDER_PAYLOAD_BYTES = 1024;
 const TEST_TTL_S = 300;
 
 export interface Ntfy {
@@ -150,14 +152,23 @@ export async function createPush(d: PushDeps) {
         source: string | null;
         request_status: string | null;
         by_name: string | null;
+        purpose: string;
+        rem_due: Date | null;
+        rem_title: string | null;
+        rem_prompt: string | null;
+        rem_category: string | null;
+        rem_person: string | null;
       }>`
-        select dl.id, dl.kind, dl.status, dl.channel, dl.ref, dl.episode, dl.device_id, dl.created_at, pe.endpoint, pe.keys_sealed,
+        select dl.id, dl.kind, dl.status, dl.channel, dl.ref, dl.episode, dl.device_id, dl.created_at, dl.purpose, pe.endpoint, pe.keys_sealed,
                p.display_name as person_name, od.name as origin_name, c.source, c.status as request_status,
                (select u.display_name from care_events e join users u on u.id = e.actor
-                where e.request_id = c.id and e.episode = c.episode and e.type in ('accepted', 'resolved') order by e.id desc limit 1) as by_name
+                where e.request_id = c.id and e.episode = c.episode and e.type in ('accepted', 'resolved') order by e.id desc limit 1) as by_name,
+               ro.due_at as rem_due, rm.title as rem_title, rm.prompt as rem_prompt, rm.category as rem_category, rp.display_name as rem_person
         from deliveries dl
         left join push_endpoints pe on pe.device_id = dl.device_id and pe.kind = dl.channel
-        left join care_requests c on c.id = dl.ref left join users p on p.id = c.person_id left join devices od on od.id = c.origin_device
+        left join care_requests c on c.id = dl.ref and dl.purpose = 'care' left join users p on p.id = c.person_id left join devices od on od.id = c.origin_device
+        left join reminder_occurrences ro on ro.id = dl.ref and dl.purpose = 'reminder' left join reminders rm on rm.id = ro.reminder_id
+        left join users rp on rp.id = ro.person_id
         where dl.id = ${deliveryId}`.execute(d.db);
       const dl = r.rows[0];
       if (!dl || (dl.status !== 'queued' && dl.status !== 'sending')) return;
@@ -170,13 +181,20 @@ export async function createPush(d: PushDeps) {
       const keys = JSON.parse(d.sealer.open(dl.keys_sealed, `push_endpoint:${dl.device_id}:${kind}`)) as { p256dh: string; auth: string };
       // `at`: when the server made the alert, so a device that gets it late (ntfy keeps messages for hours) can tell.
       const common = { v: 1, dlv: dl.id, n: d.care.nonceFor(dl.id), at: Math.floor(dl.created_at.getTime() / 1000) };
+      const due = dl.rem_due ? Math.floor(dl.rem_due.getTime() / 1000) : 0;
       // A heartbeat or a test names nobody: it only asks the device to answer.
       const body: Record<string, unknown> =
         dl.kind === 'hb'
           ? { ...common, t: 'hb', ttl: 1800 }
           : dl.kind === 'test'
             ? { ...common, t: 'test', ttl: TEST_TTL_S }
-            : {
+            : dl.kind === 'reminder.due'
+              ? // The person's own reminder, its words included, so the phone can ask without the server.
+                { ...common, t: 'reminder.due', oid: dl.ref, p: dl.episode, title: dl.rem_title ?? '', prompt: dl.rem_prompt ?? '', cat: dl.rem_category ?? 'other', due, ttl: 900 }
+              : dl.kind === 'reminder.followup'
+                ? // To a helper: whose reminder went unanswered, and which. Never an alarm.
+                  { ...common, t: 'reminder.followup', oid: dl.ref, who: dl.rem_person ?? '', title: dl.rem_title ?? '', cat: dl.rem_category ?? 'other', due, ttl: 3600 }
+                : {
                 ...common,
                 t: dl.kind,
                 rid: dl.ref,
@@ -190,7 +208,8 @@ export async function createPush(d: PushDeps) {
               };
       // One size for every payload: the push service learns nothing from the length.
       const json = JSON.stringify(body);
-      const padded = JSON.stringify({ ...body, pad: ' '.repeat(Math.max(0, PAYLOAD_BYTES - json.length - 10)) });
+      const size = dl.purpose === 'reminder' ? REMINDER_PAYLOAD_BYTES : PAYLOAD_BYTES;
+      const padded = JSON.stringify({ ...body, pad: ' '.repeat(Math.max(0, size - Buffer.byteLength(json) - 10)) });
       const to = target(kind, dl.endpoint);
       const req = webpush.generateRequestDetails({ endpoint: to.url, keys }, padded, {
         TTL: Number(body.ttl),

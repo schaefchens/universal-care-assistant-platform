@@ -15,6 +15,7 @@ import { createPeopleService } from '../domain/people/service.ts';
 import { createHeartbeats } from '../domain/care/heartbeat.ts';
 import { createPush } from '../domain/care/push.ts';
 import { createCareService } from '../domain/care/service.ts';
+import { createReminderService } from '../domain/reminders/service.ts';
 import { createSealer } from '../lib/sealed.ts';
 import { pruneLimits } from '../lib/rate-limit.ts';
 import { registerAuth } from './auth.ts';
@@ -23,6 +24,7 @@ import { registerRealtime } from './realtime.ts';
 import { registerIdentityRoutes } from './routes/identity.ts';
 import { registerPeopleRoutes } from './routes/people.ts';
 import { registerCareRoutes } from './routes/care.ts';
+import { registerReminderRoutes } from './routes/reminders.ts';
 import { createSignedCheck } from './signed.ts';
 import { ensureServerId, registerServerInfo } from './server-info.ts';
 
@@ -74,6 +76,7 @@ export async function buildCore(o: {
     log,
   });
   const heartbeats = createHeartbeats({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, nonceFor: care.nonceFor });
+  const reminders = createReminderService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, people, nonceFor: care.nonceFor, wake: () => jobsRef?.wake() });
   care.setHeartbeatHook((exec, deviceId) => heartbeats.answered(exec, deviceId));
   const hub = await registerRealtime(app, {
     db: o.db,
@@ -110,6 +113,8 @@ export async function buildCore(o: {
     'push.send': async (job) => push.deliver(String(job.payload.deliveryId), job.attempts),
     'heartbeat.round': async () => heartbeats.round(),
     'heartbeat.check': async (job) => heartbeats.check(String(job.payload.deliveryId)),
+    'reminders.materialise': async () => reminders.materialiseAll(),
+    'reminder.prompt': async (job) => reminders.tick(String(job.payload.occurrenceId)),
   };
   const jobs = createJobRunner({ db: o.db, queue: 'core', handlers, clock: o.clock, log });
   jobsRef = jobs;
@@ -124,7 +129,8 @@ export async function buildCore(o: {
   registerFileRoutes(app, { db: o.db, store: files, dir: o.config.filesDir });
   registerIdentityRoutes(app, { identity, closeDevice: (deviceId) => hub.closeDevice(deviceId, CLOSE.revoked) });
   registerPeopleRoutes(app, { people });
-  registerCareRoutes(app, { db: o.db, clock: o.clock, pepper: o.secrets.pepper, care, people, push, heartbeats, requireSigned });
+  registerCareRoutes(app, { db: o.db, clock: o.clock, pepper: o.secrets.pepper, care, people, push, heartbeats, reminders, requireSigned, log });
+  registerReminderRoutes(app, { reminders, requireSigned });
 
   return {
     app,
@@ -137,6 +143,7 @@ export async function buildCore(o: {
     care,
     push,
     heartbeats,
+    reminders,
     serverId,
     async start() {
       await dispatcher.start();

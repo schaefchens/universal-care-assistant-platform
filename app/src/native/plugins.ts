@@ -155,6 +155,36 @@ export interface KeysPlugin {
   addListener(event: 'help', fn: (e: { code: number }) => void): Promise<PluginListenerHandle>;
 }
 
+/** One occurrence for the device's own alarms: its first prompt and the repeats while unanswered. */
+export interface ReminderAlarm {
+  occurrenceId: string;
+  /** The next prompt, epoch ms. */
+  at: number;
+  title: string;
+  prompt: string;
+  category: string;
+  repeatEveryMin: number;
+  /** Prompts after the one at `at`. */
+  repeats: number;
+  /** For "Später" answered on the notification: when to ask again, and how often then. */
+  snoozeMin: number;
+  repeatCount: number;
+}
+
+export interface RemindersPlugin {
+  /** Replaces this device's reminder alarms with these (the next 48 hours); `exact` when Android allows exact alarms. */
+  schedule(o: { items: ReminderAlarm[] }): Promise<{ count: number; exact: boolean }>;
+  /** The person's answer, signed here and kept in the outbox while offline; the occurrence's alarms stop. */
+  respond(o: { occurrenceId: string; kind: 'done' | 'later' | 'no'; clientResponseId: string }): Promise<{ result: 'sent' | 'queued' | 'refused'; reason?: string }>;
+  /** The occurrence an alarm opened the app for (a cold start), once. */
+  takeOpened(): Promise<{ occurrenceId?: string }>;
+  exactAllowed(): Promise<{ exact: boolean }>;
+  openExactSettings(): Promise<void>;
+  /** A local alarm while the app is in front: the app asks, no notification. */
+  addListener(event: 'due', fn: (e: { occurrenceId: string; prompt: number }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'opened', fn: (e: { occurrenceId: string }) => void): Promise<PluginListenerHandle>;
+}
+
 export const Earcons = registerPlugin<EarconsPlugin>('Earcons');
 export const DeviceTts = registerPlugin<DeviceTtsPlugin>('DeviceTts');
 export const A11y = registerPlugin<A11yPlugin>('A11y');
@@ -162,3 +192,4 @@ export const Info = registerPlugin<InfoPlugin>('Info');
 export const DeviceKey = registerPlugin<DeviceKeyPlugin>('DeviceKey');
 export const Alerts = registerPlugin<AlertsPlugin>('Alerts');
 export const Keys = registerPlugin<KeysPlugin>('Keys');
+export const Reminders = registerPlugin<RemindersPlugin>('Reminders');

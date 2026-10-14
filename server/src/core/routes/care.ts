@@ -9,6 +9,7 @@ import { type Plan, effectivePlan, savePlan } from '../../domain/care/plan.ts';
 import type { Heartbeats } from '../../domain/care/heartbeat.ts';
 import type { Push } from '../../domain/care/push.ts';
 import type { CareService, QuickReply, Source } from '../../domain/care/service.ts';
+import type { ReminderService } from '../../domain/reminders/service.ts';
 import { mac } from '../../domain/identity/crypto.ts';
 import type { PeopleService } from '../../domain/people/service.ts';
 import type { Clock } from '../../lib/clock.ts';
@@ -25,7 +26,18 @@ const SOURCES = ['touch', 'key', 'voice_exact', 'voice_confirmed', 'voice_unconf
 
 export function registerCareRoutes(
   app: AnyApp,
-  o: { db: Db; clock: Clock; pepper: Uint8Array; care: CareService; people: PeopleService; push: Push; heartbeats: Heartbeats; requireSigned: (req: import('fastify').FastifyRequest) => Promise<void> },
+  o: {
+    db: Db;
+    clock: Clock;
+    pepper: Uint8Array;
+    care: CareService;
+    people: PeopleService;
+    push: Push;
+    heartbeats: Heartbeats;
+    reminders: ReminderService;
+    requireSigned: (req: import('fastify').FastifyRequest) => Promise<void>;
+    log: (msg: string) => void;
+  },
 ) {
   const { care, people } = o;
 
@@ -39,13 +51,22 @@ export function registerCareRoutes(
           source: Type.Union(SOURCES.map((s) => Type.Literal(s))),
           // How long the press waited on the device, measured on the device's own clock (no clock skew).
           delayMs: Type.Optional(Type.Integer({ minimum: 0 })),
+          // "Hilfe holen" on a reminder: the request answers that reminder (CONCEPT §9).
+          reminderOccurrenceId: Type.Optional(Uuid),
         }),
       },
     },
     async (req, reply) => {
       const s = signed(req);
-      const b = req.body as { clientRequestId: string; source: Source; delayMs?: number };
-      const r = await care.create(s.userId, s.deviceId, b);
+      const b = req.body as { clientRequestId: string; source: Source; delayMs?: number; reminderOccurrenceId?: string };
+      const occ = b.reminderOccurrenceId ? await o.reminders.occurrenceFor(s.userId, b.reminderOccurrenceId) : null;
+      const r = await care.create(s.userId, s.deviceId, { clientRequestId: b.clientRequestId, source: b.source, delayMs: b.delayMs, reminderId: occ?.reminderId });
+      if (occ && b.reminderOccurrenceId) {
+        // The help request stands on its own: a failure to record the answer never fails it.
+        await o.reminders
+          .respond(s.userId, s.deviceId, b.reminderOccurrenceId, { clientResponseId: b.clientRequestId, kind: 'help', careRequestId: r.request.id })
+          .catch((e: Error) => o.log(`reminder answer not recorded: ${e.name}`));
+      }
       return reply.code(r.coalesced ? 200 : 201).send(r);
     },
   );

@@ -64,6 +64,9 @@ final class PushHandler {
             case "care.update": CareAlarm.update(ctx, p); break;
             case "care.cancel": CareAlarm.cancelled(ctx, p); break;
             case "test": if (!p.late) CareAlarm.test(ctx, "test-" + p.dlv); break;
+            // A late question is not asked any more: the server has moved on (another prompt, or missed).
+            case "reminder.due": if (!p.late) ReminderAlarms.prompt(ctx, p.oid, ReminderAlarms.titleFor(ctx, p.oid, p.title), ReminderAlarms.questionFor(ctx, p.oid, p.text)); break;
+            case "reminder.followup": ReminderAlarms.followUp(ctx, p); break;
             default: break; // a heartbeat needs no notification: the receipt is the answer
         }
     }

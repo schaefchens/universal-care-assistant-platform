@@ -19,6 +19,7 @@ await migrate(db, (m) => console.log(`core: ${m}`));
 const core = await buildCore({ config, db, clock: systemClock, secrets });
 await enqueue(db, { queue: 'core', kind: 'events.prune', key: 'events.prune', runAt: Date.now() + 60_000, onConflict: 'keep' });
 await enqueue(db, { queue: 'core', kind: 'heartbeat.round', key: 'heartbeat.round', runAt: Date.now() + 120_000, onConflict: 'keep' });
+await enqueue(db, { queue: 'core', kind: 'reminders.materialise', key: 'reminders.materialise', runAt: Date.now() + 30_000, onConflict: 'keep' });
 await core.app.listen({ host: '0.0.0.0', port: config.port });
 await core.start();
 console.log(`core: listening on :${config.port}`);

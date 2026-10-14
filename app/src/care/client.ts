@@ -43,6 +43,8 @@ interface Pending {
   cid: string;
   createdAt: number;
   source: string;
+  /** "Hilfe holen" on a reminder: the request answers it. */
+  reminderOccurrenceId?: string;
 }
 
 export interface CareState {
@@ -209,7 +211,7 @@ export class CareClient {
   }
 
   /** The help area, the help key, an exact phrase: one press. */
-  async press(source: 'touch' | 'key' | 'voice_exact' | 'voice_confirmed' | 'voice_unconfirmed' | 'assistant' | 'reminder' = 'touch') {
+  async press(source: 'touch' | 'key' | 'voice_exact' | 'voice_confirmed' | 'voice_unconfirmed' | 'assistant' | 'reminder' = 'touch', o: { reminderOccurrenceId?: string } = {}) {
     if (this.pending && this.callOffered && this.o.dial) {
       // A3b offered the call: this deliberate activation places it. The press itself keeps being sent.
       const f = this.callOffered;
@@ -219,7 +221,7 @@ export class CareClient {
     }
     this.o.say(this.o.tr('care.A1'));
     if (this.pending) return; // still sending the first press: this one is the same request
-    this.pending = { cid: uuidv7(), createdAt: Date.now(), source };
+    this.pending = { cid: uuidv7(), createdAt: Date.now(), source, ...(o.reminderOccurrenceId ? { reminderOccurrenceId: o.reminderOccurrenceId } : {}) };
     await savePending(this.pending);
     this.attempt = 0;
     this.remindUnsent(true);
@@ -237,6 +239,7 @@ export class CareClient {
         clientRequestId: p.cid,
         source: p.source,
         delayMs: Math.max(0, Date.now() - p.createdAt),
+        ...(p.reminderOccurrenceId ? { reminderOccurrenceId: p.reminderOccurrenceId } : {}),
       });
       if (this.pending?.cid !== p.cid) return;
       this.pending = null;

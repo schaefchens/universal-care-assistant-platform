@@ -12,8 +12,22 @@ import android.content.Intent;
 public class ActionReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent intent) {
-        String rid = intent.getStringExtra(CareAlarm.EXTRA_RID);
         String action = intent.getStringExtra("action");
+        // A reminder's "Erledigt" / "Später" from its notification: answered here, signed, kept when offline.
+        String oid = intent.getStringExtra(ReminderAlarms.EXTRA_OCCURRENCE);
+        if (oid != null && action != null && action.startsWith("rem.")) {
+            Context app = ctx.getApplicationContext();
+            PendingResult pending = goAsync();
+            new Thread(() -> {
+                try {
+                    ReminderAlarms.respond(app, oid, action.substring(4), java.util.UUID.randomUUID().toString());
+                } finally {
+                    pending.finish();
+                }
+            }, "ucap-reminder").start();
+            return;
+        }
+        String rid = intent.getStringExtra(CareAlarm.EXTRA_RID);
         if (rid == null || action == null) return;
         if ("stop".equals(action)) {
             CareAlarm.close(ctx, rid);

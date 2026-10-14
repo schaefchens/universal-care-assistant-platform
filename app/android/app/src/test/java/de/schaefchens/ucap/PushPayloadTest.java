@@ -67,6 +67,25 @@ public class PushPayloadTest {
     }
 
     @Test
+    public void readsAReminderAndAHelpersFollowUp() throws Exception {
+        String oid = "01a13a89-5c34-7000-8000-000000000002";
+        JSONObject due = new JSONObject().put("v", 1).put("t", "reminder.due").put("dlv", DLV).put("n", "AbCdEfGhIjKlMnOpQrStUv").put("oid", oid).put("p", 2)
+            .put("title", "").put("prompt", "").put("cat", "drink").put("at", NOW).put("ttl", 900);
+        PushPayload p = PushPayload.parse(due.toString(), NOW);
+        assertNotNull(p);
+        assertEquals(oid, p.oid);
+        assertEquals(2, p.prompt);
+        assertEquals("", p.title);
+        assertTrue(p.rings());
+        assertFalse(p.care());
+        JSONObject follow = new JSONObject().put("v", 1).put("t", "reminder.followup").put("dlv", DLV).put("n", "AbCdEfGhIjKlMnOpQrStUv").put("oid", oid).put("who", "Anna").put("cat", "meal");
+        PushPayload f = PushPayload.parse(follow.toString(), NOW);
+        assertEquals("meal", f.category);
+        assertFalse(f.rings()); // never an alarm (CONCEPT §9)
+        assertNull(PushPayload.parse(due.put("oid", "x").toString(), NOW));
+    }
+
+    @Test
     public void clipsLongNamesAndReadsNullsAsEmpty() throws Exception {
         StringBuilder longName = new StringBuilder();
         for (int i = 0; i < 200; i++) longName.append('x');
