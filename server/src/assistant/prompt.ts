@@ -17,12 +17,20 @@ function toolLines(tools: Tool[]): string {
 
 /**
  * LIVE mode (docs/plan-m2.md): the microphone stays open for a while after a conversation, and hears the room too.
- * What it heard without the assistant's name is judged first: said to it, or to someone else, or by the television.
+ * What it heard without the assistant's name is judged first, in a call of its own: said to it, or to someone else,
+ * or by the television. Short and strict: within the whole turn's prompt the tools overruled it (a sports report became
+ * a note).
  */
-function liveLines(lang: Lang, name: string): string {
+export function judgePrompt(lang: Lang, name: string): string {
   if (lang === 'en')
-    return `\nLIVE mode: UCAP's microphone is open while you talk with ${name}, and it hears the whole room. This was heard without your name. First decide "addressed": true only when ${name} clearly says it to you (it follows your conversation, or asks or tells you something UCAP can do). Talk with other people, the television, radio or music, and anything unclear: false, and leave "calls" and "say" empty and "help" false. When in doubt: false.`;
-  return `\nLIVE-Modus: Das Mikrofon von UCAP bleibt offen, während du mit ${name} sprichst, und hört den ganzen Raum. Das hier wurde ohne deinen Namen gehört. Entscheide zuerst "addressed": true nur, wenn ${name} es eindeutig zu dir sagt (es schließt an euer Gespräch an, oder es fragt oder bittet um etwas, das UCAP tun kann). Gespräche mit anderen Menschen, Fernsehen, Radio oder Musik und alles Unklare: false, dann "calls" und "say" leer und "help" false. Im Zweifel: false.`;
+    return `You decide for UCAP, ${name}'s assistant, whether a sentence the microphone heard in the room was said to the assistant. ${name} called the assistant a moment ago and may go on talking to it, but a television, a radio or other people may be talking in the room too. "addressed": true only for a question to the assistant, a request to it, or an answer to what it last said or asked. False for statements about the world (news, sport, weather, what happened somewhere), stories, reading aloud, talk with other people, and anything unclear. When in doubt: false. Answer as JSON {"addressed": true or false}.`;
+  return `Du entscheidest für UCAP, den Assistenten von ${name}, ob ein Satz, den das Mikrofon im Raum gehört hat, an den Assistenten gerichtet ist. ${name} hat den Assistenten vorhin gerufen und spricht vielleicht weiter mit ihm, aber im Raum können auch ein Fernseher, ein Radio oder andere Menschen sprechen. "addressed": true nur bei einer Frage an den Assistenten, einer Bitte an ihn oder einer Antwort auf das, was er zuletzt gesagt oder gefragt hat. false bei Aussagen über die Welt (Nachrichten, Sport, Wetter, was irgendwo passiert ist), Geschichten, Vorgelesenem, Gesprächen mit anderen Menschen und allem Unklaren. Im Zweifel false. Antworte als JSON {"addressed": true oder false}.`;
+}
+
+/** `calledBy`: the person said the assistant's name alone just before (then most likely meant, if it asks something). */
+export function judgeInput(lang: Lang, heard: string, lastSaid: string | null, calledBy: string | null = null): string {
+  if (lang === 'en') return `${calledBy ? `${calledBy} just called the assistant by its name.\n` : ''}${lastSaid ? `The assistant last said: "${lastSaid}"\n` : ''}Heard: "${heard}"`;
+  return `${calledBy ? `${calledBy} hat den Assistenten gerade bei seinem Namen gerufen.\n` : ''}${lastSaid ? `Zuletzt sagte der Assistent: „${lastSaid}“\n` : ''}Gehört: „${heard}“`;
 }
 
 /** How long an answer is, as the person asked ("Kürzer", "Ausführlicher": docs/plan-m2.md, L5). */
@@ -32,8 +40,8 @@ const LENGTH: Record<Lang, Record<Answers, string>> = {
   en: { short: 'one short sentence', normal: 'one to three short sentences', detailed: 'up to six sentences' },
 };
 
-export function systemPrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean; live?: boolean; answers?: Answers }): string {
-  return basePrompt(o) + (o.live ? liveLines(o.lang, o.name) : '');
+export function systemPrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean; answers?: Answers }): string {
+  return basePrompt(o);
 }
 
 function basePrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean; answers?: Answers }): string {

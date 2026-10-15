@@ -145,13 +145,13 @@ test('2 · the person creates an identity: twelve words, three checked, a reply 
       await page.getByRole('button', { name: 'Alloy (Teststimmen)', exact: true }).click();
       await expect(page.getByText('Alloy (Teststimmen): Diese Stimme nehmen?')).toBeVisible();
       await page.getByRole('button', { name: 'Diese Stimme nehmen', exact: true }).click();
-    }, 'Konrad'),
+    }, 'Mathilda'),
   );
   // The sample came from the voice service; the choice was said.
   expect(engines.seen.speech.length).toBeGreaterThan(sampled);
   await said(clara, /Alloy \(Teststimmen\) spricht jetzt/);
   // The assistant's name, chosen after the voices (docs/plan-m2.md).
-  await said(clara, /^Ich heiße jetzt Konrad\. /);
+  await said(clara, /^Ich heiße jetzt Mathilda\. /);
   const areas = await clara.locator('.area-grid button').allInnerTexts();
   expect(areas.length, areas.join(' | ')).toBe(4);
   expect(areas[0]).toContain('Hilfe');
@@ -420,13 +420,19 @@ test('L · LIVE mode in a browser (docs/plan-m2.md): Maria switches it on for Cl
   await clara.getByRole('button', { name: 'Behalten', exact: true }).click();
   await expect(clara.locator('.voice-status').first()).toHaveText('LIVE: Berühre „Sprechen“');
   // A touch opens it: the name is taken off what was said, and the command answered.
-  engines.heard.push('Konrad, wie spät ist es?');
+  engines.heard.push('Mathilda, wie spät ist es?');
   from = await mark(clara);
   await clara.getByRole('button', { name: 'Sprechen', exact: true }).click();
   await said(clara, /^Es ist \d{1,2}(:\d\d)? Uhr/, from);
   await expect(clara.locator('.voice-status').first()).toHaveText(/^(LIVE: Ich höre zu|Gehört: .*)$/);
   // The next question without a touch or the name: the model judges it was said to it, and answers.
-  engines.model = (req) => (req.system.includes('LIVE-Modus: Das Mikrofon') && /welcher Tag/.test(engines.last(req)) ? { ...reply('Heute ist Donnerstag.'), addressed: true } : { say: [], calls: [], help: false, addressed: false });
+  // The model judges first, in a call of its own, whether it was said to the assistant; then it answers.
+  engines.model = (req) => {
+    const judging = req.system.startsWith('Du entscheidest für UCAP');
+    const meant = /welcher Tag/.test(engines.last(req));
+    if (judging) return { say: [], calls: [], help: false, addressed: meant };
+    return meant ? reply('Heute ist Donnerstag.') : reply('Das sollte niemand hören.');
+  };
   engines.heard.push('Und welcher Tag ist heute?');
   await said(clara, /^Heute ist Donnerstag\.$/, from);
   // Something else in the room, not said to it: nothing is said, nothing shown.
@@ -500,4 +506,14 @@ test('ID-02 · the phrase canary: no three recovery words in a row in anything t
   const leaked = phrases.some((p) => received.some((r) => phraseIn(r, p)) || phraseIn(logs, p));
   expect(leaked, 'recovery words found in what the stand-ins received or the servers logged').toBe(false);
   phrases.length = 0;
+});
+
+test('L-02 · LIVE’s privacy canary: what it overheard and dropped is kept nowhere, not in a log, not in any table', async () => {
+  const overheard = 'Wetter für morgen';
+  const logs = execFileSync('docker', ['compose', '--profile', 'e2e', 'logs', '--no-color', 'core-e2e', 'assistant-e2e', 'connectors-e2e'], { cwd: REPO }).toString();
+  expect(logs.includes(overheard), 'the servers logged what LIVE overheard').toBe(false);
+  const dump = execFileSync('docker', ['compose', 'exec', '-T', 'db', 'pg_dump', '-U', 'ucap', '--data-only', 'ucap_e2e'], { cwd: REPO, maxBuffer: 256 * 1024 * 1024 }).toString();
+  expect(dump.includes(overheard), 'a table holds what LIVE overheard').toBe(false);
+  // The turn itself is recorded by its outcome only.
+  expect(sql(`select count(*) from assistant_turns where mode = 'live' and outcome = 'ignored'`)).not.toBe('0');
 });

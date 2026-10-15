@@ -94,7 +94,7 @@ type Page =
    * "Soll ich einen Hilferuf senden?" after a help word or a near match, or proposed by the assistant (A17); asked at a
    * reminder, the request is linked to it.
    */
-  | { help: { fromAssistant: boolean; occurrenceId?: string } }
+  | { help: { fromAssistant: boolean; occurrenceId?: string; live?: boolean } }
   /** The person's notes (S9). */
   | 'notes'
   /** The person's messages, and connecting their Telegram (S10). */
@@ -112,6 +112,8 @@ type Page =
   | { configChanged: Change }
   /** A helper setting up a person's device (S11). */
   | { configOf: { id: string; displayName: string } };
+/** How long "Rückgängig" puts back a change of speech or the screen made by voice (L5). */
+const LOCAL_UNDO_MS = 120_000;
 const pageKey = (p: Page) => (typeof p === 'string' ? p : Object.keys(p)[0]!);
 /** Pages a due reminder does not interrupt: a help request in progress, a helper's alert. It waits for its next prompt. */
 const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p || 'confirm' in p || 'help' in p || 'configChanged' in p));
@@ -346,7 +348,7 @@ export function App() {
     onIntent: (i) => intentRef.current(i),
     // Asked at a reminder ("Noch nicht. Kann mir jemand Wasser bringen?"), the help request is linked to it (CONCEPT §9).
     onAsk: (reason) =>
-      setPage((pg) => (pg === 'care' ? pg : { help: { fromAssistant: reason === 'assistant', ...(typeof pg === 'object' && 'reminder' in pg ? { occurrenceId: pg.reminder } : {}) } })),
+      setPage((pg) => (pg === 'care' ? pg : { help: { fromAssistant: reason === 'assistant', live: liveRef.current?.listening ?? false, ...(typeof pg === 'object' && 'reminder' in pg ? { occurrenceId: pg.reminder } : {}) } })),
     onLeak: () => setPage('leak'),
     onAction: (a) => setPage((pg) => (pg === 'care' ? pg : { confirm: a, ...(pg === 'messages' || pg === 'notes' ? { back: pg } : typeof pg === 'object' && 'confirm' in pg && pg.back ? { back: pg.back } : {}) })),
     speakAs: (text, purpose) => {
@@ -356,6 +358,7 @@ export function App() {
     },
     playRecording: (url) => player.play([url]),
     live: () => (liveRef.current?.listening ? liveRef.current : null),
+    undoHere: () => !!localUndo.current && Date.now() - localUndo.current.at < LOCAL_UNDO_MS,
   });
   useEffect(() => () => voiceRef.current?.cancel(), [session]);
 
@@ -391,6 +394,7 @@ export function App() {
       // Barge-in: the person speaks, UCAP stops (care announcements excepted, as everywhere).
       hush: () => {
         const s = uiRef.current.speech;
+        if (s.speaking || player.playing) record('voice', { reason: 'barge-in' });
         for (const c of ['assistant', 'system', 'label', 'notice'] as const) s.stop(c);
         player.stop();
       },
@@ -545,8 +549,9 @@ export function App() {
 
   /** Messages read aloud in the voice for reading, else the device voice; true when said to their end. */
   const readAloud = async (text: string, isCurrent: () => boolean): Promise<boolean> => {
-    if (session && (await speakAs({ session, text, purpose: 'reading', player, screenReader: assistive === 'screen-reader', notice: (reason) => uiRef.current.say(uiRef.current.tr(`voices.fallback.${reason}`), 'system') })))
-      return true;
+    const voiced = session ? await speakAs({ session, text, purpose: 'reading', player, screenReader: assistive === 'screen-reader', notice: (reason) => uiRef.current.say(uiRef.current.tr(`voices.fallback.${reason}`), 'system') }) : false;
+    if (voiced === true) return true;
+    if (voiced === 'cut') return false;
     return isCurrent() ? uiRef.current.sayAndWait(text, 'assistant') : false;
   };
   /** Speech in the person's voice for this purpose, else the device voice (S7); never with a screen reader on. */
@@ -785,7 +790,7 @@ export function App() {
         return;
       case 'undo':
         // A change of speech or the screen made by voice a moment ago comes first.
-        if (localUndo.current && Date.now() - localUndo.current.at < 120_000) {
+        if (localUndo.current && Date.now() - localUndo.current.at < LOCAL_UNDO_MS) {
           localUndo.current.undo();
           localUndo.current = null;
           return u.say(u.tr('look.undone'), 'system');
@@ -1013,6 +1018,7 @@ export function App() {
         policy={loadFallbacks().unconfirmedPolicy}
         gesture={gestureRef.current}
         fromAssistant={ask.fromAssistant}
+        live={ask.live}
         onSend={(source) => {
           void careRef.current?.press(source, ask.occurrenceId ? { reminderOccurrenceId: ask.occurrenceId } : {});
           setPage('care');

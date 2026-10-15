@@ -20,7 +20,7 @@ import type { Db } from '../lib/db.ts';
 import { CONVERSATION_MS } from '../lib/retention.ts';
 import { CAPTIONED, type Messaging } from '../messaging/service.ts';
 import type { Actions } from './actions.ts';
-import { type Answers, dataBlock, systemPrompt } from './prompt.ts';
+import { type Answers, dataBlock, judgeInput, judgePrompt, systemPrompt } from './prompt.ts';
 import { toolsFor } from './registry.ts';
 import { type Focus, type ToolContext, ToolError } from './tools.ts';
 
@@ -47,6 +47,20 @@ const PROMISE = /\b(kommt|kommen|unterwegs|gleich da|coming|on (?:the|her|his|th
 const ABOUT_HELP = /\b(hilfe|helfer|helferin|jemand|niemand|keiner|help|helper|someone|somebody|nobody|no one)\b/i;
 
 export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Actions; notes: Notes; reminders: ReminderService; messaging?: Messaging; log: (m: string) => void }) {
+  /** LIVE mode: whether what the open microphone heard was said to the assistant (docs/plan-m2.md), in a call of its own. */
+  async function addressed(userId: string, pick: Extract<Awaited<ReturnType<Llm['pick']>>, { ok: true }>, who: { name: string; lang: Lang }, heard: string, lastSaid: string | null, called: boolean, signal: AbortSignal): Promise<boolean> {
+    const r = await d.llm.complete(userId, pick.provider, pick.adapter, {
+      system: judgePrompt(who.lang, who.name),
+      messages: [{ role: 'user', content: judgeInput(who.lang, heard, lastSaid, called ? who.name : null) }],
+      schema: { type: 'object', additionalProperties: false, required: ['addressed'], properties: { addressed: { type: 'boolean' } } },
+      signal,
+    });
+    try {
+      return (JSON.parse(r.text) as { addressed?: unknown }).addressed === true;
+    } catch {
+      return false;
+    }
+  }
 
   async function person(userId: string) {
     const r = await sql<{ display_name: string; locale: string; address_form: AddressForm; timezone: string; answers: string | null }>`
@@ -90,10 +104,10 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
         lang?: Lang;
         suspicious?: boolean;
         /**
-         * LIVE mode heard it without the assistant's name (docs/plan-m2.md): the model first judges whether it was said
-         * to it; `onAddressed` once it was, before anything is said.
+         * LIVE mode heard it without the assistant's name (docs/plan-m2.md): a short call to the model judges first
+         * whether it was said to the assistant at all; `onAddressed` once it was, before anything is said.
          */
-        live?: { onAddressed: () => void };
+        live?: { onAddressed: () => void; called?: boolean };
         signal: AbortSignal;
       },
       emit: (e: AssistantEvent) => void,
@@ -114,17 +128,16 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       const messaging = d.messaging && (await d.messaging.connection(o.userId)) ? d.messaging : undefined;
       const tools = toolsFor({ messaging: messaging !== undefined });
       const offered = new Map(tools.map((x) => [x.name, x]));
-      const schema = replySchema(
-        tools.map((x) => ({ name: x.name, args: x.args })),
-        { live: o.live !== undefined },
-      );
-      // In LIVE mode nothing is said before the model judged it was said to it, and that is told once.
-      let judged = o.live === undefined;
-      const addressedNow = () => {
-        if (judged) return;
-        judged = true;
-        o.live!.onAddressed();
-      };
+      const schema = replySchema(tools.map((x) => ({ name: x.name, args: x.args })));
+      // In LIVE mode nothing is said before the model judged, on its own, that it was said to the assistant (as part
+      // of the whole turn's prompt it was overruled by the tools: a sports report became a note).
+      if (o.live) {
+        const meant = await addressed(o.userId, pick, who, o.text, s.history.at(-1)?.a ?? null, o.live.called === true, o.signal).catch(() => false);
+        if (o.signal.aborted) return 'aborted';
+        if (!meant) return 'ignored';
+        o.live.onAddressed();
+      }
+
       const ctx = (): ToolContext => ({ userId: o.userId, deviceId: o.deviceId, lang: who.lang, form: who.form, timezone: who.timezone, now: new Date(d.clock()), notes: d.notes, reminders: d.reminders, db: d.db, messaging });
       const messages: LlmMessage[] = [];
       for (const h of s.history) messages.push({ role: 'user', content: h.u }, { role: 'assistant', content: JSON.stringify({ say: [{ kind: 'reply', text: h.a, ref: null }], calls: [], help: false }) });
@@ -132,7 +145,9 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       const said: string[] = [];
       /** A question (help, a confirmation) was asked: that is the answer. */
       let acted = false;
-      let tainted = false;
+      // What the open microphone heard without the name or a touch may not have been the person at all (a television
+      // judged meant by mistake): nothing is done without their yes, as when the turn read untrusted data.
+      let tainted = o.live !== undefined && !o.live.called;
 
       /** A message's original (or transcript), from the store: framed with who, when and where (CONCEPT §3). */
       const fromMessage = async (item: SayItem): Promise<boolean> => {
@@ -192,27 +207,20 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
           // The first sentences go out while the rest is written, when the reply uses no tool and asks for no help; an
           // original waits for the whole reply (its source is looked up), and so does everything after it.
           const onText = (soFar: string) => {
-            if (!nothingHappens(soFar, { live: !judged })) return;
-            addressedNow();
+            if (!nothingHappens(soFar)) return;
             const items = finishedSay(soFar);
             while (streamed < items.length && items[streamed]!.kind !== 'original') {
               const item = items[streamed++]!;
               streaming = streaming.then(() => speak(item));
             }
           };
-          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: messaging !== undefined, live: o.live !== undefined, answers: who.answers });
+          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: messaging !== undefined, answers: who.answers });
           const r = await d.llm.complete(o.userId, pick.provider, pick.adapter, { system, messages, schema, signal: o.signal, onText });
           await streaming;
           const reply = parseReply(r.text);
           if (!reply) {
-            // Not understood in LIVE mode, before it was judged: nothing said, as for what was not said to it.
-            if (!judged) return 'ignored';
             if (!said.length) emit({ t: 'error', code: 'assistant_failed' });
             return 'failed';
-          }
-          if (!judged) {
-            if (!reply.addressed) return 'ignored';
-            addressedNow();
           }
           const unknown = reply.calls.filter((c) => !offered.has(c.tool)).map((c) => c.tool);
           const reads = reply.calls.filter((c) => offered.get(c.tool)?.kind === 'read');
@@ -287,7 +295,7 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       } catch (e) {
         if (o.signal.aborted) return 'aborted';
         d.log(`assistant turn failed: ${(e as Error).name}`);
-        if (!said.length && judged) emit({ t: 'error', code: 'assistant_unavailable' });
+        if (!said.length) emit({ t: 'error', code: 'assistant_unavailable' });
         return 'failed';
       }
       // Never silence: rounds that ended without words, a question or an action are said to have failed.

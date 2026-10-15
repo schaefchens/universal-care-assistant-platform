@@ -142,12 +142,23 @@ export type MatchMode = 'push' | 'live';
 export function match(transcript: string, lang: CommandLang, context: CommandContext = 'global', mode: MatchMode = 'push'): Match {
   const n = normalise(transcript, lang);
   if (!n) return { kind: 'none' };
-  const intent = SETS.get(`${lang}:${context === 'dictation' || context === 'reply' ? 'global' : context}`)!.get(n);
+  const set = SETS.get(`${lang}:${context === 'dictation' || context === 'reply' ? 'global' : context}`)!;
+  const intent = set.get(n) ?? longNear(set, n);
   if (intent === 'help' && mode === 'live') return { kind: 'ask', reason: 'help_word' };
   if (intent) return { kind: 'command', intent };
   if (n.split(' ').some((w) => HELP_WORDS[lang].test(w))) return { kind: 'ask', reason: 'help_word' };
   if (NEAR.get(lang)!.some((p) => distance(n, p) <= (p.length <= 5 ? 1 : 2))) return { kind: 'ask', reason: 'help_near' };
   return { kind: 'none' };
+}
+
+/**
+ * A long command one edit off ("Macht die Schrift größer", whisper on a short utterance): still that command. Only
+ * phrases of twelve letters or more, where one letter cannot make another command; never help, whose near matches ask.
+ */
+function longNear(set: Map<string, Intent>, n: string): Intent | undefined {
+  if (n.length < 12) return undefined;
+  for (const [phrase, intent] of set) if (intent !== 'help' && phrase.length >= 12 && distance(n, phrase) <= 1) return intent;
+  return undefined;
 }
 
 /** Every phrase of a context, for "Was kann ich hier tun?" and the tests. */

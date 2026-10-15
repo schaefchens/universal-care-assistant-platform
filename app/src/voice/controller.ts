@@ -37,7 +37,7 @@ export interface VoiceHost {
   /** An action waits for the person's yes: the confirmation screen. */
   onAction(a: { id: string; contentHash: string; prompt: string }): void;
   /** Says a part of an answer in the person's voice for it; false: the device voice must (the chosen one cannot). */
-  speakAs(text: string, purpose: 'reply' | 'reading'): Promise<boolean>;
+  speakAs(text: string, purpose: 'reply' | 'reading'): Promise<boolean | 'cut'>;
   /** Plays a recording (a voice message's original); true when it played to its end. */
   playRecording(url: string): Promise<boolean>;
   /**
@@ -45,6 +45,8 @@ export interface VoiceHost {
    * time; docs/plan-m2.md).
    */
   live?(): { touch(next?: { context?: 'dictation' | 'reply'; conversation?: string }): void } | null;
+  /** A change of speech or the screen was made by voice here a moment ago: "Rückgängig" undoes that, here. */
+  undoHere?(): boolean;
 }
 
 const MIC_ASKED = 'ucap.mic.v1';
@@ -104,7 +106,7 @@ export class VoiceController {
    * room) says nothing, nor do silence and the name alone; voice input being down is said once in five minutes.
    * Resolves with whether it was meant.
    */
-  async liveTurn(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'touch' | 'open', next?: { context?: 'dictation' | 'reply'; conversation?: string }): Promise<boolean> {
+  async liveTurn(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'named' | 'touch' | 'open', next?: { context?: 'dictation' | 'reply'; conversation?: string }): Promise<boolean> {
     const session = this.h.session();
     if (!session || ceremony.active) return false;
     if (this.down && Date.now() - this.down < 30_000) return false;
@@ -115,7 +117,7 @@ export class VoiceController {
       // A note's words or a reply only when a touch asked for them; otherwise the screen's own context.
       const screen = currentVoice().context;
       const context = via === 'touch' && next?.context ? next.context : screen === 'dictation' || screen === 'reply' ? 'global' : screen;
-      await postTurn(session, { wav, context, lang: ui.lang, live: via, conversation: context === 'reply' ? next?.conversation : undefined, signal: turn.signal }, (e) => {
+      await postTurn(session, { wav, context, lang: ui.lang, live: via, conversation: context === 'reply' ? next?.conversation : undefined, undoHere: this.h.undoHere?.(), signal: turn.signal }, (e) => {
         if (e.t === 'done') meant = e.addressed !== false;
         if (e.t === 'heard') return;
         if (e.t === 'error' && e.code === 'stt_unavailable') {
@@ -262,7 +264,7 @@ export class VoiceController {
       const conversation = this.nextConversation ?? undefined;
       this.nextContext = null;
       this.nextConversation = null;
-      await postTurn(session, { wav: rec.wav, context, lang: ui.lang, conversation, signal: turn.signal }, (e) => this.event(e));
+      await postTurn(session, { wav: rec.wav, context, lang: ui.lang, conversation, undoHere: this.h.undoHere?.(), signal: turn.signal }, (e) => this.event(e));
     } catch {
       if (turn.signal.aborted) return;
       this.unavailable();
@@ -283,7 +285,13 @@ export class VoiceController {
       const ui = this.h.ui();
       // UCAP's own words (readbacks, questions) in the device voice; the assistant's in the person's chosen one, and
       // what others wrote (originals, transcripts) in the voice for reading.
-      let said = kind !== 'system' && (await this.h.speakAs(text, kind === 'original' || kind === 'transcript' ? 'reading' : 'reply'));
+      const voiced = kind !== 'system' && (await this.h.speakAs(text, kind === 'original' || kind === 'transcript' ? 'reading' : 'reply'));
+      // Stopped while it played (a touch, LIVE's barge-in): the rest of this answer is dropped, nothing said again.
+      if (voiced === 'cut') {
+        this.gen++;
+        return;
+      }
+      let said = voiced;
       if (!said) {
         if (gen !== this.gen) return;
         // At most as long as it takes to say: an engine that never tells its end must not hold the rest of the answer.

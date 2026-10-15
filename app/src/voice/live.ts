@@ -51,7 +51,7 @@ export interface LiveHost {
    * Sends what was heard as a LIVE turn; resolves with whether it was meant for the assistant. `next`: what the touch
    * that called it was for (a note's words, a reply), as push-to-talk has it.
    */
-  turn(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'touch' | 'open', next?: TouchFor): Promise<boolean>;
+  turn(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'named' | 'touch' | 'open', next?: TouchFor): Promise<boolean>;
   /** Stops UCAP's speech below care (barge-in). */
   hush(): void;
   /** Whether UCAP is speaking now (the quiet while does not end in the middle of an answer). */
@@ -79,11 +79,11 @@ export class LiveController {
   private keyword: string | null = null;
   private openUntil = 0;
   private cancelTimer: (() => void) | null = null;
-  /** The next utterance was called for (a touch, or the keyword said alone): meant for the assistant. */
-  private called: 'keyword' | 'touch' | null = null;
+  /** The next utterance was called for: by a touch (meant), or by the name said alone (judged, with that hint). */
+  private called: 'named' | 'touch' | null = null;
   private calledFor: TouchFor | undefined;
   private busy = false;
-  private readonly waiting: { wav: Uint8Array<ArrayBuffer>; via: 'keyword' | 'touch' | 'open'; next?: TouchFor }[] = [];
+  private readonly waiting: { wav: Uint8Array<ArrayBuffer>; via: 'keyword' | 'named' | 'touch' | 'open'; next?: TouchFor }[] = [];
   /** Each start; events of an earlier one are dropped. */
   private run = 0;
   /** When someone was last heard speaking (the open gate's utterances, the keyword). */
@@ -208,7 +208,7 @@ export class LiveController {
     if (this.state === 'paused') this.set('waiting');
     this.open(this.quietS);
     if (wav) this.send(wav, 'keyword');
-    else this.called = 'keyword';
+    else this.called = 'named';
   }
 
   private onUtterance(wav: Uint8Array<ArrayBuffer>) {
@@ -233,7 +233,7 @@ export class LiveController {
     this.h.say(reason === 'denied' ? 'live.denied' : 'live.unavailable');
   }
 
-  private send(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'touch' | 'open', next?: TouchFor) {
+  private send(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'named' | 'touch' | 'open', next?: TouchFor) {
     // A call keeps the gate open while the answer comes; what is merely overheard does not.
     if (via !== 'open') this.extend(this.quietS);
     this.waiting.push({ wav, via, next });

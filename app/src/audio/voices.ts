@@ -40,9 +40,16 @@ export function voicesApi(session: Session) {
 }
 
 /** One clip at a time, in order; stopping drops the rest. */
+/** A clip that neither ends nor fails (a stalled stream) does not hold what comes after it longer than this. */
+const CLIP_MAX_MS = 120_000;
+
 export class ClipPlayer {
   private audio: HTMLAudioElement | null = null;
   private token = 0;
+  /** Settles the clip being waited for: stopped (a barge-in, a touch), it ends as cut off, never left pending. */
+  private settle: ((ended: boolean) => void) | null = null;
+  /** The last play() was stopped while a clip played (not refused or failed): nothing to say again in another voice. */
+  cutOff = false;
 
   /** Something is playing now (a clip of the person's voice, a recording). */
   get playing(): boolean {
@@ -51,16 +58,24 @@ export class ClipPlayer {
 
   async play(urls: string[]): Promise<boolean> {
     this.stop();
+    this.cutOff = false;
     const mine = ++this.token;
     for (const url of urls) {
       if (mine !== this.token) return false;
       const a = new Audio(url);
       this.audio = a;
       const ended = await new Promise<boolean>((resolve) => {
-        a.onended = () => resolve(true);
-        a.onerror = () => resolve(false);
-        void a.play().catch(() => resolve(false));
+        const bound = setTimeout(() => resolve(false), CLIP_MAX_MS);
+        const done = (ok: boolean) => {
+          clearTimeout(bound);
+          resolve(ok);
+        };
+        this.settle = done;
+        a.onended = () => done(true);
+        a.onerror = () => done(false);
+        void a.play().catch(() => done(false));
       });
+      this.settle = null;
       if (!ended) return false;
     }
     return mine === this.token;
@@ -70,6 +85,10 @@ export class ClipPlayer {
     this.token++;
     this.audio?.pause();
     this.audio = null;
+    const settle = this.settle;
+    this.settle = null;
+    if (settle) this.cutOff = true;
+    settle?.(false);
   }
 }
 
@@ -79,7 +98,12 @@ const said = new Set<string>();
  * Says `text` in the person's voice for `purpose`; false when the device voice must say it instead (and then the
  * caller does). `notice` is told once per session why the chosen voice could not speak.
  */
-export async function speakAs(o: { session: Session; text: string; purpose: 'reply' | 'reading' | 'reminder'; player: ClipPlayer; screenReader: boolean; notice: (reason: string) => void }): Promise<boolean> {
+/**
+ * Says it in the person's voice for this purpose: true when said to its end, false when the device voice must say it
+ * (no voice chosen, the voice unavailable), 'cut' when it was playing and stopped (a touch, LIVE's barge-in): then
+ * nothing says it again.
+ */
+export async function speakAs(o: { session: Session; text: string; purpose: 'reply' | 'reading' | 'reminder'; player: ClipPlayer; screenReader: boolean; notice: (reason: string) => void }): Promise<boolean | 'cut'> {
   // While recovery words are shown, nothing goes to a server voice (Appendix C: the ceremony is isolated).
   if (o.screenReader || ceremony.active) return false;
   let r: Rendered;
@@ -99,5 +123,6 @@ export async function speakAs(o: { session: Session; text: string; purpose: 'rep
   if (!('segments' in r)) return false;
   // Kept in the debug record as the device voice's speech is: what the person heard, in whichever voice.
   record('spoken', { channel: o.purpose, text: o.text });
-  return o.player.play(r.segments.map((s) => `${o.session.ref.serverUrl}${s.url}`));
+  const ended = await o.player.play(r.segments.map((s) => `${o.session.ref.serverUrl}${s.url}`));
+  return ended || (o.player.cutOff ? 'cut' : false);
 }

@@ -5,7 +5,8 @@
  * should be off meanwhile (`adb emu avd hostmicoff`): it would hear the room.
  *
  *   node tools/live/drive.ts push                 copies the live/ recordings into the app's storage
- *   node tools/live/drive.ts play lisa-time [s]   plays one, waits s seconds (default 12), prints what followed
+ *   node tools/live/drive.ts play name-time [s]   plays one, waits s seconds (default 12), prints what followed
+ *   node tools/live/drive.ts over story day-question   plays one, and the other as soon as an answer is spoken
  *   node tools/live/drive.ts state                LIVE's state and the last things said
  */
 import { execFileSync } from 'node:child_process';
@@ -18,7 +19,19 @@ const APP = 'de.schaefchens.ucap';
 const STAGE = '/data/local/tmp/ucap-live';
 const [cmd, name, wait] = process.argv.slice(2);
 
-type Rec = { spoken: { t: number; channel: string; text: string }[]; voice: { t: number; live?: string; via?: string; meant?: boolean }[]; earcons: { t: number; name: string }[] };
+type Rec = { spoken: { t: number; channel: string; text: string }[]; voice: { t: number; live?: string; via?: string; meant?: boolean; reason?: string; state?: string }[]; earcons: { t: number; name: string }[] };
+/** One line of the debug record's voice part: LIVE's state, a barge-in, a turn and whether it was meant, push-to-talk's state. */
+const voiceLine = (v: Rec['voice'][number]) => (v.live ? `LIVE ${v.live}` : v.reason ? v.reason : v.via ? `turn via ${v.via}: ${v.meant ? 'meant' : 'not meant'}` : `push-to-talk ${v.state ?? ''}`);
+const show = (rec: Rec, from: number) => {
+  const after = <T extends { t: number }>(list: T[]) => list.filter((x) => x.t >= from);
+  for (const e of [
+    ...after(rec.voice).map((v) => ({ t: v.t, s: voiceLine(v) })),
+    ...after(rec.earcons).map((e) => ({ t: e.t, s: `earcon ${e.name}` })),
+    ...after(rec.spoken).map((s) => ({ t: s.t, s: `${s.channel}: ${s.text}` })),
+  ].sort((a, b) => a.t - b.t))
+    console.log(`  +${((e.t - from) / 1000).toFixed(1)} s  ${e.s}`);
+};
+const inject = async (name: string) => (await evaluate(`window.Capacitor.nativePromise('VoiceCapture', 'inject', { path: 'live/${name}.wav' })`)) as { ms: number };
 const record = async () => (await evaluate('JSON.parse(JSON.stringify(window.__ucap))')) as Rec;
 const now = async () => (await evaluate('Math.round(performance.now())')) as number;
 
@@ -33,17 +46,28 @@ if (cmd === 'push') {
   console.log('pushed');
 } else if (cmd === 'play' && name) {
   const from = await now();
-  const r = (await evaluate(`window.Capacitor.nativePromise('VoiceCapture', 'inject', { path: 'live/${name}.wav' })`)) as { ms: number };
+  const r = await inject(name);
   await new Promise((done) => setTimeout(done, Number(wait ?? 12) * 1000));
-  const rec = await record();
-  const after = <T extends { t: number }>(list: T[]) => list.filter((x) => x.t >= from);
   console.log(`played ${name} (${(r.ms / 1000).toFixed(1)} s)`);
-  for (const e of [...after(rec.voice).map((v) => ({ t: v.t, s: v.live ? `LIVE ${v.live}` : `turn via ${v.via}: ${v.meant ? 'meant' : 'not meant'}` })), ...after(rec.earcons).map((e) => ({ t: e.t, s: `earcon ${e.name}` })), ...after(rec.spoken).map((s) => ({ t: s.t, s: `${s.channel}: ${s.text}` }))].sort((a, b) => a.t - b.t))
-    console.log(`  +${((e.t - from) / 1000).toFixed(1)} s  ${e.s}`);
+  show(await record(), from);
+} else if (cmd === 'over' && name && wait) {
+  // The second recording as soon as the first one's answer is being spoken: does UCAP stop (barge-in)?
+  const from = await now();
+  await inject(name);
+  for (let i = 0; i < 120; i++) {
+    const rec = await record();
+    if (rec.spoken.some((s) => s.t >= from && (s.channel === 'assistant' || s.channel === 'reply'))) break;
+    await new Promise((done) => setTimeout(done, 250));
+  }
+  await new Promise((done) => setTimeout(done, 1500));
+  await inject(wait);
+  await new Promise((done) => setTimeout(done, 15_000));
+  console.log(`played ${name}, then ${wait} over its answer`);
+  show(await record(), from);
 } else if (cmd === 'state') {
   const rec = await record();
   console.log(`LIVE: ${rec.voice.filter((v) => v.live).at(-1)?.live ?? 'off'}`);
   for (const s of rec.spoken.slice(-5)) console.log(`  ${s.channel}: ${s.text}`);
 } else {
-  console.log('usage: drive.ts push | play <name> [seconds] | state');
+  console.log('usage: drive.ts push | play <name> [seconds] | over <name> <name> | state');
 }

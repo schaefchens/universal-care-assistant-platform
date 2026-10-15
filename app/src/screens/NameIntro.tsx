@@ -12,8 +12,11 @@ import type { Me, Session } from '../identity/account.ts';
 import { people } from '../people/api.ts';
 import { useUi } from '../ui.tsx';
 
-/** Heard best by the spotter and seldom where nobody called it (docs/spikes/m2.md), in this order. */
-export const SUGGESTED_NAMES = ['Konrad', 'Paul', 'Hanna', 'Emma'];
+/**
+ * Heard best by the spotter and seldom where nobody called it (docs/spikes/m2.md: Mathilda 45 of 45 and no false
+ * wake in an hour of speech, Theodor 45 of 45, Hanna 42 of 45, Leopold 44 of 45), in this order.
+ */
+export const SUGGESTED_NAMES = ['Mathilda', 'Theodor', 'Hanna', 'Leopold'];
 
 export function NameIntro(p: { session: Session; config: DeviceConfig; onDone: () => void }) {
   const ui = useUi();

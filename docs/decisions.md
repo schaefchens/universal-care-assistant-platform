@@ -762,7 +762,15 @@ The plan: [plan-m2.md](plan-m2.md).
    said, nothing leaves the device". Built: an utterance that holds the name is sent from 0.2 s before the name, so
    "Sag mal, Lisa, was steht heute an?" reaches the server as "Lisa, was steht heute an?". The other choice: the whole
    utterance, its start included.
-3. **A question opens the gate for 30 seconds** (a reminder's, the help question, a confirmation), and an answer turns
+3. **Messages are said in reported speech without "Zusammenfassung:"** when LIVE sums them up: "Maria fragt, wie es
+   dir geht und ob sie heute Mittag Essen bringen soll." CONCEPT §19's own example ("Maria asked how you are doing and if
+   she should bring launch later this day"); M1 announces every summary as one (Appendix E). A short message is read
+   word for word with its sender ("Anna schrieb: „…“"). The other choice: "Zusammenfassung:" first here too.
+4. **Reminders keep their time in quiet times.** The settings say "Stille Zeiten: Dann sage ich nichts von selbst.
+   Über Hilferufe immer."; LIVE's own announcements (messages) wait out a quiet time, a reminder a helper set for 22:00
+   still comes at 22:00 (plan-m2.md: "in the night's quiet times only care and marked reminders": a reminder is marked
+   by its time). The other choice: a mark per reminder, and the others held until the quiet time ends.
+5. **A question opens the gate for 30 seconds** (a reminder's, the help question, a confirmation), and an answer turns
    it into a conversation with the person's quiet while. A "Ja" from a television in those 30 seconds would answer it;
    help asks back in LIVE mode and silence sends nothing, but a confirmation of a message would be taken. The other
    choice: confirmations by touch or after the name only, in LIVE mode.
@@ -793,6 +801,20 @@ The plan: [plan-m2.md](plan-m2.md).
 - **In a browser LIVE mode opens by touch**: no keyword spotter there, so the microphone is open only with the gate;
   a touch opens both, and the conversation goes on without touching until the quiet while has passed; said when it is
   switched on.
+- **What was heard without the name is judged in a call of its own**, before the turn: the dialogue model gets the
+  sentence and what the assistant said last, and only "addressed" comes back. Within the whole turn's prompt it let the
+  tools win: three of seventeen sentences of a radio sports report became notes (measured on the emulator). Since:
+  16 of 16 dropped. An action after overheard speech asks first (as a turn that read untrusted data), and the utterance
+  after the name said alone is judged too (a television may speak first), with the hint that the person just called.
+- **LIVE never sends a help request unconfirmed**: the help question unanswered twice ends with A18b in LIVE mode
+  (Appendix D: "never in LIVE mode"); found on the emulator, fixed before anything was sent.
+- **Paused, in a quiet time, or with messages not to be said, LIVE says nothing about new messages**, not even M1's
+  "Neue Nachricht von …"; with LIVE off M1's announcement is unchanged.
+- **The suggested names are Mathilda, Theodor, Hanna, Leopold** (docs/spikes/m2.md: three syllables are heard far more
+  reliably; Paul and Emma woke ten times an hour on everyday speech); a helper's name is never suggested.
+- **"Kürzer" and "Ausführlicher" are a person setting** (`answers`: short, normal, detailed) in the assistant's prompt;
+  "Langsamer", "Schneller" the device's speech rate; text size and contrast the device configuration (versioned, as a
+  change in the settings). Each is read back; "Rückgängig" within two minutes puts it back.
 - **The keyword model is served by the assistant process** (`/api/v1/assistant/keyword-models`), from the models
   directory with its pinned SHA-256 (`tools/live/models.ts` downloads it); the app checks the digest again before it
   unpacks it into its own storage.

@@ -164,14 +164,20 @@ if (import.meta.main) {
     console.log(`other v${vi}: ${(pcm.length / RATE / 60).toFixed(1)} min`);
   });
   const live: Record<string, string> = {
-    'lisa-time': 'Lisa, wie spät ist es?',
-    'lisa-alone': 'Lisa.',
+    'name-time': 'Mathilda, wie spät ist es?',
+    'name-alone': 'Mathilda.',
     'day-question': 'Und welcher Tag ist heute?',
     'reminder-question': 'Und wann kommt die nächste Erinnerung?',
     'help': 'Hilfe!',
     'yes': 'Ja.',
     'pause': 'Pause.',
-    'resume': 'Lisa, weiter.',
+    'resume': 'Mathilda, weiter.',
+    'story': 'Mathilda, erzähl mir bitte ausführlich, was ein Fuchs im Winter frisst.',
+    'name-help': 'Mathilda, Hilfe!',
+    'slower': 'Langsamer.',
+    'bigger': 'Mach die Schrift größer.',
+    'smaller': 'Mach die Schrift kleiner.',
+    'undo': 'Rückgängig.',
   };
   if (want('live')) {
     mkdirSync(join(OUT, 'live'), { recursive: true });

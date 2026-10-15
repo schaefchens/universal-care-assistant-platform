@@ -38,13 +38,15 @@ export async function postTurn(
     lang: 'de' | 'en';
     conversation?: string;
     /** LIVE mode (docs/plan-m2.md): heard after the name or a touch, or in the open conversation. */
-    live?: 'keyword' | 'touch' | 'open';
+    live?: 'keyword' | 'named' | 'touch' | 'open';
+    /** A change made by voice on this device a moment ago: "Rückgängig" is the device's to undo (L5). */
+    undoHere?: boolean;
     signal: AbortSignal;
   },
   onEvent: (e: TurnEvent) => void,
 ): Promise<void> {
   const id = uuidv7(Date.now());
-  const url = `${session.ref.serverUrl}/api/v1/assistant/turns?id=${id}&context=${o.context}&lang=${o.lang}${o.conversation ? `&conversation=${o.conversation}` : ''}${o.live ? `&mode=live&via=${o.live}` : ''}`;
+  const url = `${session.ref.serverUrl}/api/v1/assistant/turns?id=${id}&context=${o.context}&lang=${o.lang}${o.conversation ? `&conversation=${o.conversation}` : ''}${o.live ? `&mode=live&via=${o.live}` : ''}${o.undoHere ? '&undo=device' : ''}`;
   const send = async () =>
     fetch(url, {
       method: 'POST',

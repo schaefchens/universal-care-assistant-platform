@@ -99,11 +99,14 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         audio?: Uint8Array<ArrayBuffer>;
         text?: string;
         /**
-         * Push-to-talk, or LIVE mode: heard right after the assistant's name or a touch on the talk area (both meant for
-         * it), or in the open conversation without either.
+         * Push-to-talk, or LIVE mode: the name in this very utterance (`keyword`) or a touch on the talk area: meant
+         * for the assistant; the next utterance after the name said alone (`named`): most likely meant, but a television
+         * can speak first, so it is judged as what was heard in the open conversation (`open`) is.
          */
         mode?: 'push' | 'live';
-        via?: 'keyword' | 'touch' | 'open';
+        via?: 'keyword' | 'named' | 'touch' | 'open';
+        /** The device made a change by voice a moment ago ("Langsamer", "Schrift größer"): "Rückgängig" is its own. */
+        undoHere?: boolean;
         signal: AbortSignal;
       },
       emit: (e: TurnEvent) => void,
@@ -184,7 +187,7 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         if (meant) tell();
         const m = match(text, o.lang, context, live ? 'live' : 'push');
         if (m.kind !== 'none') tell();
-        if (m.kind === 'command' && m.intent === 'undo' && context !== 'confirm' && d.actions && d.contextFor) {
+        if (m.kind === 'command' && m.intent === 'undo' && context !== 'confirm' && !o.undoHere && d.actions && d.contextFor) {
           // "Rückgängig" needs the server: the last thing the assistant did, undone. Where a screen asks a question
           // (a change to keep or undo), it is that screen's answer instead.
           outcome = 'command';
@@ -223,7 +226,7 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         } else if (m.kind === 'none' && d.assistant) {
           outcome = 'assistant';
           const r = await d.assistant.run(
-            { userId: o.userId, deviceId: o.deviceId, turnId: o.id, text, lang: o.lang, suspicious: leak.kind === 'suspicious', live: meant ? undefined : { onAddressed: tell }, signal: o.signal },
+            { userId: o.userId, deviceId: o.deviceId, turnId: o.id, text, lang: o.lang, suspicious: leak.kind === 'suspicious', live: meant ? undefined : { onAddressed: tell, called: o.via === 'named' }, signal: o.signal },
             emit,
           );
           detail = r;

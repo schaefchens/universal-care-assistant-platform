@@ -60,6 +60,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - node-postgres's pool emits `error` when the database ends an idle connection (a restart); without a listener the
   process exits, the help path with it. `createDb` listens.
 - With Fastify's `trustProxy`, `req.ip` throws for a socket made by `injectWS` (tests): read it guarded.
+- A git operation that removes files for a moment (checkout, stash) can leave Vite without its config (it then answers
+  `/api` with index.html: no proxy, listening on ::1) and `node --watch` without its watches (core keeps old code):
+  restart Vite and `docker compose restart core assistant`.
 
 **Claude Code's tools**
 - Write and Edit decode `\uXXXX` escapes into literal characters. Copy files that contain them (`stt-eval/text.ts`, `phrases.ts`) with `cp`, or double the backslash.
@@ -68,6 +71,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   installed downloads whatever npm package has that name and runs it (`npx biome` once ran an unrelated old package).
 
 **Providers**
+- The dialogue model, asked inside the whole turn's prompt whether something LIVE mode overheard was said to it, lets
+  the tools win (a sports report on the radio became a note): LIVE judges in a short call of its own first, and an
+  action after overheard speech asks before it is done.
 - A fetch's signal also aborts the body: a limit on how long a provider may take to start answering must be cleared
   once it started, or every long streamed answer is cut off. Give every streamed reply its own total and idle limits.
 - Whisper given a language hint that is not the speech's translates it: someone else's voice message is transcribed
@@ -126,5 +132,13 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   recovery word submits the words. Speech in a server voice is in the debug record as the device voice's is.
 - TalkBack gestures on the emulator: `adb emu event mouse <x> <y> 0 1|0` is a real finger to TalkBack; `sendevent` is
   refused on this image.
+- LIVE mode on the emulator: its microphone is the Mac's, so `adb emu avd hostmicoff` first, and recordings are played
+  into the running capture (`node tools/live/drive.ts`, a debug build); afterwards LIVE off and the host microphone as
+  it was. Keyword measurements: `tools/live/corpus.ts` and `tools/live/bench.ts` (docs/spikes/m2.md).
+- The emulator's /data is small: below about 5 % free an install fails ("not enough space"); the measurement sets are
+  pushed and removed by set. A debug APK built over an old one keeps holes (50 MB for 17 MB of content): delete it
+  before a build to see its size.
+- A React Aria switch or radio is pressed through its label's text: a click on the hidden input (or `label.click()`
+  from script) does not toggle it.
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.
 - `dl.google.com` needs the HTTP/2 relay on this network (`tools/google-maven-relay.ts`).

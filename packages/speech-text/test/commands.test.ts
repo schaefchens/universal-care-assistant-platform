@@ -82,6 +82,10 @@ describe('contexts', () => {
     expect(act('Bigger text', 'en')).toEqual({ kind: 'command', intent: 'biggerText' });
     // Whole utterances only: a sentence about contrast is for the assistant.
     expect(act('Der Kontrast auf dem Foto ist hoch')).toEqual({ kind: 'none' });
+    // A long command one letter off is that command (whisper heard "Macht" on a short utterance); a short one is not.
+    expect(act('Macht die Schrift größer.')).toEqual({ kind: 'command', intent: 'biggerText' });
+    expect(act('Wie spät ist er?')).toEqual({ kind: 'command', intent: 'time' });
+    expect(act('Langsam')).toEqual({ kind: 'none' });
   });
 
   it('LIVE mode is switched and paused by voice, in either language, everywhere', () => {

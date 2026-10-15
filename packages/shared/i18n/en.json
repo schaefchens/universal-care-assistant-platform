@@ -782,7 +782,7 @@
   "live.intro": "In LIVE mode I listen all the time and tell you what is new by myself. When nobody has talked to me for a while, I wait for my name. Until then, nothing I hear leaves this device.",
   "live.enabled": "LIVE mode on",
   "live.name": "The assistant's name",
-  "live.name.hint": "You call me by this name when nobody has talked to me for a while.",
+  "live.name.hint": "You call me by this name when nobody has talked to me for a while. A name of three syllables (Mathilda, Theodor) is heard most reliably.",
   "live.keyword": "A keyword of your own instead of the name",
   "live.keyword.hint": "Leave it empty: the name is the keyword.",
   "live.name.save": "Save the name",

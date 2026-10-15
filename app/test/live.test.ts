@@ -112,7 +112,7 @@ describe('the gate', () => {
     t.events().utterance({ wav: wav(10), ms: 900 });
     t.events().utterance({ wav: wav(20), ms: 900 });
     await t.settle();
-    expect(t.sent.map((s) => s.via)).toEqual(['keyword', 'open']);
+    expect(t.sent.map((s) => s.via)).toEqual(['named', 'open']);
   });
 
   it('closes after the quiet while without an exchange; an exchange starts it again; never in the middle of an answer', async () => {

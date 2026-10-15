@@ -18,7 +18,11 @@ export type VoiceHelpSource = 'voice_exact' | 'voice_confirmed' | 'voice_unconfi
 const WINDOW_MS = 15_000;
 
 /** `fromAssistant`: the assistant proposed help (Appendix D: "LLM-proposed help always asks A17, and silence gives A18b"). */
-export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop'; gesture: string; fromAssistant?: boolean; onSend: (source: VoiceHelpSource) => void; onDone: () => void }) {
+/**
+ * `live`: asked in LIVE mode, where the microphone also hears the television: silence never sends (docs/plan-m2.md,
+ * Principles: "LIVE never sends help unasked … silence never sends").
+ */
+export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop'; gesture: string; fromAssistant?: boolean; live?: boolean; onSend: (source: VoiceHelpSource) => void; onDone: () => void }) {
   const ui = useUi();
   const { tr, say } = ui;
   const asks = useRef(0);
@@ -55,7 +59,7 @@ export function HelpQuestion(p: { config: DeviceConfig; policy: 'send' | 'drop';
     if (asks.current < 2) return ask();
     // What the person said had help words in it: sent marked unconfirmed, if they chose so. What the assistant
     // proposed is never sent unasked.
-    if (p.policy === 'send' && !p.fromAssistant) return send('voice_unconfirmed');
+    if (p.policy === 'send' && !p.fromAssistant && !p.live) return send('voice_unconfirmed');
     finish(() => {
       say(tr('care.A18b', { gesture: p.gesture }), 'care');
       p.onDone();

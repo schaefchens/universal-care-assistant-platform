@@ -82,6 +82,18 @@ describe('the assistant', () => {
     seen.length = 0;
   });
 
+  it('"Rückgängig" right after a change by voice on the device is the device\'s: the command goes back to it (L5)', async () => {
+    const r = await assistant.app.inject({
+      method: 'POST',
+      url: `/api/v1/assistant/turns?id=${crypto.randomUUID()}&context=global&lang=de&undo=device`,
+      payload: { text: 'Rückgängig' },
+      headers: { authorization: `Bearer ${anna.token}`, 'content-type': 'application/json' },
+    });
+    const events = r.body.split('\n').filter(Boolean).map((l) => JSON.parse(l) as { t: string; intent?: string });
+    expect(events.find((e) => e.t === 'command')).toEqual({ t: 'command', intent: 'undo' });
+    expect(events.some((e) => e.t === 'segment')).toBe(false);
+  });
+
   it('"Kürzer" and "Ausführlicher" set how long the assistant answers, for the person (L5)', async () => {
     script = () => reply('Gut.');
     const patch = (answers: string) => core.app.inject({ method: 'PATCH', url: '/api/v1/me', headers: { authorization: `Bearer ${bernd.token}` }, payload: { answers } });
@@ -97,7 +109,7 @@ describe('the assistant', () => {
   });
 
   describe('LIVE mode (docs/plan-m2.md)', () => {
-    const live = async (a: Account, text: string, via: 'open' | 'keyword' = 'open', context = 'global') => {
+    const live = async (a: Account, text: string, via: 'open' | 'keyword' | 'named' = 'open', context = 'global') => {
       const r = await assistant.app.inject({
         method: 'POST',
         url: `/api/v1/assistant/turns?id=${crypto.randomUUID()}&context=${context}&lang=de&mode=live&via=${via}`,
@@ -120,8 +132,10 @@ describe('the assistant', () => {
       const e = await live(anna, 'Und jetzt das Wetter für morgen: Sonne im Süden');
       expect(kinds(e)).toEqual(['turn', 'done']);
       expect(done(e).addressed).toBe(false);
-      // The model was asked first whether it was meant for it.
-      expect(seen[0]!.system).toContain('LIVE-Modus: Das Mikrofon von UCAP bleibt offen');
+      // The model was asked first, in a call of its own, whether it was meant for the assistant.
+      expect(seen[0]!.system).toMatch(/^Du entscheidest für UCAP, den Assistenten von Anna, ob ein Satz/);
+      expect(seen[0]!.messages.at(-1)!.content).toBe('Gehört: „Und jetzt das Wetter für morgen: Sonne im Süden“');
+      expect(seen).toHaveLength(1);
       const row = (await sql<{ outcome: string; mode: string }>`select outcome, mode from assistant_turns where user_id = ${anna.userId} order by created_at desc limit 1`.execute(db)).rows[0]!;
       expect(row).toEqual({ outcome: 'ignored', mode: 'live' });
       // Not part of the conversation: the next turn's history does not hold it.
@@ -135,6 +149,8 @@ describe('the assistant', () => {
       const e = await live(anna, 'Und welcher Tag ist heute?');
       expect(kinds(e)).toEqual(['turn', 'transcript', 'segment', 'done']);
       expect(e[1]).toEqual({ t: 'transcript', text: 'Und welcher Tag ist heute?' });
+      // What the assistant said last goes with the judgement: an answer to its question is meant.
+      expect(seen.at(-2)!.messages.at(-1)!.content).toMatch(/^Zuletzt sagte der Assistent: „Gern\.“\nGehört: „Und welcher Tag ist heute\?“$/);
       expect(said(e)).toEqual(['reply: Heute ist Donnerstag.']);
       expect(done(e).addressed).toBe(true);
       script = () => 'down';
@@ -147,12 +163,12 @@ describe('the assistant', () => {
       const e = await live(anna, 'Lisa, erzähl mir einen Witz');
       expect(e[1]).toEqual({ t: 'transcript', text: 'Erzähl mir einen Witz' });
       expect(lastUser(seen[0]!)).toBe('Erzähl mir einen Witz');
-      expect(seen[0]!.system).not.toContain('LIVE-Modus');
+      expect(seen[0]!.system).not.toContain('Du entscheidest');
       // The device heard the name, the recognition did not write it: meant all the same.
       seen.length = 0;
       const k = await live(anna, 'Erzähl mir noch einen', 'keyword');
       expect(kinds(k)).toEqual(['turn', 'transcript', 'segment', 'done']);
-      expect(seen[0]!.system).not.toContain('LIVE-Modus');
+      expect(seen[0]!.system).not.toContain('Du entscheidest');
       // The name alone: heard, the conversation is open.
       expect(kinds(await live(anna, 'Lisa?'))).toEqual(['turn', 'heard', 'done']);
     });
@@ -163,6 +179,31 @@ describe('the assistant', () => {
       const time = await live(anna, 'Wie spät ist es?');
       expect(kinds(time)).toEqual(['turn', 'transcript', 'command', 'done']);
       expect(done(time).addressed).toBe(true);
+    });
+
+    it('judged meant by mistake (the television), nothing is done without a yes: an overheard note asks first', async () => {
+      script = () => ({ addressed: true, calls: [{ tool: 'notes.create', body: 'Die Mannschaft hat am Samstag gewonnen' }], help: false, say: [] });
+      const e = await live(anna, 'Die Mannschaft hat am Samstag gewonnen');
+      const action = e.find((x) => x.t === 'action') as unknown as { prompt: string } | undefined;
+      expect(action?.prompt).toMatch(/^Notiz .*speichern\?$/);
+      expect(await noteOf('Die Mannschaft hat am Samstag gewonnen')).toBeUndefined();
+      // Called by the name, a note is saved at once, as by push-to-talk.
+      script = () => ({ calls: [{ tool: 'notes.create', body: 'Brot kaufen' }], help: false, say: [] });
+      await live(anna, 'Lisa, notiere: Brot kaufen');
+      expect((await noteOf('Brot kaufen'))?.body).toBe('Brot kaufen');
+      // "Lisa, rückgängig": the name off, the command undoes it (and leaves nothing to undo for what follows).
+      expect(said(await live(anna, 'Lisa, rückgängig'))).toEqual(['system: Rückgängig gemacht: Die Notiz „Brot kaufen“ ist gelöscht.']);
+    });
+
+    it('after the name said alone, what comes next is judged with that hint: the television ignored, the person\'s request done at once', async () => {
+      const judging = (req: { system: string }) => req.system.startsWith('Du entscheidest');
+      script = (req) => (judging(req) ? { addressed: !/Mannschaft/.test(lastUser(req)) } : { calls: [{ tool: 'notes.create', body: 'Milch kaufen' }], help: false, say: [] });
+      const tv = await live(anna, 'Die Mannschaft hat am Samstag gewonnen', 'named');
+      expect(kinds(tv)).toEqual(['turn', 'done']);
+      expect(lastUser(seen.at(-1)!)).toMatch(/^Anna hat den Assistenten gerade bei seinem Namen gerufen\.\n(Zuletzt sagte der Assistent: „.*“\n)?Gehört: „Die Mannschaft hat am Samstag gewonnen“$/s);
+      await live(anna, 'Notiere: Milch kaufen', 'named');
+      expect((await noteOf('Milch kaufen'))?.body).toBe('Milch kaufen');
+      await live(anna, 'Lisa, rückgängig');
     });
 
     it('what the open microphone hears never becomes a note or a reply by dictation', async () => {
