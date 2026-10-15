@@ -5,7 +5,7 @@
  * umgestellt." A help area that moved is always said, first; of the rest at most three, then "und weitere".
  */
 import { position } from '@ucap/touch';
-import type { AreaDef, DeviceConfig, ScreenDef } from './device-config.ts';
+import { type AreaDef, type DeviceConfig, liveOf, type ScreenDef } from './device-config.ts';
 import { type AddressForm, type Lang, t } from './i18n.ts';
 
 const VISUAL_LOOK = ['font', 'weight', 'letterSpacing', 'borderPx', 'focusPx', 'gapPx', 'reducedMotion'] as const;
@@ -22,6 +22,14 @@ export function describeChange(o: { lang: Lang; form: AddressForm; author: strin
   const screenName = (s: ScreenDef) => s.title ?? (s.titleKey ? t(lang, s.titleKey, {}, form) : s.id);
   const first: string[] = [];
   const rest: string[] = [];
+
+  // LIVE mode first: whether the microphone stays open is said before anything about the look (docs/plan-m2.md).
+  const lb = liveOf(before);
+  const la = liveOf(after);
+  if (lb.enabled !== la.enabled) first.push(tr(la.enabled ? 'config.change.liveOn' : 'config.change.liveOff'));
+  if (la.enabled && lb.quietS !== la.quietS) rest.push(tr('config.change.liveQuiet', { n: Math.max(1, Math.round(la.quietS / 60)) }));
+  if (la.enabled && JSON.stringify(lb.quietTimes) !== JSON.stringify(la.quietTimes)) rest.push(tr('config.change.liveQuietTimes'));
+  if (la.enabled && JSON.stringify(lb.say) !== JSON.stringify(la.say)) rest.push(tr('config.change.liveSay'));
 
   if (before.visual.theme !== after.visual.theme) rest.push(tr('config.change.theme', { theme: t(lang, `config.theme.${after.visual.theme}`) }));
   if (before.visual.textScale !== after.visual.textScale)

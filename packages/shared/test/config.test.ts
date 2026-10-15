@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkConfig, depths, protectConfig, warningKey } from '../src/config-rules.ts';
 import { describeChange } from '../src/config-diff.ts';
-import { DEFAULT_DEVICE_CONFIG, type DeviceConfig } from '../src/device-config.ts';
+import { DEFAULT_DEVICE_CONFIG, type DeviceConfig, liveOf } from '../src/device-config.ts';
 
 const base = (): DeviceConfig => structuredClone(DEFAULT_DEVICE_CONFIG);
 const home = (c: DeviceConfig) => c.screens[c.home]!;
@@ -116,6 +116,21 @@ describe('a change as the person hears it', () => {
       'Maria hat die Farbe des Felds „Nachrichten“ geändert.',
       'Dazu weitere Einstellungen.',
     ]);
+  });
+
+  it('LIVE mode switched by someone else is said first; its other settings only while it is on', () => {
+    const on = structuredClone(DEFAULT_DEVICE_CONFIG);
+    on.live = { ...liveOf(on), enabled: true };
+    on.visual.theme = 'hc-dark';
+    expect(say(DEFAULT_DEVICE_CONFIG, on)[0]).toBe('Maria hat den LIVE-Modus eingeschaltet. Ich höre jetzt zu.');
+    const longer = structuredClone(on);
+    longer.live = { ...liveOf(on), quietS: 300, quietTimes: [{ from: '22:00', to: '07:00' }] };
+    expect(say(on, longer)).toEqual(['Maria hat geändert, wann ich wieder auf meinen Namen warte: nach 5 Minuten ohne Gespräch.', 'Maria hat die stillen Zeiten geändert.']);
+    expect(say(on, DEFAULT_DEVICE_CONFIG)[0]).toBe('Maria hat den LIVE-Modus ausgeschaltet. Ich höre nur noch zu, wenn du „Sprechen“ wählst.');
+    // A configuration from before M2 has no LIVE part: off.
+    const old = structuredClone(DEFAULT_DEVICE_CONFIG);
+    delete old.live;
+    expect(say(old, DEFAULT_DEVICE_CONFIG)).toEqual([]);
   });
 
   it('nothing changed says nothing; a description or a sound says the screen changed', () => {

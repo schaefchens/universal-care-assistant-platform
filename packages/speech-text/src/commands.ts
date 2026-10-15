@@ -20,7 +20,7 @@ export type CommandLang = 'de' | 'en';
  */
 export type CommandContext = 'global' | 'confirm' | 'reminder' | 'dictation' | 'reply';
 
-export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo';
+export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo' | 'liveOn' | 'liveOff' | 'pause' | 'resume';
 
 export type Match = { kind: 'command'; intent: Intent } | { kind: 'ask'; reason: 'help_word' | 'help_near' } | { kind: 'none' };
 
@@ -52,6 +52,11 @@ const GLOBAL: Record<CommandLang, Table> = {
     whereAmI: ['Wo bin ich?'],
     whatCanIDo: ['Was kann ich hier tun?', 'Was kann ich tun?'],
     undo: ['Rückgängig', 'Rückgängig machen', 'Mach das rückgängig'],
+    // LIVE mode (docs/plan-m2.md): on and off, and a pause in it until "Weiter".
+    liveOn: ['LIVE an', 'LIVE-Modus an', 'LIVE einschalten', 'LIVE-Modus einschalten'],
+    liveOff: ['LIVE aus', 'LIVE-Modus aus', 'LIVE ausschalten', 'LIVE-Modus ausschalten'],
+    pause: ['Pause', 'Mach Pause', 'Mach mal Pause'],
+    resume: ['Weiter', 'Mach weiter', 'Hör wieder zu'],
   },
   en: {
     stop: ['Stop', 'Cancel', 'Enough', 'Quiet'],
@@ -64,6 +69,10 @@ const GLOBAL: Record<CommandLang, Table> = {
     whereAmI: ['Where am I?'],
     whatCanIDo: ['What can I do here?', 'What can I do?'],
     undo: ['Undo', 'Undo that'],
+    liveOn: ['LIVE on', 'LIVE mode on', 'Turn LIVE on'],
+    liveOff: ['LIVE off', 'LIVE mode off', 'Turn LIVE off'],
+    pause: ['Pause', 'Take a break'],
+    resume: ['Resume', 'Continue', 'Go on', 'Listen again'],
   },
 };
 

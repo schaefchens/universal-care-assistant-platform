@@ -169,6 +169,9 @@ export interface Me {
   identityKey: string | null;
   /** Unconfirmed words, and this device created the account: it may replace them without the old words. */
   canReissue: boolean;
+  /** LIVE mode (docs/plan-m2.md): what the person calls the assistant, and a keyword of their own instead of it. */
+  assistantName?: string | null;
+  keyword?: string | null;
 }
 
 /** Whether typed words belong to this account (checked against its public key before anything changes). */

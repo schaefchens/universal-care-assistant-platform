@@ -303,8 +303,9 @@ export function createIdentityService(d: IdentityDeps) {
     },
 
     async me(userId: string, deviceId?: string) {
-      const r = await sql<{ id: string; display_name: string; locale: string; address_form: string; timezone: string; recovery_state: string; is_admin: boolean; public_key: Buffer | null; enrolled_via: string | null }>`
-        select u.id, u.display_name, u.locale, u.address_form, u.timezone, u.recovery_state, u.is_admin, k.public_key, dv.enrolled_via
+      const r = await sql<{ id: string; display_name: string; locale: string; address_form: string; timezone: string; recovery_state: string; is_admin: boolean; public_key: Buffer | null; enrolled_via: string | null; assistant_name: string | null; keyword: string | null }>`
+        select u.id, u.display_name, u.locale, u.address_form, u.timezone, u.recovery_state, u.is_admin, k.public_key, dv.enrolled_via,
+          u.settings ->> 'assistantName' as assistant_name, u.settings ->> 'keyword' as keyword
         from users u
         left join identity_keys k on k.user_id = u.id and k.status = 'active'
         left join devices dv on dv.id = ${deviceId ?? null} and dv.user_id = u.id
@@ -323,14 +324,23 @@ export function createIdentityService(d: IdentityDeps) {
         identityKey: u.public_key ? b64url(new Uint8Array(u.public_key)) : null,
         // Whether this device may replace words that were never confirmed (see reissueIdentity).
         canReissue: u.recovery_state === 'unconfirmed' && u.enrolled_via === 'create',
+        // LIVE mode (docs/plan-m2.md): the assistant's name, and the keyword when the person chose another.
+        assistantName: u.assistant_name,
+        keyword: u.keyword,
       };
     },
 
-    async updateMe(userId: string, patch: { displayName?: string; locale?: string; addressForm?: 'du' | 'Sie'; timezone?: string }) {
+    async updateMe(userId: string, patch: { displayName?: string; locale?: string; addressForm?: 'du' | 'Sie'; timezone?: string; assistantName?: string; keyword?: string | null }) {
       await sql`
         update users set display_name = coalesce(${patch.displayName ?? null}, display_name), locale = coalesce(${patch.locale ?? null}, locale),
           address_form = coalesce(${patch.addressForm ?? null}, address_form), timezone = coalesce(${patch.timezone ?? null}, timezone)
         where id = ${userId}`.execute(d.db);
+      // The assistant's name, and a keyword of the person's own (null: the name is the keyword again).
+      if (patch.assistantName !== undefined) await sql`update users set settings = jsonb_set(settings, '{assistantName}', ${JSON.stringify(patch.assistantName.trim())}::jsonb) where id = ${userId}`.execute(d.db);
+      if (patch.keyword !== undefined) {
+        if (patch.keyword === null) await sql`update users set settings = settings - 'keyword' where id = ${userId}`.execute(d.db);
+        else await sql`update users set settings = jsonb_set(settings, '{keyword}', ${JSON.stringify(patch.keyword.trim())}::jsonb) where id = ${userId}`.execute(d.db);
+      }
     },
 
     async devices(userId: string) {

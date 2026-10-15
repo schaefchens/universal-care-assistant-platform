@@ -8,7 +8,7 @@
  * another device, goes back to onboarding and says why.
  */
 import { App as CapApp } from '@capacitor/app';
-import { type DeviceConfig, isLang } from '@ucap/shared';
+import { type DeviceConfig, isLang, liveOf } from '@ucap/shared';
 import type { Intent } from '@ucap/speech-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChoiceGrid } from './areas/ChoiceGrid.tsx';
@@ -131,6 +131,10 @@ export function App() {
   const [server, setServer] = useState<ServerRef | null>(loadServer);
   const [session, setSession] = useState<Session | null>(() => sessionFor(loadServer()));
   const [me, setMe] = useState<Me | null>(null);
+  const meRef = useRef(me);
+  meRef.current = me;
+  /** LIVE mode paused by the person ("Pause" until "Weiter"): on this device only, for as long as the app runs. */
+  const livePaused = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [linkInvite, setLinkInvite] = useState(takeInviteFromUrl);
   const [a11y, setA11y] = useState<A11yState | null>(null);
@@ -603,6 +607,21 @@ export function App() {
       case 'whatCanIDo':
         u.say(currentVoice().whatCanIDo?.() ?? `${u.tr('whatcan.page', { screen: title() })} ${u.tr('whatcan.commands')}`, 'system');
         return;
+      // LIVE mode (docs/plan-m2.md): switched by voice as by touch, a change of this device's configuration.
+      case 'liveOn':
+      case 'liveOff': {
+        const keyword = meRef.current?.keyword || meRef.current?.assistantName;
+        if (i === 'liveOn' && !keyword) return u.say(u.tr('live.needName'), 'system');
+        updateConfig({ ...configRef.current, live: { ...liveOf(configRef.current), enabled: i === 'liveOn' } });
+        u.say(i === 'liveOn' ? u.tr('live.on', { keyword: keyword ?? '' }) : u.tr('live.off'), 'system');
+        return;
+      }
+      case 'pause':
+      case 'resume':
+        if (!liveOf(configRef.current).enabled) return u.say(u.tr('live.notOn'), 'system');
+        livePaused.current = i === 'pause';
+        u.say(u.tr(i === 'pause' ? 'live.paused' : 'live.resumed'), 'system');
+        return;
       case 'undo':
         // Said where a question waited, and no screen took it: the assistant's last action, as anywhere else.
         void session
@@ -953,6 +972,15 @@ export function App() {
         onAiAdmin={me?.isAdmin ? () => setPage('aiAdmin') : undefined}
         onServerAdmin={me?.isAdmin ? () => setPage('serverAdmin') : undefined}
         onNewWords={() => setPage('newWords')}
+        onAssistant={async (o) => {
+          try {
+            await session.call('/api/v1/me', { method: 'PATCH', body: o });
+            setMe(await session.call<Me>('/api/v1/me'));
+            return true;
+          } catch {
+            return false;
+          }
+        }}
         onClose={() => setPage('areas')}
       >
         <HelpKeySetting />

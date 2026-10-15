@@ -10,6 +10,7 @@ import type { AssistiveMode } from '../a11y/assistive.ts';
 import type { Me } from '../identity/account.ts';
 import type { Prefs } from '../state/store.ts';
 import { useUi } from '../ui.tsx';
+import { LiveSettings } from './LiveSettings.tsx';
 
 function Choice<T extends string>(p: { label: string; value: T; options: readonly T[]; text: (v: T) => string; onChange: (v: T) => void }) {
   return (
@@ -62,6 +63,8 @@ export function Settings(p: {
   /** Administrators only: the server's state, the accounts, account invitations. */
   onServerAdmin?: () => void;
   onNewWords: () => void;
+  /** Saves the assistant's name and keyword (the person's, on all their devices). */
+  onAssistant: (o: { assistantName?: string; keyword?: string | null }) => Promise<boolean>;
   onClose: () => void;
   /** Sections that need the session or the native app: the alarm checklist, the help key. */
   children?: ReactNode;
@@ -136,6 +139,7 @@ export function Settings(p: {
         <Choice label={tr('settings.addressForm')} value={p.prefs.addressForm} options={['du', 'Sie'] as const} text={(v) => tr(`settings.addressForm.${v}`)} onChange={(addressForm) => p.onPrefs({ ...p.prefs, addressForm })} />
         <Range label={tr('settings.speechRate')} value={p.prefs.speechRate} min={0.5} max={2} step={0.1} format={(v) => `${v.toFixed(1)}×`} onChange={(speechRate) => p.onPrefs({ ...p.prefs, speechRate })} />
       </Section>
+      <LiveSettings config={p.config} onConfig={p.onConfig} assistant={{ name: p.me?.assistantName ?? null, keyword: p.me?.keyword ?? null, save: p.onAssistant }} />
       {p.onAiAdmin && (
         <Section title={tr('admin.title')}>
           <Button className="button" onPress={p.onAiAdmin}>

@@ -16,6 +16,7 @@ import { areaText } from './AreaScreen.tsx';
 import { customAreaColours, platformPrefs, themeVariables } from '../theme/apply.ts';
 import { resolveTheme } from '../theme/themes.ts';
 import { useUi } from '../ui.tsx';
+import { LiveSettings } from './LiveSettings.tsx';
 
 interface DeviceRow {
   id: string;
@@ -244,6 +245,8 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
             <Range label={tr('settings.borders')} value={draft.visual.borderPx} min={0} max={12} step={1} format={(v) => `${v} px`} onChange={(borderPx) => setVisual({ borderPx })} />
           </section>
 
+          {/* LIVE mode: helpers with device.configure switch it on and off directly (the owner's decision, docs/plan-m2.md). */}
+          <LiveSettings config={draft} onConfig={(c) => setDraft(c)} />
           <section className="settings-section">
             <h2>{tr('config.editor.touch')}</h2>
             <RadioGroup className="choice" value={draft.touch.mode} onChange={(v) => setTouch({ mode: v as DeviceConfig['touch']['mode'] })}>

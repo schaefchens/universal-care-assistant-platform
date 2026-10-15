@@ -58,6 +58,19 @@ describe('contexts', () => {
     expect(act('Später')).toEqual({ kind: 'none' });
   });
 
+  it('LIVE mode is switched and paused by voice, in either language, everywhere', () => {
+    for (const ctx of ['global', 'confirm', 'reminder'] as const) {
+      expect(act('LIVE an', 'de', ctx)).toEqual({ kind: 'command', intent: 'liveOn' });
+      expect(act('Live-Modus aus.', 'de', ctx)).toEqual({ kind: 'command', intent: 'liveOff' });
+      expect(act('Pause', 'de', ctx)).toEqual({ kind: 'command', intent: 'pause' });
+      expect(act('Mach weiter', 'de', ctx)).toEqual({ kind: 'command', intent: 'resume' });
+    }
+    expect(act('Live mode on', 'en')).toEqual({ kind: 'command', intent: 'liveOn' });
+    expect(act('Go on', 'en')).toEqual({ kind: 'command', intent: 'resume' });
+    // Only the whole utterance: talking about a break does not pause anything.
+    expect(act('Wir machen gleich eine Pause')).toEqual({ kind: 'none' });
+  });
+
   it('what works everywhere works in every context', () => {
     for (const ctx of ['global', 'confirm', 'reminder'] as const) {
       expect(act('Wie spät ist es?', 'de', ctx)).toEqual({ kind: 'command', intent: 'time' });

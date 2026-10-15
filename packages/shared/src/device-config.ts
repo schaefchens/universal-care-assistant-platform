@@ -103,14 +103,38 @@ export const VisualConfig = Type.Object({
 });
 export type VisualConfig = Type.Static<typeof VisualConfig>;
 
+const TimeOfDay = Type.String({ pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' });
+
+/**
+ * LIVE mode (docs/plan-m2.md; CONCEPT §19: "a toggleble continous assistance mode"): the microphone stays open and
+ * UCAP speaks by itself. Switched on and off by the person, and directly by helpers with device.configure (the
+ * owner's decision); the keyword is the assistant's name, a setting of the person's own.
+ */
+export const LiveConfig = Type.Object({
+  enabled: Type.Boolean(),
+  /** Seconds the conversation may be quiet before the keyword is needed again. */
+  quietS: Type.Integer({ minimum: 10, maximum: 1800 }),
+  /** When UCAP says nothing by itself, from–to (across midnight too); help requests and reminders marked so excepted. */
+  quietTimes: Type.Array(Type.Object({ from: TimeOfDay, to: TimeOfDay }), { maxItems: 4 }),
+  /** What UCAP says by itself (CONCEPT §19's examples: new messages, and reminders at their time); help requests always. */
+  say: Type.Object({ messages: Type.Boolean(), reminders: Type.Boolean() }),
+});
+export type LiveConfig = Type.Static<typeof LiveConfig>;
+
+export const DEFAULT_LIVE: LiveConfig = { enabled: false, quietS: 180, quietTimes: [], say: { messages: true, reminders: true } };
+
 export const DeviceConfig = Type.Object({
   v: Type.Literal(1),
   home: Type.String(),
   screens: Type.Record(Type.String(), ScreenDef),
   touch: TouchConfig,
   visual: VisualConfig,
+  live: Type.Optional(LiveConfig),
 });
 export type DeviceConfig = Type.Static<typeof DeviceConfig>;
+
+/** A configuration's LIVE part; versions from before M2 have none, and it is off. */
+export const liveOf = (c: DeviceConfig): LiveConfig => c.live ?? DEFAULT_LIVE;
 
 function activityScreen(id: string, titleKey: string): ScreenDef {
   return {
@@ -153,4 +177,5 @@ export const DEFAULT_DEVICE_CONFIG: DeviceConfig = {
   },
   touch: { mode: 'explore', dwellMs: 500, doubleTapMs: 350, holdMs: 1000, ignoreRepeatMs: 0, doubleTapAnywhere: false, haptics: true },
   visual: { theme: 'system', textScale: 1, font: 'atkinson', weight: 600, letterSpacing: 0, borderPx: 3, focusPx: 4, gapPx: 8, reducedMotion: 'system' },
+  live: DEFAULT_LIVE,
 };

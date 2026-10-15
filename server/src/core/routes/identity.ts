@@ -21,6 +21,9 @@ const Device = Type.Object({
   proof: B64,
 });
 
+/** One or two words of letters (German ones too), as a person says a name: up to 30 characters. */
+const ASSISTANT_NAME = "^[A-Za-zÄÖÜäöüßÉéÈèÀàÇç]{2,20}( [A-Za-zÄÖÜäöüßÉéÈèÀàÇç]{2,20})?$";
+
 export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityService; closeDevice: (deviceId: string) => void }) {
   const { identity } = o;
 
@@ -106,6 +109,9 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
           locale: Type.Optional(Type.String({ pattern: '^[a-z]{2}(-[A-Z]{2})?$' })),
           addressForm: Type.Optional(Type.Union([Type.Literal('du'), Type.Literal('Sie')])),
           timezone: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+          // A name to call the assistant by, which is also what wakes it in LIVE mode: one or two words of letters.
+          assistantName: Type.Optional(Type.String({ pattern: ASSISTANT_NAME })),
+          keyword: Type.Optional(Type.Union([Type.Null(), Type.String({ pattern: ASSISTANT_NAME })])),
         }),
       },
     },

@@ -126,6 +126,23 @@ describe('identity and devices', () => {
     expect(sessions).not.toContain(body.token);
   });
 
+  it('keeps the assistant’s name, and a keyword of the person’s own, which can go back to the name (LIVE mode)', async () => {
+    const { r } = await createAccount((await invite()).code, newPhrase(), 'Clara');
+    const token = (r.json() as { token: string }).token;
+    const patch = (payload: Record<string, unknown>) => core.app.inject({ method: 'PATCH', url: '/api/v1/me', payload, headers: { authorization: `Bearer ${token}` } });
+    const me = async () => (await get('/api/v1/me', token)).json() as { assistantName: string | null; keyword: string | null };
+    expect(await me()).toMatchObject({ assistantName: null, keyword: null });
+    expect((await patch({ assistantName: 'Lisa' })).statusCode).toBe(204);
+    expect(await me()).toMatchObject({ assistantName: 'Lisa', keyword: null });
+    expect((await patch({ keyword: 'Hallo Lisa' })).statusCode).toBe(204);
+    expect(await me()).toMatchObject({ assistantName: 'Lisa', keyword: 'Hallo Lisa' });
+    expect((await patch({ keyword: null })).statusCode).toBe(204);
+    expect(await me()).toMatchObject({ assistantName: 'Lisa', keyword: null });
+    // Letters only, one or two words.
+    for (const bad of ['L', '123', 'Lisa!', '<b>Lisa</b>', 'Hallo liebe Lisa', 'x'.repeat(31)]) expect((await patch({ assistantName: bad })).statusCode, bad).toBe(400);
+    expect((await patch({ assistantName: 'Jürgen' })).statusCode).toBe(204);
+  });
+
   it('accepts the spoken code of an invitation instead of the link code', async () => {
     const inv = await invite();
     const { r } = await createAccount(`${inv.spoken!.slice(0, 3)} ${inv.spoken!.slice(3, 6)} ${inv.spoken!.slice(6)}`);
