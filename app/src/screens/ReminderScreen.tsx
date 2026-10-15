@@ -21,6 +21,8 @@ export function ReminderScreen(p: {
   care: CareClient | null;
   /** The question in the person's voice for answers; the device voice when that one cannot speak. */
   ask: (text: string) => void;
+  /** LIVE mode listens: the time is said first, and the answer needs no touch. */
+  live?: boolean;
   onDone: () => void;
   onHelp: () => void;
 }) {
@@ -42,7 +44,7 @@ export function ReminderScreen(p: {
           if (asked.current === `${x.id}:${x.prompts}`) return;
           asked.current = `${x.id}:${x.prompts}`;
           ui.earcons.play('screen');
-          p.ask(question(tr, x));
+          p.ask(question(tr, x, p.live ? new Date() : undefined));
         },
         () => p.onDone(),
       );
@@ -55,7 +57,7 @@ export function ReminderScreen(p: {
       onIntent: (i) => {
         if (!o) return false;
         if (i === 'done' || i === 'later' || i === 'no' || i === 'help') void choose(i);
-        else if (i === 'repeat') p.ask(question(tr, o));
+        else if (i === 'repeat') p.ask(question(tr, o, p.live ? new Date() : undefined));
         else return false;
         return true;
       },

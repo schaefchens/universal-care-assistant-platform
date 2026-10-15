@@ -70,6 +70,7 @@ import { VoiceController, type VoiceState } from './voice/controller.ts';
 import { LiveController, type LiveState } from './voice/live.ts';
 import { nativeLiveCapture } from './voice/live-native.ts';
 import { webLiveCapture } from './voice/live-web.ts';
+import { inQuietTime, NewsAnnouncer } from './voice/news.ts';
 import { micInput } from './voice/mic.ts';
 import { currentVoice } from './voice/screen.ts';
 import { VoiceContext } from './voice/TalkButton.tsx';
@@ -134,6 +135,8 @@ export function App() {
   /** The configuration in use, for long-lived clients (the sync) that outlive a render. */
   const configRef = useRef(config);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
   const [server, setServer] = useState<ServerRef | null>(loadServer);
   const [session, setSession] = useState<Session | null>(() => sessionFor(loadServer()));
   const [me, setMe] = useState<Me | null>(null);
@@ -331,6 +334,8 @@ export function App() {
   sessionRef.current = session;
   const [voiceView, setVoiceView] = useState<{ state: VoiceState; heard: string | null }>({ state: 'idle', heard: null });
   const intentRef = useRef<(i: Intent) => void>(() => {});
+  /** The last change of speech or the screen by voice, for "Rückgängig" right after. */
+  const localUndo = useRef<{ at: number; undo: () => void } | null>(null);
   const voiceRef = useRef<VoiceController | null>(null);
   voiceRef.current ??= new VoiceController({
     session: () => sessionRef.current,
@@ -398,6 +403,32 @@ export function App() {
       },
     },
   );
+
+  // What came in, said by LIVE mode by itself when it may (docs/plan-m2.md, L4), or when asked ("Was gibt's Neues?").
+  const newsRef = useRef<NewsAnnouncer | null>(null);
+  newsRef.current ??= new NewsAnnouncer({
+    now: () => Date.now(),
+    later: (fn, ms) => {
+      const t = setTimeout(fn, ms);
+      return () => clearTimeout(t);
+    },
+    allowed: () => {
+      const live = liveRef.current;
+      const cfg = liveOf(configRef.current);
+      return !!live?.listening && !live.paused && cfg.say.messages && !inQuietTime(cfg.quietTimes, new Date());
+    },
+    free: () => !liveRef.current?.talking && !uiRef.current.speech.speaking && !player.playing,
+    fetch: async (asked) => {
+      const s = sessionRef.current;
+      if (!s) return [];
+      return (await s.call<{ segments: { kind: 'original' | 'summary' | 'system'; text: string; source?: { message: string } }[] }>('/api/v1/assistant/live/news', { method: 'POST', body: { asked, lang: uiRef.current.lang } })).segments;
+    },
+    say: async (seg) => {
+      const u = uiRef.current;
+      return u.sayAndWait(seg.text, 'notice');
+    },
+    heard: (ids) => void sessionRef.current?.call('/api/v1/messaging/messages/heard', { method: 'POST', body: { ids } }).catch(() => {}),
+  });
 
   // On and off with the device's configuration (the person, or a helper with device.configure), the name from the
   // person's account; never while the recovery words are being shown or a leak is being dealt with (Appendix C).
@@ -652,7 +683,55 @@ export function App() {
   intentRef.current = (i) => {
     const u = uiRef.current;
     const title = () => document.querySelector('main h1')?.textContent ?? '';
+    /** A change by voice, read back; "Rückgängig" within two minutes puts it back (docs/plan-m2.md, L5). */
+    const changed = (key: string, undo: () => void) => {
+      localUndo.current = { at: Date.now(), undo };
+      u.say(u.tr(key), 'system');
+    };
     switch (i) {
+      case 'slower':
+      case 'faster': {
+        const was = prefs.speechRate;
+        const rate = Math.round(Math.min(2, Math.max(0.5, was + (i === 'slower' ? -0.15 : 0.15))) * 100) / 100;
+        if (rate === was) return u.say(u.tr(i === 'slower' ? 'look.rate.slowest' : 'look.rate.fastest'), 'system');
+        // Heard at once in the new speed, the readback too.
+        speech.setRate(rate);
+        updatePrefs({ ...prefs, speechRate: rate });
+        return changed(i === 'slower' ? 'look.rate.slower' : 'look.rate.faster', () => {
+          speech.setRate(was);
+          updatePrefs({ ...prefsRef.current, speechRate: was });
+        });
+      }
+      case 'shorter':
+      case 'longer': {
+        const was = meRef.current?.answers ?? 'normal';
+        const next = i === 'shorter' ? (was === 'detailed' ? 'normal' : 'short') : was === 'short' ? 'normal' : 'detailed';
+        if (next === was) return u.say(u.tr(i === 'shorter' ? 'look.answers.shortest' : 'look.answers.longest'), 'system');
+        const save = (answers: 'short' | 'normal' | 'detailed') =>
+          session
+            ?.call('/api/v1/me', { method: 'PATCH', body: { answers } })
+            .then(() => setMe((m) => (m ? { ...m, answers } : m)))
+            .catch(() => u.say(u.tr('error.internal'), 'system'));
+        void save(next);
+        return changed(i === 'shorter' ? 'look.answers.shorter' : 'look.answers.longer', () => void save(was));
+      }
+      case 'biggerText':
+      case 'smallerText': {
+        const before = configRef.current;
+        const scale = Math.round(Math.min(3, Math.max(1, before.visual.textScale + (i === 'biggerText' ? 0.25 : -0.25))) * 100) / 100;
+        if (scale === before.visual.textScale) return u.say(u.tr(i === 'biggerText' ? 'look.text.biggest' : 'look.text.smallest'), 'system');
+        updateConfig({ ...before, visual: { ...before.visual, textScale: scale } });
+        return changed(i === 'biggerText' ? 'look.text.bigger' : 'look.text.smaller', () => updateConfig({ ...configRef.current, visual: { ...configRef.current.visual, textScale: before.visual.textScale } }));
+      }
+      case 'highContrast':
+      case 'normalContrast': {
+        const before = configRef.current;
+        const dark = before.visual.theme === 'dark' || before.visual.theme === 'hc-dark' || (before.visual.theme === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+        const theme = i === 'highContrast' ? (dark ? 'hc-dark' : 'hc-light') : 'system';
+        if (theme === before.visual.theme) return u.say(u.tr(i === 'highContrast' ? 'look.contrast.already' : 'look.contrast.normalAlready'), 'system');
+        updateConfig({ ...before, visual: { ...before.visual, theme } });
+        return changed(i === 'highContrast' ? 'look.contrast.high' : 'look.contrast.normal', () => updateConfig({ ...configRef.current, visual: { ...configRef.current.visual, theme: before.visual.theme } }));
+      }
       case 'help':
         void careRef.current?.press('voice_exact');
         setPage('care');
@@ -694,6 +773,9 @@ export function App() {
         u.say(i === 'liveOn' ? u.tr(has('VoiceCapture') ? 'live.on' : 'live.on.touch', { keyword: keyword ?? '' }) : u.tr('live.off'), 'system');
         return;
       }
+      case 'news':
+        void newsRef.current?.ask();
+        return;
       case 'pause':
       case 'resume':
         if (!liveOf(configRef.current).enabled) return u.say(u.tr('live.notOn'), 'system');
@@ -702,6 +784,12 @@ export function App() {
         u.say(u.tr(i === 'pause' ? 'live.paused' : 'live.resumed'), 'system');
         return;
       case 'undo':
+        // A change of speech or the screen made by voice a moment ago comes first.
+        if (localUndo.current && Date.now() - localUndo.current.at < 120_000) {
+          localUndo.current.undo();
+          localUndo.current = null;
+          return u.say(u.tr('look.undone'), 'system');
+        }
         // Said where a question waited, and no screen took it: the assistant's last action, as anywhere else.
         void session
           ?.call<{ say: string | null }>('/api/v1/assistant/undo', { method: 'POST' })
@@ -784,6 +872,14 @@ export function App() {
     const u = uiRef.current;
     setMessagingRev((n) => n + 1);
     if (type === 'messaging.message' && data.announce === true) {
+      // LIVE mode: said by itself, word for word or summed up, where it may speak (docs/plan-m2.md, L4); paused, in
+      // a quiet time or with messages not to be said, nothing (CONCEPT §19: "its live until disabled/paused").
+      if (liveRef.current?.listening) {
+        const news = newsRef.current!;
+        if (!news.allowed()) return;
+        u.earcons.play('message');
+        return news.arrived();
+      }
       // One announcement per conversation in a burst.
       const conv = String(data.conversationId ?? '');
       if (Date.now() - (announcedAt.current.get(conv) ?? 0) < 20_000) return;
@@ -1001,6 +1097,7 @@ export function App() {
         config={config}
         care={careRef.current}
         ask={(text) => speakVoice(text, 'reminder')}
+        live={liveRef.current?.listening ?? false}
         onDone={() => setPage('areas')}
         onHelp={() => setPage('care')}
       />

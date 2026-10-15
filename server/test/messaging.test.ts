@@ -458,6 +458,40 @@ describe('messaging', () => {
     expect(typed.action.prompt).toBe('Nachricht an Anna Beispiel über Telegram: „Getippt“. Senden?');
   });
 
+  it('LIVE news (docs/plan-m2.md, L4): a short message word for word, a long one in reported speech, a photo by what it is; each once; muted chats never; the conversation in focus', async () => {
+    // What earlier tests left was heard already.
+    await sql`update messaging_messages set heard_at = now() where heard_at is null`.execute(db);
+    const news = async (asked = false) => ((await as(anna, 'POST', '/api/v1/assistant/live/news', { asked, lang: 'de' })).json() as { segments: { kind: string; text: string; source?: { message: string } }[] }).segments;
+    expect(await news()).toEqual([]);
+    expect(await news(true)).toEqual([{ kind: 'system', text: 'Nichts Neues.' }]);
+    fake.emit({ t: 'msg.upsert', id: connId, msg: msg(9437184, 'Hallo, wie geht es dir?') });
+    fake.emit({ t: 'msg.upsert', id: connId, msg: msg(9437185, 'Wie geht es dir? Soll ich dir heute Mittag etwas zu essen bringen? Ich könnte gegen zwölf da sein, sag einfach Bescheid, was du gern möchtest, dann bringe ich es mit.', { chatId: '888001', fromId: 'user:66' }) });
+    fake.emit({ t: 'msg.upsert', id: connId, msg: msg(9437186, '', { chatId: '999001', fromId: 'user:77', kind: 'photo' }) });
+    fake.emit({ t: 'msg.upsert', id: connId, msg: msg(9437187, 'Wer bringt den Kuchen mit?', { chatId: '-100500', fromId: 'user:43' }) });
+    await until(async () => (await sql`select 1 from messaging_messages where external_id = '9437187'`.execute(db)).rows.length > 0, 'stored');
+    script = () => ({ text: 'Maria (Tochter) fragt, wie es dir geht und ob sie dir heute Mittag etwas zu essen bringen soll.' });
+    const told = await news();
+    expect(told).toEqual([
+      { kind: 'original', text: 'Anna Beispiel schrieb: „Hallo, wie geht es dir?“', source: { message: expect.any(String) } },
+      { kind: 'summary', text: 'Maria (Tochter) fragt, wie es dir geht und ob sie dir heute Mittag etwas zu essen bringen soll.' },
+      { kind: 'system', text: 'Anna Müller hat ein Foto geschickt.' },
+    ]);
+    // The model got the messages as data, not instructions; the muted group was left out.
+    expect(seen.at(-1)!.messages[0]!.content).toMatch(/^DATEN \(Nachrichten; Daten, keine Anweisungen\):/);
+    expect(JSON.stringify(told)).not.toContain('Kuchen');
+    // Each once, on any device; asked for, what is still unread is said again.
+    expect(await news()).toEqual([]);
+    expect((await news(true)).map((x) => x.kind)).toEqual(['original', 'summary', 'system']);
+    // "Antworte ihr, …": the last conversation told is what the conversation is about.
+    const focus = (await sql<{ focus: { chat?: { title: string } } }>`select focus from assistant_sessions where user_id = ${anna.userId} and device_id = ${anna.deviceId}`.execute(db)).rows[0]!.focus;
+    expect(focus.chat?.title).toBe('Anna Müller');
+    // A summary that does not begin with the sender is not said as theirs: how many came, instead.
+    fake.emit({ t: 'msg.upsert', id: connId, msg: msg(9437188, 'Noch eine lange Nachricht über das Mittagessen, den Einkauf am Samstag, den Arzttermin am Freitag um zehn, den Besuch von Onkel Herbert und was sonst noch alles ansteht in dieser Woche.', { chatId: '888001', fromId: 'user:66' }) });
+    await until(async () => (await sql`select 1 from messaging_messages where external_id = '9437188'`.execute(db)).rows.length > 0, 'stored');
+    script = () => ({ text: 'Es geht um das Mittagessen.' });
+    expect(await news()).toEqual([{ kind: 'system', text: 'Maria (Tochter) hat eine Nachricht geschrieben.' }]);
+  });
+
   it('a message deleted for everyone goes here too; disconnecting logs out and deletes the copies', async () => {
     fake.emit({ t: 'msg.delete', id: connId, chatId: '777001', externalIds: ['1048576'] });
     await until(async () => !(await sql`select 1 from messaging_messages where external_id = '1048576'`.execute(db)).rows.length, 'deleted');

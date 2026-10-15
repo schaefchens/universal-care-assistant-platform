@@ -86,6 +86,8 @@ export class LiveController {
   private readonly waiting: { wav: Uint8Array<ArrayBuffer>; via: 'keyword' | 'touch' | 'open'; next?: TouchFor }[] = [];
   /** Each start; events of an earlier one are dropped. */
   private run = 0;
+  /** When someone was last heard speaking (the open gate's utterances, the keyword). */
+  private lastHeard = -Infinity;
 
   constructor(capture: LiveCapture, host: LiveHost) {
     this.capture = capture;
@@ -94,6 +96,11 @@ export class LiveController {
 
   get paused(): boolean {
     return this.state === 'paused';
+  }
+
+  /** Someone is talking, or a turn is on its way: UCAP does not start announcing anything now. */
+  get talking(): boolean {
+    return this.busy || this.waiting.length > 0 || this.h.now() - this.lastHeard < 3_000;
   }
 
   /** The settings: on or off, the quiet while, what calls the assistant. Starts or stops listening as needed. */
@@ -196,6 +203,7 @@ export class LiveController {
 
   private onKeyword(wav: Uint8Array<ArrayBuffer> | null) {
     if (this.state !== 'waiting' && this.state !== 'paused' && this.state !== 'open') return;
+    this.lastHeard = this.h.now();
     this.h.hush();
     if (this.state === 'paused') this.set('waiting');
     this.open(this.quietS);
@@ -205,6 +213,7 @@ export class LiveController {
 
   private onUtterance(wav: Uint8Array<ArrayBuffer>) {
     if (this.state !== 'open') return;
+    this.lastHeard = this.h.now();
     const via = this.called ?? 'open';
     const next = this.calledFor;
     this.called = null;
@@ -213,6 +222,7 @@ export class LiveController {
   }
 
   private onSpeech() {
+    if (this.state === 'open') this.lastHeard = this.h.now();
     // Barge-in only with the gate open: with it closed, the television would cut every announcement short.
     if (this.state === 'open' && this.h.speaking()) this.h.hush();
   }

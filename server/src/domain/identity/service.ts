@@ -303,9 +303,9 @@ export function createIdentityService(d: IdentityDeps) {
     },
 
     async me(userId: string, deviceId?: string) {
-      const r = await sql<{ id: string; display_name: string; locale: string; address_form: string; timezone: string; recovery_state: string; is_admin: boolean; public_key: Buffer | null; enrolled_via: string | null; assistant_name: string | null; keyword: string | null }>`
+      const r = await sql<{ id: string; display_name: string; locale: string; address_form: string; timezone: string; recovery_state: string; is_admin: boolean; public_key: Buffer | null; enrolled_via: string | null; assistant_name: string | null; keyword: string | null; answers: string | null }>`
         select u.id, u.display_name, u.locale, u.address_form, u.timezone, u.recovery_state, u.is_admin, k.public_key, dv.enrolled_via,
-          u.settings ->> 'assistantName' as assistant_name, u.settings ->> 'keyword' as keyword
+          u.settings ->> 'assistantName' as assistant_name, u.settings ->> 'keyword' as keyword, u.settings ->> 'answers' as answers
         from users u
         left join identity_keys k on k.user_id = u.id and k.status = 'active'
         left join devices dv on dv.id = ${deviceId ?? null} and dv.user_id = u.id
@@ -327,14 +327,16 @@ export function createIdentityService(d: IdentityDeps) {
         // LIVE mode (docs/plan-m2.md): the assistant's name, and the keyword when the person chose another.
         assistantName: u.assistant_name,
         keyword: u.keyword,
+        answers: (u.answers ?? 'normal') as 'short' | 'normal' | 'detailed',
       };
     },
 
-    async updateMe(userId: string, patch: { displayName?: string; locale?: string; addressForm?: 'du' | 'Sie'; timezone?: string; assistantName?: string; keyword?: string | null }) {
+    async updateMe(userId: string, patch: { displayName?: string; locale?: string; addressForm?: 'du' | 'Sie'; timezone?: string; assistantName?: string; keyword?: string | null; answers?: 'short' | 'normal' | 'detailed' }) {
       await sql`
         update users set display_name = coalesce(${patch.displayName ?? null}, display_name), locale = coalesce(${patch.locale ?? null}, locale),
           address_form = coalesce(${patch.addressForm ?? null}, address_form), timezone = coalesce(${patch.timezone ?? null}, timezone)
         where id = ${userId}`.execute(d.db);
+      if (patch.answers !== undefined) await sql`update users set settings = jsonb_set(settings, '{answers}', ${JSON.stringify(patch.answers)}::jsonb) where id = ${userId}`.execute(d.db);
       // The assistant's name, and a keyword of the person's own (null: the name is the keyword again).
       if (patch.assistantName !== undefined) await sql`update users set settings = jsonb_set(settings, '{assistantName}', ${JSON.stringify(patch.assistantName.trim())}::jsonb) where id = ${userId}`.execute(d.db);
       if (patch.keyword !== undefined) {

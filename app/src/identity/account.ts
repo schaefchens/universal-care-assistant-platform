@@ -172,6 +172,8 @@ export interface Me {
   /** LIVE mode (docs/plan-m2.md): what the person calls the assistant, and a keyword of their own instead of it. */
   assistantName?: string | null;
   keyword?: string | null;
+  /** How long the assistant answers ("Kürzer", "Ausführlicher"). */
+  answers?: 'short' | 'normal' | 'detailed';
 }
 
 /** Whether typed words belong to this account (checked against its public key before anything changes). */

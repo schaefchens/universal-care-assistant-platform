@@ -5,6 +5,7 @@
  * name was heard in its own recordings and wrongly anywhere else (per hour of speech).
  *
  *   node tools/live/bench.ts [--model] [--push] [--sets keyword,nearmiss,speech,other] [--variants words,plain,more]
+ *     [--names Theodor,Mathilda]   (the names the keyword set was made for)
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -48,10 +49,15 @@ const stage = (from: string, to: string) => {
   // The emulator's storage holds little more than one set: the staged copy goes at once.
   execFileSync(ADB, ['shell', 'rm', '-rf', STAGE]);
 };
-if (process.argv.includes('--push')) {
-  runAs('rm', '-rf', 'files/bench');
+// --push copies the sets named (`--push keyword` only that one; the others already there are kept).
+const pushAt = process.argv.indexOf('--push');
+if (pushAt > 0) {
+  const which = process.argv[pushAt + 1] && !process.argv[pushAt + 1]!.startsWith('--') ? process.argv[pushAt + 1]!.split(',') : sets;
   runAs('mkdir', '-p', 'files/bench');
-  for (const s of sets) stage(join(CORPUS, s), `files/bench/${s}`);
+  for (const s of which) {
+    runAs('rm', '-rf', `files/bench/${s}`);
+    stage(join(CORPUS, s), `files/bench/${s}`);
+  }
 }
 if (process.argv.includes('--model')) {
   runAs('rm', '-rf', 'files/bench-model');

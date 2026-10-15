@@ -15,8 +15,12 @@ export const titleOf = (tr: Tr, o: { title: string; category: Category }) => o.t
 export const promptOf = (tr: Tr, o: { prompt: string; category: Category }) => o.prompt.trim() || tr(`reminder.defaultPrompt.${o.category}`);
 
 /** "Erinnerung: Trinken. Hast du etwas getrunken?", and "Noch einmal: …" for a repeated prompt. */
-export const question = (tr: Tr, o: { title: string; prompt: string; category: Category; prompts: number }) =>
-  `${tr(o.prompts > 1 ? 'reminder.again' : 'reminder.announce', { title: titleOf(tr, o) })} ${promptOf(tr, o)}`;
+/**
+ * The question; `now`: LIVE mode says the time first, as someone sitting beside the person would (CONCEPT §19: "Its 8
+ * o clock, its time for your blood pressure medication").
+ */
+export const question = (tr: Tr, o: { title: string; prompt: string; category: Category; prompts: number }, now?: Date) =>
+  `${now && o.prompts <= 1 ? `${tr('reminder.at', { time: now })} ` : ''}${tr(o.prompts > 1 ? 'reminder.again' : 'reminder.announce', { title: titleOf(tr, o) })} ${promptOf(tr, o)}`;
 
 /** The word for "done" in this kind of reminder: getrunken, gegessen, eingenommen … */
 export const doneWord = (tr: Tr, c: Category) => tr(`reminder.doneWord.${c}`);

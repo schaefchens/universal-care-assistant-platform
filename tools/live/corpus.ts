@@ -10,7 +10,7 @@
  * - nearmiss/: sentences with words close to the names ("Lies mir das vor", "Pause", "Hannes" …);
  * - noise/: synthetic music, pink noise, a quiet room.
  *
- *   node tools/live/corpus.ts [outDir] [--only other,live]
+ *   node tools/live/corpus.ts [outDir] [--only other,live] [--names Theodor,Mathilda]
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,7 +23,9 @@ const onlyAt = process.argv.indexOf('--only');
 const ONLY = onlyAt > 0 ? new Set(process.argv[onlyAt + 1]!.split(',')) : null;
 const want = (set: string) => !ONLY || ONLY.has(set);
 const RATE = 16_000;
-export const NAMES = ['Lisa', 'Paul', 'Emma', 'Konrad', 'Hanna'];
+/** The candidate names (`--names` measures others: then the keyword set is theirs). */
+const namesAt = process.argv.indexOf('--names');
+export const NAMES = namesAt > 0 ? process.argv[namesAt + 1]!.split(',') : ['Lisa', 'Paul', 'Emma', 'Konrad', 'Hanna'];
 const VOICES = ['Anna', 'Eddy', 'Flo', 'Grandma', 'Grandpa', 'Reed', 'Rocko', 'Sandy', 'Shelley'].map((v) => (v === 'Anna' ? v : `${v} (German (Germany))`));
 const LONG_VOICES = ['Anna', 'Grandpa (German (Germany))'];
 const NEAR_VOICES = ['Anna', 'Flo (German (Germany))', 'Grandpa (German (Germany))'];

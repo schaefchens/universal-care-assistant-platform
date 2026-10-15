@@ -112,6 +112,8 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
           // A name to call the assistant by, which is also what wakes it in LIVE mode: one or two words of letters.
           assistantName: Type.Optional(Type.String({ pattern: ASSISTANT_NAME })),
           keyword: Type.Optional(Type.Union([Type.Null(), Type.String({ pattern: ASSISTANT_NAME })])),
+          // How long the assistant answers ("Kürzer", "Ausführlicher": docs/plan-m2.md, L5).
+          answers: Type.Optional(Type.Union([Type.Literal('short'), Type.Literal('normal'), Type.Literal('detailed')])),
         }),
       },
     },

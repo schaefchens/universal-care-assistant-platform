@@ -10,8 +10,12 @@ import type { Session } from '../identity/account.ts';
 import { VoiceCapture } from '../native/plugins.ts';
 import type { CaptureEvents, LiveCapture } from './live.ts';
 
-/** How sure the spotter must be of the keyword (docs/spikes/m2.md). */
-export const KEYWORD_THRESHOLD = 0.5;
+/**
+ * How sure the spotter must be of the keyword, and how many ordinary words stand beside it in its grammar (docs/spikes/
+ * m2.md: at 0.6 with 1000 words "Hanna" was heard in 42 of 45 recordings and woke nobody in an hour of speech).
+ */
+export const KEYWORD_THRESHOLD = 0.6;
+export const GRAMMAR_WORDS = 1000;
 
 const fromBase64 = (b64: string): Uint8Array<ArrayBuffer> => {
   const s = atob(b64);
@@ -66,7 +70,7 @@ export function nativeLiveCapture(o: { session: () => Session | null; lang: () =
         }),
       ]);
       const { title, text } = o.notice();
-      const grammar = words.length ? keywordGrammar(words[0]!, Object.values(CATALOGS.de)) : [];
+      const grammar = words.length ? keywordGrammar(words[0]!, Object.values(CATALOGS.de), { words: GRAMMAR_WORDS }) : [];
       try {
         await VoiceCapture.start({ keywords: words, grammar, model: path, threshold: KEYWORD_THRESHOLD, title, text });
       } catch (e) {

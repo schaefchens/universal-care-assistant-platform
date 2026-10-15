@@ -82,6 +82,20 @@ describe('the assistant', () => {
     seen.length = 0;
   });
 
+  it('"Kürzer" and "Ausführlicher" set how long the assistant answers, for the person (L5)', async () => {
+    script = () => reply('Gut.');
+    const patch = (answers: string) => core.app.inject({ method: 'PATCH', url: '/api/v1/me', headers: { authorization: `Bearer ${bernd.token}` }, payload: { answers } });
+    expect((await patch('short')).statusCode).toBe(204);
+    await turn(bernd, 'Wie geht es dir?');
+    expect(seen.at(-1)!.system).toContain('einfach und kurz: ein kurzer Satz,');
+    expect((await core.app.inject({ method: 'GET', url: '/api/v1/me', headers: { authorization: `Bearer ${bernd.token}` } })).json()).toMatchObject({ answers: 'short' });
+    await patch('detailed');
+    await turn(bernd, 'Wie geht es dir?');
+    expect(seen.at(-1)!.system).toContain('einfach und kurz: bis zu sechs Sätze,');
+    expect((await patch('endless')).statusCode).toBe(400);
+    await patch('normal');
+  });
+
   describe('LIVE mode (docs/plan-m2.md)', () => {
     const live = async (a: Account, text: string, via: 'open' | 'keyword' = 'open', context = 'global') => {
       const r = await assistant.app.inject({

@@ -20,7 +20,7 @@ export type CommandLang = 'de' | 'en';
  */
 export type CommandContext = 'global' | 'confirm' | 'reminder' | 'dictation' | 'reply';
 
-export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo' | 'liveOn' | 'liveOff' | 'pause' | 'resume';
+export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo' | 'liveOn' | 'liveOff' | 'pause' | 'resume' | 'news' | 'slower' | 'faster' | 'shorter' | 'longer' | 'biggerText' | 'smallerText' | 'highContrast' | 'normalContrast';
 
 export type Match = { kind: 'command'; intent: Intent } | { kind: 'ask'; reason: 'help_word' | 'help_near' } | { kind: 'none' };
 
@@ -57,6 +57,17 @@ const GLOBAL: Record<CommandLang, Table> = {
     liveOff: ['LIVE aus', 'LIVE-Modus aus', 'LIVE ausschalten', 'LIVE-Modus ausschalten'],
     pause: ['Pause', 'Mach Pause', 'Mach mal Pause'],
     resume: ['Weiter', 'Mach weiter', 'Hör wieder zu'],
+    // What came in since (docs/plan-m2.md, L4: "Was gibt's Neues?").
+    news: ["Was gibt's Neues?", 'Was gibt es Neues?', "Gibt's was Neues?", 'Gibt es was Neues?', 'Gibt es etwas Neues?', 'Neuigkeiten'],
+    // Speech and the screen by voice (docs/plan-m2.md, L5; CONCEPT §6: "Mach die Schrift größer"), read back with undo.
+    slower: ['Langsamer', 'Sprich langsamer', 'Bitte langsamer'],
+    faster: ['Schneller', 'Sprich schneller', 'Bitte schneller'],
+    shorter: ['Kürzer', 'Antworte kürzer', 'Fass dich kürzer'],
+    longer: ['Ausführlicher', 'Antworte ausführlicher', 'Mehr Einzelheiten'],
+    biggerText: ['Mach die Schrift größer', 'Schrift größer', 'Größere Schrift'],
+    smallerText: ['Mach die Schrift kleiner', 'Schrift kleiner', 'Kleinere Schrift'],
+    highContrast: ['Hoher Kontrast', 'Mehr Kontrast', 'Kontrast an', 'Mach den Kontrast höher'],
+    normalContrast: ['Normaler Kontrast', 'Kontrast normal', 'Kontrast aus'],
   },
   en: {
     stop: ['Stop', 'Cancel', 'Enough', 'Quiet'],
@@ -73,6 +84,15 @@ const GLOBAL: Record<CommandLang, Table> = {
     liveOff: ['LIVE off', 'LIVE mode off', 'Turn LIVE off'],
     pause: ['Pause', 'Take a break'],
     resume: ['Resume', 'Continue', 'Go on', 'Listen again'],
+    news: ["What's new?", 'What is new?', 'Any news?', 'Anything new?'],
+    slower: ['Slower', 'Speak slower'],
+    faster: ['Faster', 'Speak faster'],
+    shorter: ['Shorter', 'Be brief', 'Shorter answers'],
+    longer: ['More detail', 'Longer answers'],
+    biggerText: ['Bigger text', 'Make the text bigger', 'Larger text'],
+    smallerText: ['Smaller text', 'Make the text smaller'],
+    highContrast: ['High contrast', 'More contrast'],
+    normalContrast: ['Normal contrast'],
   },
 };
 

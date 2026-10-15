@@ -594,6 +594,29 @@ export function createMessaging(d: {
       return some.length || !person?.trim() ? some : latest();
     },
 
+    /**
+     * LIVE mode's news (docs/plan-m2.md, L4): incoming messages of the last day not read or heard yet, in
+     * conversations neither muted nor channels, oldest first; those announced already only when asked for.
+     */
+    async pending(userId: string, o: { announced?: boolean; limit?: number } = {}): Promise<Item[]> {
+      const since = new Date(d.clock() - 24 * 3_600_000);
+      return items(
+        userId,
+        sql`m.direction = 'in' and m.read_at is null and m.heard_at is null ${o.announced ? sql`` : sql`and m.live_announced_at is null`} and v.kind <> 'channel' and not v.muted and m.sent_at > ${since}`,
+        sql`m.sent_at, m.sort_key`,
+        o.limit ?? 30,
+      );
+    },
+
+    /** Announced by LIVE mode: never again by itself. */
+    async announced(userId: string, ids: string[]): Promise<void> {
+      if (!ids.length) return;
+      await sql`
+        update messaging_messages m set live_announced_at = ${now()}
+        from messaging_conversations v join messaging_connections k on k.id = v.connection_id
+        where m.conversation_id = v.id and k.user_id = ${userId} and m.id in (${sql.join(ids)})`.execute(d.db);
+    },
+
     /** Messages across all conversations, newest last: those not read yet, or the latest. */
     async everywhere(userId: string, o: { unreadOnly: boolean; limit?: number }): Promise<Item[]> {
       const limit = Math.min(Math.max(o.limit ?? 20, 1), 50);

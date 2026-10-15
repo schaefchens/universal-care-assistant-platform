@@ -71,6 +71,19 @@ describe('contexts', () => {
     expect(act('Später')).toEqual({ kind: 'none' });
   });
 
+  it('"Was gibt\'s Neues?" asks for what came in, in either language', () => {
+    for (const t of ["Was gibt's Neues?", 'Was gibt es Neues', 'Gibt es was Neues?', 'Neuigkeiten']) expect(act(t)).toEqual({ kind: 'command', intent: 'news' });
+    for (const t of ["What's new?", 'Any news?']) expect(act(t, 'en')).toEqual({ kind: 'command', intent: 'news' });
+  });
+
+  it('speech and the screen by voice: slower, shorter, bigger text, high contrast (L5)', () => {
+    const de: [string, string][] = [['Langsamer', 'slower'], ['Sprich schneller', 'faster'], ['Kürzer', 'shorter'], ['Ausführlicher', 'longer'], ['Mach die Schrift größer', 'biggerText'], ['Schrift kleiner', 'smallerText'], ['Hoher Kontrast', 'highContrast'], ['Normaler Kontrast', 'normalContrast']];
+    for (const [t, intent] of de) expect(act(t), t).toEqual({ kind: 'command', intent });
+    expect(act('Bigger text', 'en')).toEqual({ kind: 'command', intent: 'biggerText' });
+    // Whole utterances only: a sentence about contrast is for the assistant.
+    expect(act('Der Kontrast auf dem Foto ist hoch')).toEqual({ kind: 'none' });
+  });
+
   it('LIVE mode is switched and paused by voice, in either language, everywhere', () => {
     for (const ctx of ['global', 'confirm', 'reminder'] as const) {
       expect(act('LIVE an', 'de', ctx)).toEqual({ kind: 'command', intent: 'liveOn' });

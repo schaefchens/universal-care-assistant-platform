@@ -20,7 +20,7 @@ import type { Db } from '../lib/db.ts';
 import { CONVERSATION_MS } from '../lib/retention.ts';
 import { CAPTIONED, type Messaging } from '../messaging/service.ts';
 import type { Actions } from './actions.ts';
-import { dataBlock, systemPrompt } from './prompt.ts';
+import { type Answers, dataBlock, systemPrompt } from './prompt.ts';
 import { toolsFor } from './registry.ts';
 import { type Focus, type ToolContext, ToolError } from './tools.ts';
 
@@ -49,10 +49,11 @@ const ABOUT_HELP = /\b(hilfe|helfer|helferin|jemand|niemand|keiner|help|helper|s
 export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Actions; notes: Notes; reminders: ReminderService; messaging?: Messaging; log: (m: string) => void }) {
 
   async function person(userId: string) {
-    const r = await sql<{ display_name: string; locale: string; address_form: AddressForm; timezone: string }>`
-      select display_name, locale, address_form, timezone from users where id = ${userId}`.execute(d.db);
+    const r = await sql<{ display_name: string; locale: string; address_form: AddressForm; timezone: string; answers: string | null }>`
+      select display_name, locale, address_form, timezone, settings ->> 'answers' as answers from users where id = ${userId}`.execute(d.db);
     const x = r.rows[0]!;
-    return { name: x.display_name, lang: (x.locale === 'en' ? 'en' : 'de') as Lang, form: x.address_form, timezone: isTimeZone(x.timezone) ? x.timezone : 'Europe/Berlin' };
+    const answers: Answers = x.answers === 'short' || x.answers === 'detailed' ? x.answers : 'normal';
+    return { name: x.display_name, lang: (x.locale === 'en' ? 'en' : 'de') as Lang, form: x.address_form, timezone: isTimeZone(x.timezone) ? x.timezone : 'Europe/Berlin', answers };
   }
 
   async function helperNames(userId: string): Promise<string[]> {
@@ -199,7 +200,7 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
               streaming = streaming.then(() => speak(item));
             }
           };
-          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: messaging !== undefined, live: o.live !== undefined });
+          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: messaging !== undefined, live: o.live !== undefined, answers: who.answers });
           const r = await d.llm.complete(o.userId, pick.provider, pick.adapter, { system, messages, schema, signal: o.signal, onText });
           await streaming;
           const reply = parseReply(r.text);

@@ -25,11 +25,19 @@ function liveLines(lang: Lang, name: string): string {
   return `\nLIVE-Modus: Das Mikrofon von UCAP bleibt offen, während du mit ${name} sprichst, und hört den ganzen Raum. Das hier wurde ohne deinen Namen gehört. Entscheide zuerst "addressed": true nur, wenn ${name} es eindeutig zu dir sagt (es schließt an euer Gespräch an, oder es fragt oder bittet um etwas, das UCAP tun kann). Gespräche mit anderen Menschen, Fernsehen, Radio oder Musik und alles Unklare: false, dann "calls" und "say" leer und "help" false. Im Zweifel: false.`;
 }
 
-export function systemPrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean; live?: boolean }): string {
+/** How long an answer is, as the person asked ("Kürzer", "Ausführlicher": docs/plan-m2.md, L5). */
+export type Answers = 'short' | 'normal' | 'detailed';
+const LENGTH: Record<Lang, Record<Answers, string>> = {
+  de: { short: 'ein kurzer Satz', normal: 'ein bis drei kurze Sätze', detailed: 'bis zu sechs Sätze' },
+  en: { short: 'one short sentence', normal: 'one to three short sentences', detailed: 'up to six sentences' },
+};
+
+export function systemPrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean; live?: boolean; answers?: Answers }): string {
   return basePrompt(o) + (o.live ? liveLines(o.lang, o.name) : '');
 }
 
-function basePrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean }): string {
+function basePrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean; answers?: Answers }): string {
+  const length = LENGTH[o.lang][o.answers ?? 'normal'];
   const focus = [
     o.focus.note && `note "${o.focus.note.title}" (note:${o.focus.note.id})`,
     o.focus.reminder && `reminder "${o.focus.reminder.title}" (reminder:${o.focus.reminder.id})`,
@@ -39,7 +47,7 @@ function basePrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; 
     .join('; ');
   if (o.lang === 'en')
     return `You are the assistant in UCAP, talking with ${o.name}. ${o.name} uses UCAP by voice and large touch areas, often without looking at the screen, and hears your answers.
-Speak plainly and briefly: one to three short sentences, no lists, no emoji, no abbreviations. Answer in English.
+Speak plainly and briefly: ${length}, no lists, no emoji, no abbreviations. Answer in English.
 It is now ${now('en', o.at, o.timezone)} (${o.timezone}).
 
 Always answer as JSON in the schema, in this order:
@@ -64,7 +72,7 @@ You cannot read or send messages here (no messaging service is connected), buy a
 In this conversation: ${focus || 'nothing yet'}.`;
   const du = o.form === 'du';
   return `Du bist der Assistent in UCAP und sprichst mit ${o.name}. ${o.name} bedient UCAP mit der Stimme und großen Feldern, oft ohne auf den Bildschirm zu sehen, und hört deine Antworten.
-Sprich ${du ? `${o.name} immer mit „du“ an, nie mit „Sie“` : `${o.name} immer mit „Sie“ an, nie mit „du“`}, einfach und kurz: ein bis drei kurze Sätze, keine Listen, keine Emojis, keine Abkürzungen. Antworte auf Deutsch.
+Sprich ${du ? `${o.name} immer mit „du“ an, nie mit „Sie“` : `${o.name} immer mit „Sie“ an, nie mit „du“`}, einfach und kurz: ${length}, keine Listen, keine Emojis, keine Abkürzungen. Antworte auf Deutsch.
 Jetzt ist ${now('de', o.at, o.timezone)} (${o.timezone}).
 
 Antworte immer als JSON nach dem Schema, in dieser Reihenfolge:
