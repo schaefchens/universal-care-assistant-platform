@@ -503,6 +503,19 @@ then they stay as built, and nothing here is frozen.
   arrival are therefore still to be seen on a real account (the owner's own login, through the app). The suite now
   logs in from wherever a stored session stopped, stops at a refusal with Telegram's code, and draws its own numbers.
   The MTProto keys and server addresses from my.telegram.org are not needed: TDLib has them built in.
+- **The owner's own account (2026-10-15)**, logged in on the emulator through the app, on Telegram's real servers (the
+  api_id and api_hash stored on the dev server as the admin page stores them): 62 conversations, 9 active in the last
+  30 days. Found and fixed:
+  - **The history came one message at a time.** The backfill made one `getChatHistory` call per chat, and TDLib's first
+    answer held the newest message alone: 9 messages for 9 chats. It now asks again from the oldest message until it
+    has 50: 401 messages, and the voice messages among them (45 under the 5 MB limit) transcribed by the Mac's whisper
+    in the background.
+  - **A restart of the connectors ended every connection.** Stopping, they close their TDLib clients; TDLib reports
+    each as closed, and the assistant took that for an ended connection, to wait for the person's "Neu verbinden". A
+    close while the process stops is no longer passed on: after `docker compose restart connectors` the owner's
+    connection came back by itself.
+  - **TDLib's own error lines quote content** (a link in a message's preview, at level 1, the plan's "TDLib verbosity
+    ≤ 1"): it now logs fatal errors only (level 0), and the container was made again, which dropped the old log.
 - **With the stand-in, on the emulator:** login by phone, a wrong code ("Der Code stimmt nicht."), the password with
   its hint, "Verbunden als …"; on the home screen "Neue Nachricht von Anna Beispiel."; the messages screen ("Nachrichten.
   Eine neue Nachricht." and the message framed); a voice message fetched, transcribed by whisper word for word, played

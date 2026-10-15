@@ -260,11 +260,28 @@ export class TelegramConnection {
     }
   }
 
+  /**
+   * Up to `limit` of a chat's newest messages. TDLib answers getChatHistory with what it has at hand, on a first call
+   * often the newest message alone ("the number of returned messages is chosen by TDLib"), so it is asked again from
+   * the oldest message so far, until there are enough or the chat has no older ones. With offset 0 an answer starts at
+   * that message itself: seen ones are skipped.
+   */
   async history(chatId: string, limit: number) {
-    const r = (await this.o.client.invoke({ _: 'getChatHistory', chat_id: Number(chatId), from_message_id: 0, offset: 0, limit, only_local: false }).catch(() => null)) as { messages?: TdMessage[] } | null;
-    for (const raw of r?.messages ?? []) {
-      const m = message(raw, this.o.lang);
-      if (m) this.emit({ t: 'msg.upsert', id: this.o.id, msg: m });
+    const seen = new Set<number>();
+    let from = 0;
+    for (let round = 0; round < 20 && seen.size < limit; round++) {
+      const r = (await this.o.client
+        .invoke({ _: 'getChatHistory', chat_id: Number(chatId), from_message_id: from, offset: 0, limit: Math.min(100, limit - seen.size + (from ? 1 : 0)), only_local: false })
+        .catch(() => null)) as { messages?: TdMessage[] } | null;
+      const fresh = (r?.messages ?? []).filter((x) => !seen.has(x.id));
+      if (!fresh.length) return;
+      for (const raw of fresh) {
+        if (seen.size >= limit) return;
+        seen.add(raw.id);
+        const m = message(raw, this.o.lang);
+        if (m) this.emit({ t: 'msg.upsert', id: this.o.id, msg: m });
+      }
+      from = fresh.at(-1)!.id;
     }
   }
 

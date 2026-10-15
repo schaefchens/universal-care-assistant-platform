@@ -164,8 +164,32 @@ describe('a Telegram connection', () => {
     td.push({ _: 'updateAuthorizationState', authorization_state: { _: 'authorizationStateReady' } });
     await tick();
     await tick();
-    const histories = td.calls.filter((c) => c._ === 'getChatHistory').map((c) => c.chat_id);
-    expect(histories).toEqual([1]);
+    const histories = new Set(td.calls.filter((c) => c._ === 'getChatHistory').map((c) => c.chat_id));
+    expect([...histories]).toEqual([1]);
+    await conn.stop();
+  });
+
+  it('asks for a chat’s history again from its oldest message until it has enough (TDLib first answers with what it has at hand)', async () => {
+    const { td, events, conn } = setup();
+    // 120 messages, ids 1 to 120: the first answer holds the newest alone, the next ones up to 20, starting at the
+    // message asked from (offset 0), as TDLib does.
+    td.answer = (q) => {
+      if (q._ !== 'getChatHistory') return { _: 'ok' };
+      const from = Number(q.from_message_id);
+      const ids: number[] = [];
+      for (let id = from === 0 ? 120 : from; id >= 1 && ids.length < (from === 0 ? 1 : 20); id--) ids.push(id);
+      return { messages: ids.map((id) => text(id, `m${id}`)) };
+    };
+    await conn.history('777001', 50);
+    const got = events.filter((e) => e.t === 'msg.upsert').map((e) => Number((e as Extract<FromConnectors, { t: 'msg.upsert' }>).msg.externalId));
+    expect(got).toHaveLength(50);
+    expect(new Set(got).size).toBe(50);
+    expect([Math.max(...got), Math.min(...got)]).toEqual([120, 71]);
+    // A short chat ends where it starts.
+    td.answer = (q) => (q._ === 'getChatHistory' ? { messages: Number(q.from_message_id) === 0 ? [text(2, 'b')] : Number(q.from_message_id) === 2 ? [text(2, 'b'), text(1, 'a')] : [text(1, 'a')] } : { _: 'ok' });
+    events.length = 0;
+    await conn.history('777001', 50);
+    expect(events.filter((e) => e.t === 'msg.upsert')).toHaveLength(2);
     await conn.stop();
   });
 });

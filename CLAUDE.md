@@ -80,8 +80,13 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - A WebSocket client may close with 1000 or 3000–4999 only: `close(1001)` throws (it crashed the connectors' shutdown).
 - Develop and try the app's messaging with `tools/dev/fake-telegram.ts`; real logins need the owner's api_id/api_hash
   (in `.secrets` as TELEGRAM_APP_ID / TELEGRAM_APP_HASH; on a server they go in on the admin page).
-- TDLib's log from verbosity 3 contains the api_hash (setTdlibParameters) and login codes: keep it at 1, and delete
-  any diagnostic log at once. Telegram's test servers refused their documented code on 2026-10-15 (decisions.md S10).
+- TDLib's log quotes content: from level 1 (errors) a link in a message's preview, from level 3 the api_hash
+  (setTdlibParameters) and login codes. It runs at 0 (fatal only); delete any diagnostic log at once. Telegram's test
+  servers refused their documented code on 2026-10-15 (decisions.md S10).
+- `getChatHistory` answers with what TDLib has at hand, on a first call often the newest message alone: ask again from
+  the oldest one until there are enough (offset 0 repeats that message).
+- On SIGTERM the connectors close their TDLib clients, and TDLib reports each as closed: not passed on while stopping,
+  or the assistant would leave every connection ended after a restart.
 
 **Capacitor and Android**
 - Never `await` or return a Capacitor plugin object (it is a Proxy that answers `then`).

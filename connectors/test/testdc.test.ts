@@ -64,7 +64,7 @@ function account(name: string) {
 
 describe.skipIf(!on)('Telegram test servers (opt-in)', () => {
   it('two test accounts log in; one writes, Telegram confirms the send, the other receives it', { timeout: 180_000 }, async () => {
-    tdl.configure({ tdjson: getTdjson(), verbosityLevel: 1 });
+    tdl.configure({ tdjson: getTdjson(), verbosityLevel: 0 });
     const PHONES = phones();
     const [a, b] = [account('a'), account('b')];
     /** Logs in from wherever the stored session's login stopped, one state (or refusal) Telegram reports at a time. */

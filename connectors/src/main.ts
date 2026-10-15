@@ -41,7 +41,8 @@ function secret(name: string): string {
 }
 const token = secret('connectors_token');
 
-tdl.configure({ tdjson: getTdjson(), verbosityLevel: 1 });
+// Fatal errors only: from level 1 (errors) TDLib quotes what it was handling, a link in a message's preview for one.
+tdl.configure({ tdjson: getTdjson(), verbosityLevel: 0 });
 
 const conns = new Map<string, TelegramConnection>();
 const pending: string[] = [];
@@ -53,6 +54,9 @@ let stopping = false;
 function emit(e: FromConnectors) {
   // A connection that closed (logged out, or its client ended) is gone from here.
   if (e.t === 'conn.state' && (e.state === 'closed' || e.state === 'logged_out')) conns.delete(e.id);
+  // Closed because this process is stopping (a restart, an update): not ended. The assistant keeps it as it was and
+  // starts it again when the process is back; told "closed", it would wait for the person to connect again.
+  if (stopping && e.t === 'conn.state' && e.state === 'closed') return;
   const frame = JSON.stringify(e);
   if (ws && ready && ws.readyState === WebSocket.OPEN) {
     ws.send(frame);
