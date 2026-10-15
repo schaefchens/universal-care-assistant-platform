@@ -15,6 +15,7 @@ import { buildAssistant } from '../src/assistant/app.ts';
 import { buildCore } from '../src/core/app.ts';
 import type { Db } from '../src/lib/db.ts';
 import { type Account, accountClient } from './accounts.ts';
+import { FakeConnectors, until } from './fake-connectors.ts';
 import { fakeClock, SECRETS, testConfig, testDb } from './helpers.ts';
 
 type Msg = { role: string; content: string };
@@ -22,42 +23,6 @@ type Script = (req: { system: string; messages: Msg[]; format: unknown }) => Rec
 
 const HASH = '0123456789abcdef0123456789abcdef';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function until<T>(fn: () => Promise<T | null | undefined | false> | T | null | undefined | false, what = 'condition', ms = 3000): Promise<T> {
-  const end = Date.now() + ms;
-  for (;;) {
-    const v = await fn();
-    if (v) return v as T;
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
-    await sleep(15);
-  }
-}
-
-/** The connectors process as the assistant sees it: a WebSocket that says hello with the token. */
-class FakeConnectors {
-  ws: WebSocket | null = null;
-  readonly got: ToConnectors[] = [];
-  closedWith: number | null = null;
-  async connect(url: string, token: string, running: string[] = []) {
-    const ws = new WebSocket(url);
-    this.ws = ws;
-    ws.onmessage = (m) => this.got.push(JSON.parse(String(m.data)) as ToConnectors);
-    ws.onclose = (e) => (this.closedWith = e.code);
-    await new Promise<void>((resolve, reject) => {
-      ws.onopen = () => resolve();
-      ws.onerror = () => reject(new Error('ws error'));
-    });
-    ws.send(JSON.stringify({ t: 'hello', token, version: 'test', running }));
-  }
-  emit(e: FromConnectors) {
-    this.ws!.send(JSON.stringify(e));
-  }
-  async next<T extends ToConnectors['t']>(t: T, from = 0): Promise<Extract<ToConnectors, { t: T }>> {
-    return until(() => this.got.slice(from).find((c) => c.t === t) as Extract<ToConnectors, { t: T }> | undefined, `command ${t}`);
-  }
-  close() {
-    this.ws?.close();
-  }
-}
 
 describe('messaging', () => {
   let db: Db;
@@ -166,7 +131,7 @@ describe('messaging', () => {
   });
 
   it("needs the operator's Telegram credentials, set by an admin; the api_hash is never shown", async () => {
-    expect((await as(anna, 'POST', '/api/v1/messaging/connection')).json()).toEqual({ error: { code: 'conflict', params: { reason: 'telegram_not_configured' } } });
+    expect((await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'telegram' })).json()).toEqual({ error: { code: 'conflict', params: { reason: 'telegram_not_configured' } } });
     expect((await as(anna, 'PUT', '/api/v1/ai-admin/telegram', { apiId: 1, apiHash: HASH, testDc: true })).statusCode).toBe(403);
     expect((await as(bernd, 'PUT', '/api/v1/ai-admin/telegram', { apiId: 12345, apiHash: 'zz', testDc: true })).statusCode).toBe(400);
     const r = await as(bernd, 'PUT', '/api/v1/ai-admin/telegram', { apiId: 12345, apiHash: HASH, testDc: true });
@@ -179,26 +144,26 @@ describe('messaging', () => {
   });
 
   it("logs in on the person's device: phone, code (where it went), a wrong code, the password; secrets only in `start`", async () => {
-    const r = await as(anna, 'POST', '/api/v1/messaging/connection');
+    const r = await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'telegram' });
     expect(r.statusCode).toBe(200);
     connId = (r.json() as { connection: { id: string } }).connection.id;
-    const start = await fake.next('start');
+    const start = (await fake.next('start')) as Extract<ToConnectors, { t: 'start'; service: 'telegram' }>;
     expect(start).toMatchObject({ id: connId, service: 'telegram', apiId: 12345, apiHash: HASH, testDc: true, dir: connId, lang: 'de' });
     expect(Buffer.from(start.dbKey, 'base64')).toHaveLength(32);
-    const state = async () => ((await as(anna, 'GET', '/api/v1/messaging/connection')).json() as { connection: { state: string; detail: Record<string, unknown>; me: { name: string } | null } }).connection;
+    const state = async () => ((await as(anna, 'GET', '/api/v1/messaging/connections')).json() as { connections: { id: string; state: string; detail: Record<string, unknown>; me: { name: string } | null }[] }).connections.find((c) => c.id === connId)!;
 
     fake.emit({ t: 'conn.state', id: connId, state: 'wait_phone' });
     await until(async () => (await state()).state === 'wait_phone', 'wait_phone');
-    expect((await as(anna, 'POST', '/api/v1/messaging/connection/login', { step: 'code', value: '12345' })).json()).toMatchObject({ error: { code: 'conflict' } });
+    expect((await as(anna, 'POST', `/api/v1/messaging/connections/${connId}/login`, { step: 'code', value: '12345' })).json()).toMatchObject({ error: { code: 'conflict' } });
     const n = fake.got.length;
-    await as(anna, 'POST', '/api/v1/messaging/connection/login', { step: 'phone', value: '+49 170 1234567' });
+    await as(anna, 'POST', `/api/v1/messaging/connections/${connId}/login`, { step: 'phone', value: '+49 170 1234567' });
     expect(await fake.next('login', n)).toEqual({ t: 'login', id: connId, step: 'phone', value: '+491701234567' });
 
     fake.emit({ t: 'conn.state', id: connId, state: 'wait_code', code: { via: 'telegram', length: 5, next: 'sms' } });
     await until(async () => (await state()).state === 'wait_code', 'wait_code');
     expect((await state()).detail).toEqual({ code: { via: 'telegram', length: 5, next: 'sms' } });
     const m = fake.got.length;
-    await as(anna, 'POST', '/api/v1/messaging/connection/login', { step: 'code', value: '12 345' });
+    await as(anna, 'POST', `/api/v1/messaging/connections/${connId}/login`, { step: 'code', value: '12 345' });
     expect(await fake.next('login', m)).toMatchObject({ step: 'code', value: '12345' });
     // A wrong code: the login stays where it was, and says why.
     fake.emit({ t: 'login.error', id: connId, error: 'phone_code_invalid' });
@@ -208,7 +173,7 @@ describe('messaging', () => {
     fake.emit({ t: 'conn.state', id: connId, state: 'wait_password', passwordHint: 'Hund' });
     await until(async () => (await state()).state === 'wait_password', 'wait_password');
     const k = fake.got.length;
-    await as(anna, 'POST', '/api/v1/messaging/connection/login', { step: 'password', value: 'geheim-und-lang' });
+    await as(anna, 'POST', `/api/v1/messaging/connections/${connId}/login`, { step: 'password', value: 'geheim-und-lang' });
     expect(await fake.next('login', k)).toMatchObject({ step: 'password', value: 'geheim-und-lang' });
     fake.emit({ t: 'conn.state', id: connId, state: 'ready', me: { externalId: 'user:99', name: 'Anna Test' } });
     await until(async () => (await state()).state === 'ready', 'ready');
@@ -234,8 +199,8 @@ describe('messaging', () => {
     const announced = await events('messaging.message');
     expect(announced.map((e) => e.announce)).toEqual([true, false, false]);
 
-    const q = (await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { connection: { state: string }; items: { id: string; text: string; unread: boolean; say: { frame: string; text: string } }[] };
-    expect(q.connection.state).toBe('ready');
+    const q = (await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { connections: { state: string }[]; items: { id: string; text: string; unread: boolean; say: { frame: string; text: string } }[] };
+    expect(q.connections.map((c) => c.state)).toEqual(['ready']);
     // The unread first (the group's too: muted is shown, not announced), then the newest of the rest; no channel.
     expect(q.items.map((i) => [i.text, i.unread])).toEqual([
       ['Kommst du morgen zum Kaffee?', true],
@@ -345,7 +310,7 @@ describe('messaging', () => {
       'Ich weiß nicht sicher, ob die Nachricht an Anna Beispiel gesendet wurde. Ich sende sie nicht von selbst noch einmal.',
     );
     // Not sent again, also not after the connectors came back.
-    await assistant.messaging.onHello([connId]);
+    await assistant.messaging.onHello(['telegram'], [connId]);
     expect(fake.got.filter((c) => c.t === 'send' && c.requestId === ob.id)).toHaveLength(1);
     // TDLib sent it after all (it holds pending messages over a restart): told by its temporary id alone.
     await sql`update messaging_outbound set temp_external_id = '-3' where id = ${ob.id}`.execute(db);
@@ -381,7 +346,7 @@ describe('messaging', () => {
 
   it('without the connectors process, a confirmed message waits (C9) and goes when it is back', async () => {
     fake.close();
-    await until(async () => !((await as(anna, 'GET', '/api/v1/messaging/connection')).json() as { connection: { running: boolean } }).connection.running, 'connectors gone');
+    await until(async () => !((await as(anna, 'GET', '/api/v1/messaging/connections')).json() as { connections: { running: boolean }[] }).connections[0]!.running, 'connectors gone');
     script = sendTo('Anna Beispiel', 'Ich melde mich später.');
     const a = actionOf(await turn(anna, 'Schreib Anna, dass ich mich später melde'));
     expect(await confirm(a)).toEqual({ ok: true, say: 'Bestätigt. Die Nachricht wird gesendet, sobald die Verbindung wieder da ist.' });
@@ -395,7 +360,7 @@ describe('messaging', () => {
     // A connectors process that starts fresh gets the connection started again.
     const fresh = new FakeConnectors();
     await fresh.connect(url, SECRETS.connectorsToken!, []);
-    expect(await fresh.next('start')).toMatchObject({ id: connId, apiHash: HASH });
+    expect(await fresh.next('start')).toMatchObject({ id: connId, service: 'telegram', apiHash: HASH });
     fresh.close();
     await fake.connect(url, SECRETS.connectorsToken!, [connId]);
   });
@@ -497,7 +462,7 @@ describe('messaging', () => {
     await until(async () => !(await sql`select 1 from messaging_messages where external_id = '1048576'`.execute(db)).rows.length, 'deleted');
     const voiceFile = (await sql<{ path: string }>`select f.path from files f where f.kind = 'message_media'`.execute(db)).rows[0]!.path;
     const n = fake.got.length;
-    expect((await as(anna, 'DELETE', '/api/v1/messaging/connection')).json()).toEqual({ loggedOut: true });
+    expect((await as(anna, 'DELETE', `/api/v1/messaging/connections/${connId}`)).json()).toEqual({ loggedOut: true });
     expect(await fake.next('remove', n)).toEqual({ t: 'remove', id: connId });
     expect((await sql<{ n: number }>`select ((select count(*) from messaging_connections) + (select count(*) from messaging_messages) + (select count(*) from files where kind = 'message_media'))::int as n`.execute(db)).rows[0]!.n).toBe(0);
     expect(existsSync(join(filesDir, voiceFile))).toBe(false);

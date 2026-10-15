@@ -87,8 +87,9 @@ export function MessagesScreen(p: {
 
   const load = async (first: boolean) => {
     try {
-      const r = await p.session.call<{ connection: { state: string } | null; items: MessageItem[] }>(`/api/v1/messaging/queue?lang=${ui.lang}`);
-      const st = !r.connection ? 'none' : r.connection.state === 'ready' ? 'ready' : 'not_ready';
+      const r = await p.session.call<{ connections: { service: string; name: string; state: string }[]; items: MessageItem[] }>(`/api/v1/messaging/queue?lang=${ui.lang}`);
+      // Ready while one of the person's services is (each message keeps its own service).
+      const st = !r.connections.length ? 'none' : r.connections.some((x) => x.state === 'ready') ? 'ready' : 'not_ready';
       setState(st);
       // A refresh keeps the message in front where it is: one heard just now stays first, so "Nächste" leads on to
       // what came since.

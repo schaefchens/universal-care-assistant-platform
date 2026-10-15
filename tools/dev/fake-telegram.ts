@@ -184,7 +184,7 @@ function dial() {
   ws = socket;
   socket.addEventListener('open', () => {
     backoff = 500;
-    socket.send(JSON.stringify({ t: 'hello', token: secret('connectors_token'), version: 'fake-telegram/1', running: [...accounts.keys()] } satisfies FromConnectors));
+    socket.send(JSON.stringify({ t: 'hello', token: secret('connectors_token'), version: 'fake-telegram/1', running: [...accounts.keys()], services: ['telegram'] } satisfies FromConnectors));
     log('connected to the assistant');
   });
   socket.addEventListener('message', (m) => void handle(JSON.parse(String(m.data)) as ToConnectors).catch((e) => log(`command failed: ${(e as Error).name}`)));

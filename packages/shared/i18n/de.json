@@ -1287,7 +1287,7 @@
   "admin.server.line.disk": "Speicher frei: {free} von {total}.",
   "admin.server.line.assistantDown": "Der Assistent antwortet nicht. Hilferufe und Erinnerungen hängen nicht von ihm ab.",
   "admin.server.line.engines": "Sprachmodell: {llm}; Spracherkennung: {stt}.",
-  "admin.server.line.connectors": "Nachrichtendienst: {state}; Telegram: {configured}.",
+  "admin.server.line.connectors": "Nachrichtendienste: {services}. Zugangsdaten für Telegram: {configured}.",
   "admin.server.line.herde": "herde-Rechner verbunden: {count}.",
   "admin.accounts.title": "Konten",
   "admin.accounts.row": "{devices, plural, =0 {kein Gerät} one {ein Gerät} other {# Geräte}} · seit {created, date, medium}",
@@ -1299,5 +1299,7 @@
   "admin.accounts.invite": "Einladung für ein neues Konto",
   "admin.accounts.invited": "Einladung erstellt. Sie gilt sieben Tage und wird nur jetzt angezeigt.",
   "admin.accounts.inviteLink": "Diesen Link auf dem Gerät der Person öffnen:",
-  "admin.accounts.inviteSpoken": "Oder den Code eingeben: {code}"
+  "admin.accounts.inviteSpoken": "Oder den Code eingeben: {code}",
+  "messaging.service.email": "E-Mail",
+  "messaging.service.sms": "SMS"
 }

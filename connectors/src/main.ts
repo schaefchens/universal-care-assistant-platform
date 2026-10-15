@@ -1,7 +1,7 @@
 /**
- * The connectors process: TDLib for Telegram (M1), later WhatsApp and email. It holds no database credentials and
- * talks only to the assistant process over an internal WebSocket (docs/plan.md, Appendix B "Internal connector
- * protocol"), so a crash in native messaging code can never reach the help path. TDLib keeps a lock on its database,
+ * The connectors process for Telegram (TDLib); WhatsApp and email run in processes of their own (docs/plan-m3.md). It
+ * holds no database credentials and talks only to the assistant process over an internal WebSocket (docs/plan.md,
+ * Appendix B "Internal connector protocol"), so a crash in native messaging code can never reach the help path. TDLib keeps a lock on its database,
  * so this process is restarted by hand, never by --watch.
  *
  * - It dials the assistant and proves itself with the connectors token in its first frame (`hello`).
@@ -72,7 +72,7 @@ function emit(e: FromConnectors) {
 const SAFE_DIR = /^[a-z0-9-]{1,64}$/;
 const SAFE_DEST = /^incoming\/[a-z0-9-]{1,64}\/[a-z0-9-]{1,64}$/;
 
-function start(c: Extract<ToConnectors, { t: 'start' }>) {
+function start(c: Extract<ToConnectors, { t: 'start'; service: 'telegram' }>) {
   const running = conns.get(c.id);
   if (running) {
     running.replay();
@@ -122,7 +122,12 @@ async function remove(id: string) {
 }
 
 function handle(cmd: ToConnectors) {
-  if (cmd.t === 'start') return start(cmd);
+  if (cmd.t === 'start') {
+    // This process runs Telegram; WhatsApp and email run in processes of their own (docs/plan-m3.md).
+    if (cmd.service === 'telegram') return start(cmd);
+    emit({ t: 'conn.state', id: cmd.id, state: 'error', error: 'service' });
+    return;
+  }
   if (cmd.t === 'remove') {
     void remove(cmd.id);
     return;
@@ -168,7 +173,7 @@ function dial() {
   ws = socket;
   socket.addEventListener('open', () => {
     backoff = 500;
-    socket.send(JSON.stringify({ t: 'hello', token, version: VERSION, running: [...conns.keys()] } satisfies FromConnectors));
+    socket.send(JSON.stringify({ t: 'hello', token, version: VERSION, running: [...conns.keys()], services: ['telegram'] } satisfies FromConnectors));
     ready = true;
     if (dropped) log(`${dropped} events were dropped while the assistant was away`);
     dropped = 0;

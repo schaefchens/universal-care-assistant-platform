@@ -41,9 +41,9 @@ export function createMessageStore(d: { db: Db; clock: Clock }) {
     async upsertChat(connectionId: string, c: WireChat): Promise<string> {
       return d.db.transaction().execute(async (trx) => {
         const r = await sql<{ id: string }>`
-          insert into messaging_conversations (id, connection_id, external_id, kind, title, peer_external_id, muted, unread, read_inbox_max, read_outbox_max, updated_at)
-          values (${uuidv7(d.clock())}, ${connectionId}, ${c.externalId}, ${c.kind}, ${c.title}, ${c.userId}, ${c.muted}, ${c.unread}, ${c.readInboxMaxId}, ${c.readOutboxMaxId}, ${now()})
-          on conflict (connection_id, external_id) do update set kind = excluded.kind, title = excluded.title, peer_external_id = excluded.peer_external_id,
+          insert into messaging_conversations (id, connection_id, external_id, kind, title, subject, peer_external_id, muted, unread, read_inbox_max, read_outbox_max, updated_at)
+          values (${uuidv7(d.clock())}, ${connectionId}, ${c.externalId}, ${c.kind}, ${c.title}, ${c.subject ?? null}, ${c.userId}, ${c.muted}, ${c.unread}, ${c.readInboxMaxId}, ${c.readOutboxMaxId}, ${now()})
+          on conflict (connection_id, external_id) do update set kind = excluded.kind, title = excluded.title, subject = coalesce(excluded.subject, messaging_conversations.subject), peer_external_id = excluded.peer_external_id,
             muted = excluded.muted, unread = excluded.unread,
             read_inbox_max = greatest(messaging_conversations.read_inbox_max, excluded.read_inbox_max),
             read_outbox_max = greatest(messaging_conversations.read_outbox_max, excluded.read_outbox_max), updated_at = excluded.updated_at
@@ -70,10 +70,10 @@ export function createMessageStore(d: { db: Db; clock: Clock }) {
         const read = readMax !== null && BigInt(key) <= BigInt(readMax) ? now() : null;
         const before = await sql<{ text: string }>`select text from messaging_messages where conversation_id = ${conv.id} and external_id = ${m.externalId}`.execute(trx);
         const r = await sql<{ id: string; inserted: boolean }>`
-          insert into messaging_messages (id, conversation_id, external_id, sort_key, sender_external_id, direction, kind, text, file_name, sent_at, edited_at, read_at, created_at, updated_at)
-          values (${uuidv7(d.clock())}, ${conv.id}, ${m.externalId}, ${key}, ${m.fromId}, ${m.outgoing ? 'out' : 'in'}, ${m.kind}, ${m.text}, ${m.fileName},
+          insert into messaging_messages (id, conversation_id, external_id, sort_key, sender_external_id, direction, kind, text, file_name, subject, sent_at, edited_at, read_at, created_at, updated_at)
+          values (${uuidv7(d.clock())}, ${conv.id}, ${m.externalId}, ${key}, ${m.fromId}, ${m.outgoing ? 'out' : 'in'}, ${m.kind}, ${m.text}, ${m.fileName}, ${m.subject ?? null},
                   ${at(m.date)}, ${m.editDate ? at(m.editDate) : null}, ${read}, ${now()}, ${now()})
-          on conflict (conversation_id, external_id) do update set kind = excluded.kind, text = excluded.text, file_name = excluded.file_name,
+          on conflict (conversation_id, external_id) do update set kind = excluded.kind, text = excluded.text, file_name = excluded.file_name, subject = excluded.subject,
             edited_at = excluded.edited_at, updated_at = excluded.updated_at
           returning id, (xmax = 0) as inserted`.execute(trx);
         const { id, inserted } = r.rows[0]!;

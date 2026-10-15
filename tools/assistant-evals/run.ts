@@ -83,7 +83,7 @@ async function seedMessaging(on: boolean) {
   if (!on) return;
   const id = crypto.randomUUID();
   await sql`
-    insert into messaging_connections (id, user_id, service, state, db_key_sealed, me_name, created_at, updated_at)
+    insert into messaging_connections (id, user_id, service, state, secret_sealed, me_name, created_at, updated_at)
     values (${id}, ${anna.userId}, 'telegram', 'ready', ${Buffer.alloc(1)}, 'Anna', now(), now())`.execute(db);
   const s = assistant.messaging.store;
   const now = Math.floor(Date.now() / 1000);

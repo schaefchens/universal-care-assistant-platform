@@ -124,8 +124,10 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       const s = await session(o.userId, o.deviceId);
       const names = await helperNames(o.userId);
       let focus = s.focus;
-      // The messaging tools only for a person with a connection (what is kept here can be read while it reconnects).
-      const messaging = d.messaging && (await d.messaging.connection(o.userId)) ? d.messaging : undefined;
+      // The messaging tools only for a person with a connection (what is kept here can be read while it reconnects),
+      // and the model is told which services those are.
+      const services = d.messaging ? await d.messaging.servicesOf(o.userId) : [];
+      const messaging = services.length ? d.messaging : undefined;
       const tools = toolsFor({ messaging: messaging !== undefined });
       const offered = new Map(tools.map((x) => [x.name, x]));
       const schema = replySchema(tools.map((x) => ({ name: x.name, args: x.args })));
@@ -214,7 +216,7 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
               streaming = streaming.then(() => speak(item));
             }
           };
-          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: messaging !== undefined, answers: who.answers });
+          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: services, answers: who.answers });
           const r = await d.llm.complete(o.userId, pick.provider, pick.adapter, { system, messages, schema, signal: o.signal, onText });
           await streaming;
           const reply = parseReply(r.text);

@@ -14,6 +14,7 @@ import { QrCode } from './words/QrCode.tsx';
 
 interface Connection {
   id: string;
+  service: string;
   state: string;
   detail: { code?: { via: string; length: number | null; next: string | null }; qr?: string; passwordHint?: string; error?: string };
   me: { name: string } | null;
@@ -60,16 +61,17 @@ export function TelegramPage(p: { session: Session; refresh: number; onClose: ()
 
   const load = async () => {
     try {
-      const r = await p.session.call<{ connection: Connection | null; configured: boolean }>('/api/v1/messaging/connection');
+      const r = await p.session.call<{ connections: Connection[]; offered: { telegram: boolean } }>('/api/v1/messaging/connections');
+      const conn = r.connections.find((x) => x.service === 'telegram') ?? null;
       // Why nothing can be done here yet, said once.
-      if (!r.configured && configured === null) say(tr('telegram.notConfigured'), 'system');
-      setConfigured(r.configured);
-      setC(r.connection);
+      if (!r.offered.telegram && configured === null) say(tr('telegram.notConfigured'), 'system');
+      setConfigured(r.offered.telegram);
+      setC(conn);
       // Each new step, a new error, or a code sent another way is said once (a refreshed QR code is not news).
-      const key = r.connection ? `${r.connection.state}|${r.connection.detail.error ?? ''}|${r.connection.detail.code?.via ?? ''}` : '';
-      if (r.connection && key !== told.current) {
+      const key = conn ? `${conn.state}|${conn.detail.error ?? ''}|${conn.detail.code?.via ?? ''}` : '';
+      if (conn && key !== told.current) {
         told.current = key;
-        say(stateText(r.connection), 'system');
+        say(stateText(conn), 'system');
         setValue('');
       }
     } catch (e) {
@@ -88,7 +90,7 @@ export function TelegramPage(p: { session: Session; refresh: number; onClose: ()
   async function connect() {
     setStatus('');
     try {
-      await p.session.call('/api/v1/messaging/connection', { method: 'POST' });
+      await p.session.call('/api/v1/messaging/connections', { method: 'POST', body: { service: 'telegram' } });
       await load();
     } catch (e) {
       failed(e);
@@ -98,10 +100,10 @@ export function TelegramPage(p: { session: Session; refresh: number; onClose: ()
   const sending = useRef(false);
   async function step(s: Step, e?: FormEvent) {
     e?.preventDefault();
-    if (sending.current || ((s === 'phone' || s === 'code' || s === 'password') && !value.trim())) return;
+    if (!c || sending.current || ((s === 'phone' || s === 'code' || s === 'password') && !value.trim())) return;
     sending.current = true;
     try {
-      await p.session.call('/api/v1/messaging/connection/login', { method: 'POST', body: s === 'qr' || s === 'resend' ? { step: s } : { step: s, value: value.trim() } });
+      await p.session.call(`/api/v1/messaging/connections/${c.id}/login`, { method: 'POST', body: s === 'qr' || s === 'resend' ? { step: s } : { step: s, value: value.trim() } });
       setValue('');
     } catch (err) {
       failed(err);
@@ -111,8 +113,9 @@ export function TelegramPage(p: { session: Session; refresh: number; onClose: ()
   }
   async function disconnect() {
     setAsking(false);
+    if (!c) return;
     try {
-      const r = await p.session.call<{ loggedOut: boolean }>('/api/v1/messaging/connection', { method: 'DELETE' });
+      const r = await p.session.call<{ loggedOut: boolean }>(`/api/v1/messaging/connections/${c.id}`, { method: 'DELETE' });
       told.current = '';
       report(tr(r.loggedOut ? 'telegram.disconnected' : 'telegram.disconnected.manual'));
       await load();

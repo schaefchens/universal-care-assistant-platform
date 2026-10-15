@@ -12,7 +12,7 @@
 import { t } from '@ucap/shared';
 import type { JsonSchema } from '../ai/llm/reply.ts';
 import { type ActTool, type ReadTool, type ToolContext, ToolError } from '../assistant/tools.ts';
-import { type Item, type Messaging, SERVICE_NAMES, whenSaid } from './service.ts';
+import { type Item, type Messaging, serviceName, whenSaid } from './service.ts';
 
 /** The longest message UCAP sends (Telegram's own limit is 4096). */
 export const MAX_TEXT = 4000;
@@ -35,6 +35,7 @@ export function cleanText(s: string): string {
 function asData(ctx: ToolContext, i: Item) {
   return {
     ref: `msg:${i.id}`,
+    service: serviceName(i.service, i.label),
     chat: i.conversation,
     from: i.outgoing ? (ctx.lang === 'de' ? 'du selbst' : 'you') : i.from,
     when: whenSaid(ctx.lang, ctx.timezone, new Date(i.at), ctx.now),
@@ -60,16 +61,16 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     kind: 'read',
     name: 'messages.overview',
     description:
-      "The person's conversations on Telegram, those with unread messages first: who, how many unread, when the last message came, whether it waits for a reply, a saved draft. For \"Habe ich neue Nachrichten?\", \"Wer hat geschrieben?\", \"Welche Unterhaltungen warten auf eine Antwort?\".",
+      "The person's conversations on all their connected services, each with its service, those with unread messages first: who, how many unread, when the last message came, whether it waits for a reply, a saved draft. For \"Habe ich neue Nachrichten?\", \"Wer hat geschrieben?\", \"Welche Unterhaltungen warten auf eine Antwort?\".",
     args: {},
     async run(ctx) {
       const list = await messaging(ctx).overview(ctx.userId, 10);
       return {
         data: {
-          service: 'Telegram',
           conversations: list.map((c) => ({
             ref: `chat:${c.id}`,
             name: c.name,
+            service: c.serviceName,
             ...(c.group ? { group: true } : {}),
             unread: c.unread,
             last: c.lastAt ? whenSaid(ctx.lang, ctx.timezone, new Date(c.lastAt), ctx.now) : null,
@@ -91,12 +92,12 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
       const unreadOnly = args.unread_only === true;
       if (args.chat === null || args.chat === undefined || args.chat === '') {
         const list = await messaging(ctx).everywhere(ctx.userId, { unreadOnly, limit: unreadOnly ? 20 : 10 });
-        return { data: { service: 'Telegram', messages: list.map((i) => asData(ctx, i)) } };
+        return { data: { messages: list.map((i) => asData(ctx, i)) } };
       }
       const c = await chatOf(ctx, args.chat);
       const list = await messaging(ctx).conversation(ctx.userId, c.conversationId, { limit: unreadOnly ? 20 : 10, unreadOnly });
       return {
-        data: { chat: { ref: `chat:${c.conversationId}`, name: c.name, service: SERVICE_NAMES[c.service] }, messages: list.map((i) => asData(ctx, i)) },
+        data: { chat: { ref: `chat:${c.conversationId}`, name: c.name, service: serviceName(c.service, c.label) }, messages: list.map((i) => asData(ctx, i)) },
         focus: { chat: { id: c.conversationId, title: c.name } },
       };
     },
@@ -112,14 +113,14 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     },
     async run(ctx, args) {
       const found = await messaging(ctx).search(ctx.userId, typeof args.query === 'string' ? args.query : '', typeof args.person === 'string' ? args.person : null);
-      return { data: { service: 'Telegram', messages: found.map((i) => asData(ctx, i)) } };
+      return { data: { messages: found.map((i) => asData(ctx, i)) } };
     },
   },
   {
     kind: 'act',
     name: 'messages.send',
     description:
-      'Sends a message on Telegram in a conversation: the words the person dictated or agreed to, exactly as they should arrive. UCAP reads the whole message back with its recipient and asks the person before sending; it says itself when Telegram confirmed it.',
+      'Sends a message in a conversation, on the service the conversation is on: the words the person dictated or agreed to, exactly as they should arrive. UCAP reads the whole message back with its recipient and service and asks the person before sending; it says itself when the service confirmed it.',
     args: { chat: str('The conversation, as "chat:<id>", or the name of the person or group.'), text: str('The message, as it should be sent.') },
     async prepare(ctx, args) {
       if (typeof args.chat !== 'string' || !args.chat.trim()) throw new ToolError('chat_missing');
@@ -129,7 +130,7 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
       const text = cleanText(typeof args.text === 'string' ? args.text : '');
       if (!text) throw new ToolError('text_missing');
       if (text.length > MAX_TEXT) throw new ToolError('text_too_long');
-      const ask = tr(ctx, 'messages.C1', { recipient: r.name, service: SERVICE_NAMES[r.service], text });
+      const ask = tr(ctx, 'messages.C1', { recipient: r.name, service: serviceName(r.service, r.label), text });
       // Someone renamed "Maria (Tochter)" is still not Maria: a stranger's chat is named as such (Appendix E).
       const confirm = r.contact === false ? `${tr(ctx, 'messages.C1.notContact', { name: r.name })} ${ask}` : ask;
       return { args: { conversationId: r.conversationId, recipient: r.name, text }, confirm };

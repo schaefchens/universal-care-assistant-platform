@@ -23,7 +23,8 @@ interface CoreStatus {
   migrations: number;
 }
 interface AssistantStatus {
-  messaging: { running: boolean; configured: boolean; connections: Record<string, number> };
+  /** Each service's connectors process (docs/plan-m3.md), and the connections by service and state (no names). */
+  messaging: { running: Record<'telegram' | 'whatsapp' | 'email', boolean>; configured: boolean; whatsappAllowed: boolean; connections: Partial<Record<string, Record<string, number>>> };
   engines: { ollama: boolean | null; stt: boolean | null };
   herdeWorkers: number;
 }
@@ -96,7 +97,14 @@ export function ServerAdmin(p: { session: Session; serverUrl: string; onClose: (
           : assistant
             ? [
                 tr('admin.server.line.engines', { llm: yes(assistant.engines.ollama), stt: yes(assistant.engines.stt) }),
-                tr('admin.server.line.connectors', { state: yes(assistant.messaging.running), configured: tr(assistant.messaging.configured ? 'admin.server.ok' : 'admin.server.notSet') }),
+                tr('admin.server.line.connectors', {
+                  // Telegram always; another service once its process runs or someone connected it.
+                  services: (['telegram', 'whatsapp', 'email'] as const)
+                    .filter((s) => s === 'telegram' || assistant.messaging.running[s] || assistant.messaging.connections[s])
+                    .map((s) => `${s === 'email' ? tr('messaging.service.email') : s === 'whatsapp' ? 'WhatsApp' : 'Telegram'}: ${yes(assistant.messaging.running[s])}`)
+                    .join('; '),
+                  configured: tr(assistant.messaging.configured ? 'admin.server.ok' : 'admin.server.notSet'),
+                }),
                 tr('admin.server.line.herde', { count: assistant.herdeWorkers }),
               ]
             : []),

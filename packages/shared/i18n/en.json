@@ -1090,7 +1090,7 @@
   "admin.server.line.disk": "Storage free: {free} of {total}.",
   "admin.server.line.assistantDown": "The assistant doesn't answer. Help requests and reminders don't depend on it.",
   "admin.server.line.engines": "Language model: {llm}; speech recognition: {stt}.",
-  "admin.server.line.connectors": "Messaging service: {state}; Telegram: {configured}.",
+  "admin.server.line.connectors": "Messaging services: {services}. Telegram's credentials: {configured}.",
   "admin.server.line.herde": "herde machines joined: {count}.",
   "admin.accounts.title": "Accounts",
   "admin.accounts.row": "{devices, plural, =0 {no device} one {one device} other {# devices}} · since {created, date, medium}",
@@ -1101,5 +1101,7 @@
   "admin.accounts.invite": "Invitation for a new account",
   "admin.accounts.invited": "Invitation created. It is valid for seven days and shown only now.",
   "admin.accounts.inviteLink": "Open this link on the person's device:",
-  "admin.accounts.inviteSpoken": "Or enter the code: {code}"
+  "admin.accounts.inviteSpoken": "Or enter the code: {code}",
+  "messaging.service.email": "Email",
+  "messaging.service.sms": "SMS"
 }

@@ -1,23 +1,25 @@
 /**
- * The person's messaging (docs/plan.md, S10; Appendix F; CONCEPT §3): their own Telegram, run by the connectors
- * process and stored here.
+ * The person's messaging (docs/plan.md, S10; Appendix F; docs/plan-m3.md; CONCEPT §3): their own connections to
+ * messaging services, stored here. Telegram, WhatsApp and email run in connector processes of their own (one per
+ * service); SMS and previews of other apps' notifications run on one of the person's phones.
  *
- * - **Connecting** happens on the person's own device: phone number, the code (where it went, resending), the
- *   password if the account has one (never stored or logged), or a QR code. Helpers get no access to it (CONCEPT §3:
- *   "Personal communication must remain separate from care permissions").
+ * - **Connecting** happens on the person's own device. For Telegram: the phone number, the code (where it went,
+ *   resending), the password if the account has one (never stored or logged), or a QR code. Helpers get no access to
+ *   it (CONCEPT §3: "Personal communication must remain separate from care permissions").
+ * - **Every connection says what it can do** (Appendix K): its capabilities, kept with it.
  * - **Messages** are kept with their sender, service, time and conversation. A voice message is fetched at once (up to
  *   5 MB) and transcribed in the background on the operator's own speech recognition, unless the policy and the
- *   person's consent allow another; its original is the recording. A message is marked read on Telegram only after
+ *   person's consent allow another; its original is the recording. A message is marked read on its service only after
  *   the person heard its original.
- * - **Sending** only what the person confirmed, honest about each step (Appendix F "Sending"): written before Telegram
- *   is asked, "pending" until Telegram confirms or refuses, slow after 15 s (C5), uncertain when the answer never came
- *   (C6), and never sent again on its own. What was not sent stays as a draft for a day.
- * - **Disconnecting** logs out of Telegram and deletes the copies kept here; Telegram keeps its own.
+ * - **Sending** only what the person confirmed, honest about each step (Appendix F "Sending"): written before the
+ *   service is asked, "pending" until it confirms or refuses, slow after 15 s (C5), uncertain when the answer never
+ *   came (C6), and never sent again on its own. What was not sent stays as a draft for a day.
+ * - **Disconnecting** logs out of the service and deletes the copies kept here; the service keeps its own.
  */
 import { randomBytes } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type AddressForm, type FromConnectors, type Lang, t, type ToConnectors, uuidv7, type WireFile } from '@ucap/shared';
+import { type AddressForm, type FromConnectors, type Lang, type MailServer, type ServerService, t, type ToConnectors, uuidv7, type WireFile } from '@ucap/shared';
 import { judgeTranscript } from '@ucap/speech-text';
 import { sql } from 'kysely';
 import type { Stt } from '../ai/stt/service.ts';
@@ -30,17 +32,15 @@ import { enqueue } from '../lib/jobs.ts';
 import { emit } from '../lib/outbox.ts';
 import type { Sealer } from '../lib/sealed.ts';
 import { chunks, toPcm } from './audio.ts';
+import { CAPABILITIES, type Capabilities, isServerService, SERVICE_NAMES, type Service } from './services.ts';
 import { createMessageStore } from './store.ts';
-
-export const SERVICE_NAMES = { telegram: 'Telegram' } as const;
-export type Service = keyof typeof SERVICE_NAMES;
 
 /** Voice messages fetched at once (Appendix F). */
 export const MAX_VOICE_BYTES = 5 * 1024 * 1024;
 const MEDIA_DAYS = 30;
-/** C5: Telegram has not confirmed after this long. */
+/** C5: the service has not confirmed after this long. */
 export const SLOW_MS = 15_000;
-/** Handed to the connectors but never accepted by Telegram: the outcome is unknown. */
+/** Handed to the connectors but never accepted by the service: the outcome is unknown. */
 const ATTEMPT_MS = 60_000;
 /** Accepted, but no result: uncertain (a result that still comes is still told). */
 const PENDING_MS = 10 * 60_000;
@@ -49,20 +49,30 @@ const QUEUED_MS = 24 * 3_600_000;
 const DRAFT_MS = 24 * 3_600_000;
 /** A new message older than this (fetched after a restart) is not announced. */
 const FRESH_MS = 15 * 60_000;
-const SETTINGS = 'telegram_api';
+const TELEGRAM_SETTINGS = 'telegram_api';
+const WHATSAPP_POLICY = 'whatsapp_policy';
+/** The states in which a server-side connection runs, or should: started again when its process comes back. */
+const LIVE_STATES = ['starting', 'wait_phone', 'wait_code', 'wait_password', 'wait_qr', 'wait_pairing', 'ready'];
 
 export interface Hub {
-  send(cmd: ToConnectors): boolean;
-  readonly connected: boolean;
+  send(service: ServerService, cmd: ToConnectors): boolean;
+  connected(service: ServerService): boolean;
 }
 
 export interface ConnectionView {
   id: string;
   service: Service;
+  /** An email address, an app's package (previews), or '' where a person has one connection of the service. */
+  account: string;
+  /** How it is called: the app's name for previews, the service's otherwise. */
+  name: string;
+  /** The phone that runs it (SMS, previews). */
+  deviceId: string | null;
   state: string;
-  detail: { code?: { via: string; length: number | null; next: string | null }; qr?: string; passwordHint?: string; error?: string };
+  detail: { code?: { via: string; length: number | null; next: string | null }; qr?: string; pairing?: string; passwordHint?: string; error?: string };
   me: { name: string } | null;
-  /** The connectors process is up: without it nothing can be sent or received. */
+  capabilities: Capabilities;
+  /** What runs it is there: the service's connectors process, or the phone (not signed out). */
   running: boolean;
 }
 
@@ -84,21 +94,44 @@ export interface Item {
   transcriptState: string;
   unread: boolean;
   service: Service;
+  /** The app's name for previews ("Signal"). */
+  label: string | null;
+  /** An email's subject. */
+  subject: string | null;
 }
 
 interface ConnRow {
   id: string;
   user_id: string;
   service: Service;
+  account: string;
+  device_id: string | null;
+  label: string | null;
   state: string;
   detail: ConnectionView['detail'];
   me_name: string | null;
-  db_key_sealed: Buffer;
+  secret_sealed: Buffer | null;
   test_dc: boolean;
+  capabilities: Capabilities;
 }
+const COLS = sql`id, user_id, service, account, device_id, label, state, detail, me_name, secret_sealed, test_dc, capabilities`;
+
+/** What a person asks to connect (on their own device). */
+export type ConnectInput =
+  | { service: 'telegram' }
+  /** The person heard WhatsApp's risk and agreed (docs/plan-m3.md, K2). */
+  | { service: 'whatsapp'; acceptedRisk: true }
+  | { service: 'email'; address: string; password: string; imap: MailServer; smtp: MailServer }
+  /** UCAP became the SMS app of the phone that asks (K4). */
+  | { service: 'sms' }
+  /** Previews of one app's notifications on the phone that asks (K5). */
+  | { service: 'notifications'; app: { package: string; name: string } };
 
 export type SendOutcome = 'attempting' | 'queued';
 export type Told = 'C3' | 'C4' | 'C5' | 'C6';
+
+/** A service's name as the person hears it: the app's name for previews. */
+export const serviceName = (service: Service, label: string | null) => (service === 'notifications' && label ? label : SERVICE_NAMES[service]);
 
 export function createMessaging(d: {
   db: Db;
@@ -117,19 +150,40 @@ export function createMessaging(d: {
   const hub = () => d.hub;
   const keyContext = (id: string) => `messaging_connection:${id}`;
 
-  async function settings(): Promise<{ apiId: number; apiHash: string; testDc: boolean } | null> {
-    const r = await sql<{ sealed: Buffer }>`select sealed from stored_secrets where name = ${SETTINGS}`.execute(d.db);
-    return r.rows[0] ? (JSON.parse(d.sealer.open(r.rows[0].sealed, `stored_secret:${SETTINGS}`)) as { apiId: number; apiHash: string; testDc: boolean }) : null;
+  async function readSetting<T>(name: string): Promise<T | null> {
+    const r = await sql<{ sealed: Buffer }>`select sealed from stored_secrets where name = ${name}`.execute(d.db);
+    return r.rows[0] ? (JSON.parse(d.sealer.open(r.rows[0].sealed, `stored_secret:${name}`)) as T) : null;
   }
+  async function writeSetting(name: string, value: unknown) {
+    const sealed = d.sealer.seal(JSON.stringify(value), `stored_secret:${name}`);
+    await sql`insert into stored_secrets (name, sealed, created_at) values (${name}, ${sealed}, ${now()}) on conflict (name) do update set sealed = excluded.sealed`.execute(d.db);
+  }
+  const telegramApi = () => readSetting<{ apiId: number; apiHash: string; testDc: boolean }>(TELEGRAM_SETTINGS);
+  const whatsappAllowed = async () => (await readSetting<{ allowed: boolean }>(WHATSAPP_POLICY))?.allowed === true;
 
-  async function connRow(where: { id?: string; userId?: string }): Promise<ConnRow | null> {
-    const r = where.id
-      ? await sql<ConnRow>`select id, user_id, service, state, detail, me_name, db_key_sealed, test_dc from messaging_connections where id = ${where.id}`.execute(d.db)
-      : await sql<ConnRow>`select id, user_id, service, state, detail, me_name, db_key_sealed, test_dc from messaging_connections where user_id = ${where.userId!} and service = 'telegram'`.execute(d.db);
+  async function connRow(where: { id: string } | { userId: string; service: Service; account?: string; deviceId?: string | null }): Promise<ConnRow | null> {
+    const r =
+      'id' in where
+        ? await sql<ConnRow>`select ${COLS} from messaging_connections where id = ${where.id}`.execute(d.db)
+        : await sql<ConnRow>`
+            select ${COLS} from messaging_connections where user_id = ${where.userId} and service = ${where.service} and account = ${where.account ?? ''}
+              and device_id is not distinct from ${where.deviceId ?? null}::uuid`.execute(d.db);
     return r.rows[0] ?? null;
   }
 
-  const view = (c: ConnRow): ConnectionView => ({ id: c.id, service: c.service, state: c.state, detail: c.detail, me: c.me_name ? { name: c.me_name } : null, running: hub()?.connected === true });
+  const running = (c: ConnRow) => (isServerService(c.service) ? hub()?.connected(c.service) === true : true);
+  const view = (c: ConnRow): ConnectionView => ({
+    id: c.id,
+    service: c.service,
+    account: c.account,
+    name: serviceName(c.service, c.label),
+    deviceId: c.device_id,
+    state: c.state,
+    detail: c.detail,
+    me: c.me_name ? { name: c.me_name } : null,
+    capabilities: { ...CAPABILITIES[c.service], ...c.capabilities },
+    running: running(c),
+  });
 
   async function notify(userId: string, kind: string, payload: Record<string, unknown>) {
     await emit(d.db, { kind, recipients: [userId], payload });
@@ -141,12 +195,23 @@ export function createMessaging(d: {
     return { lang: u?.locale === 'en' ? 'en' : 'de', form: u?.address_form ?? 'du', timezone: u?.timezone ?? 'Europe/Berlin' };
   }
 
+  /** Starts a server-side connection in its service's process, with its own secrets (they live there in memory only). */
   async function start(c: ConnRow): Promise<boolean> {
-    const s = await settings();
     const h = hub();
-    if (!s || !h) return false;
+    if (!h || !isServerService(c.service) || !c.secret_sealed) return false;
     const { lang } = await langOf(c.user_id);
-    return h.send({ t: 'start', id: c.id, service: 'telegram', apiId: s.apiId, apiHash: s.apiHash, dbKey: d.sealer.open(c.db_key_sealed, keyContext(c.id)), testDc: c.test_dc, dir: c.id, lang });
+    const secret = d.sealer.open(c.secret_sealed, keyContext(c.id));
+    if (c.service === 'telegram') {
+      const s = await telegramApi();
+      if (!s) return false;
+      return h.send('telegram', { t: 'start', id: c.id, service: 'telegram', apiId: s.apiId, apiHash: s.apiHash, dbKey: secret, testDc: c.test_dc, dir: c.id, lang });
+    }
+    if (c.service === 'whatsapp') {
+      if (!(await whatsappAllowed())) return false;
+      return h.send('whatsapp', { t: 'start', id: c.id, service: 'whatsapp', storeKey: secret, dir: c.id, lang });
+    }
+    const e = JSON.parse(secret) as { password: string; imap: MailServer; smtp: MailServer };
+    return h.send('email', { t: 'start', id: c.id, service: 'email', address: c.account, password: e.password, imap: e.imap, smtp: e.smtp, lang });
   }
 
   async function setState(c: ConnRow, state: string, detail: ConnectionView['detail'], me?: { externalId: string; name: string }) {
@@ -158,21 +223,34 @@ export function createMessaging(d: {
     await notify(c.user_id, 'messaging.connection', { connectionId: c.id, state });
   }
 
+  /** A new connection, or the one there is (one per person, service, account and phone). */
+  async function create(userId: string, service: Service, o: { account?: string; deviceId?: string | null; label?: string | null; secret?: string | null; state: string; testDc?: boolean }) {
+    const id = uuidv7(d.clock());
+    const r = await sql<{ id: string }>`
+      insert into messaging_connections (id, user_id, service, account, device_id, label, state, secret_sealed, test_dc, capabilities, created_at, updated_at)
+      values (${id}, ${userId}, ${service}, ${o.account ?? ''}, ${o.deviceId ?? null}, ${o.label ?? null}, ${o.state},
+              ${o.secret ? d.sealer.seal(o.secret, keyContext(id)) : null}, ${o.testDc ?? false}, ${JSON.stringify(CAPABILITIES[service])}::jsonb, ${now()}, ${now()})
+      on conflict (user_id, service, account, device_id) do nothing returning id`.execute(d.db);
+    const c = (await connRow({ userId, service, account: o.account ?? '', deviceId: o.deviceId ?? null }))!;
+    if (r.rows.length) await audit(d.db, d.clock, { actorUser: userId, subjectUser: userId, action: 'messaging.connected', targetType: 'messaging_connection', targetId: c.id, detail: { service } });
+    return { c, created: r.rows.length > 0 };
+  }
+
   // —— Sending ——————————————————————————————————————————————————————————————————————————————————————————————————————
 
   async function attempt(outboundId: string): Promise<SendOutcome> {
-    const r = await sql<{ connection_id: string; chat: string; text: string; state: string; conn_state: string }>`
-      select o.connection_id, v.external_id as chat, o.text, o.state, k.state as conn_state
+    const r = await sql<{ connection_id: string; chat: string; text: string; state: string; conn_state: string; service: Service }>`
+      select o.connection_id, v.external_id as chat, o.text, o.state, k.state as conn_state, k.service
       from messaging_outbound o join messaging_conversations v on v.id = o.conversation_id join messaging_connections k on k.id = o.connection_id
       where o.id = ${outboundId}`.execute(d.db);
     const o = r.rows[0];
-    if (!o || o.state !== 'queued') return 'queued';
+    if (!o || o.state !== 'queued' || !isServerService(o.service)) return 'queued';
     const h = hub();
-    if (!h?.connected || o.conn_state !== 'ready') return 'queued';
+    if (!h?.connected(o.service) || o.conn_state !== 'ready') return 'queued';
     // Written before the connectors are asked: a crash after this leaves it uncertain, never sent twice (AS-07).
     const taken = await sql`update messaging_outbound set state = 'attempting', attempted_at = ${now()}, updated_at = ${now()} where id = ${outboundId} and state = 'queued' returning id`.execute(d.db);
     if (!taken.rows.length) return 'queued';
-    if (h.send({ t: 'send', id: o.connection_id, requestId: outboundId, chatId: o.chat, text: o.text })) return 'attempting';
+    if (h.send(o.service, { t: 'send', id: o.connection_id, requestId: outboundId, chatId: o.chat, text: o.text })) return 'attempting';
     // Not handed over (the socket closed just now): still waiting, nothing went out.
     await sql`update messaging_outbound set state = 'queued', attempted_at = null, updated_at = ${now()} where id = ${outboundId} and state = 'attempting'`.execute(d.db);
     return 'queued';
@@ -220,33 +298,34 @@ export function createMessaging(d: {
     }
   }
 
-  async function flushQueued(connectionId?: string) {
+  async function flushQueued(services?: ServerService[]) {
     const r = await sql<{ id: string }>`
-      select id from messaging_outbound where state = 'queued' ${connectionId ? sql`and connection_id = ${connectionId}` : sql``} order by created_at`.execute(d.db);
+      select o.id from messaging_outbound o join messaging_connections k on k.id = o.connection_id
+      where o.state = 'queued' ${services ? sql`and k.service = any(${services}::text[])` : sql``} order by o.created_at`.execute(d.db);
     for (const o of r.rows) await attempt(o.id);
   }
 
   // —— Voice messages ———————————————————————————————————————————————————————————————————————————————————————————————
 
-  async function requestDownload(connectionId: string, messageId: string, file: WireFile | null) {
-    if (!file) return;
+  async function requestDownload(conn: { id: string; service: Service }, messageId: string, file: WireFile | null) {
+    if (!file || !isServerService(conn.service)) return;
     if ((file.size ?? 0) > MAX_VOICE_BYTES) {
       await sql`update messaging_attachments set download = 'too_large', updated_at = ${now()} where message_id = ${messageId}`.execute(d.db);
       return;
     }
     const requestId = uuidv7(d.clock());
     await sql`update messaging_attachments set download = 'requested', download_request = ${requestId}, updated_at = ${now()} where message_id = ${messageId} and download in ('none', 'requested', 'failed')`.execute(d.db);
-    const sent = hub()?.send({ t: 'download', id: connectionId, requestId, fileId: file.fileId, dest: `incoming/${connectionId}/${requestId}` });
+    const sent = hub()?.send(conn.service, { t: 'download', id: conn.id, requestId, fileId: file.fileId, dest: `incoming/${conn.id}/${requestId}` });
     if (!sent) await sql`update messaging_attachments set download = 'none', updated_at = ${now()} where message_id = ${messageId} and download_request = ${requestId}`.execute(d.db);
   }
 
   /** Voice messages of the last week whose recording is not here yet (the connectors were away). */
-  async function retryDownloads(connectionId: string) {
+  async function retryDownloads(conn: { id: string; service: Service }) {
     const r = await sql<{ message_id: string; service_file_id: string; mime: string | null; bytes: string | null; duration_s: number | null }>`
       select a.message_id, a.service_file_id, a.mime, a.bytes, a.duration_s from messaging_attachments a
       join messaging_messages m on m.id = a.message_id join messaging_conversations v on v.id = m.conversation_id
-      where v.connection_id = ${connectionId} and m.kind = 'voice' and a.download in ('none', 'requested') and m.sent_at > ${new Date(d.clock() - 7 * 86_400_000)}`.execute(d.db);
-    for (const a of r.rows) await requestDownload(connectionId, a.message_id, { fileId: Number(a.service_file_id), mime: a.mime, size: a.bytes === null ? null : Number(a.bytes), durationS: a.duration_s });
+      where v.connection_id = ${conn.id} and m.kind = 'voice' and a.download in ('none', 'requested') and m.sent_at > ${new Date(d.clock() - 7 * 86_400_000)}`.execute(d.db);
+    for (const a of r.rows) await requestDownload(conn, a.message_id, { fileId: Number(a.service_file_id), mime: a.mime, size: a.bytes === null ? null : Number(a.bytes), durationS: a.duration_s });
   }
 
   async function onFileReady(c: ConnRow, e: Extract<FromConnectors, { t: 'file.ready' }>) {
@@ -285,6 +364,7 @@ export function createMessaging(d: {
       kind: string;
       text: string;
       file_name: string | null;
+      subject: string | null;
       duration_s: number | null;
       file_id: string | null;
       transcript: string | null;
@@ -292,9 +372,10 @@ export function createMessaging(d: {
       read_at: Date | null;
       heard_at: Date | null;
       service: Service;
+      label: string | null;
     }>`
       select m.id, m.conversation_id, v.title, v.kind as ckind, m.sender_external_id, p.name as sender_name, m.direction, m.sent_at, m.kind, m.text, m.file_name,
-        a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service
+        m.subject, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label
       from messaging_messages m
       join messaging_conversations v on v.id = m.conversation_id
       join messaging_connections k on k.id = v.connection_id
@@ -319,6 +400,8 @@ export function createMessaging(d: {
       transcriptState: x.transcript_state ?? 'none',
       unread: x.direction === 'in' && x.read_at === null && x.heard_at === null && x.ckind !== 'channel',
       service: x.service,
+      label: x.label,
+      subject: x.subject,
     }));
   }
 
@@ -326,7 +409,7 @@ export function createMessaging(d: {
   function frame(lang: Lang, form: AddressForm, timezone: string, i: Item): string {
     const when = whenSaid(lang, timezone, new Date(i.at), new Date(d.clock()));
     const where = i.group ? t(lang, 'messages.frame.in', { conversation: i.conversation }) : '';
-    const service = SERVICE_NAMES[i.service];
+    const service = serviceName(i.service, i.label);
     const p = { name: i.from || i.conversation, when, where, service, to: i.conversation, seconds: i.durationS ?? 0, file: i.fileName ?? '' };
     const key = i.outgoing ? `messages.frame.out.${frameKind(i.kind)}` : `messages.frame.${frameKind(i.kind)}`;
     return t(lang, key, p, form);
@@ -338,128 +421,173 @@ export function createMessaging(d: {
       d.hub = h;
     },
 
-    // —— The operator's Telegram credentials (AI admin) ——
+    // —— The operator's settings (AI admin) ——
     async telegramSettings(): Promise<{ configured: boolean; apiId: number | null; testDc: boolean }> {
-      const s = await settings();
+      const s = await telegramApi();
       return { configured: s !== null, apiId: s?.apiId ?? null, testDc: s?.testDc ?? false };
     },
     async setTelegramSettings(actorId: string, i: { apiId: number; apiHash?: string; testDc: boolean }) {
-      const old = await settings();
+      const old = await telegramApi();
       const apiHash = i.apiHash ?? old?.apiHash;
       if (!apiHash) throw new AppError('bad_request', { params: { reason: 'api_hash' } });
-      const sealed = d.sealer.seal(JSON.stringify({ apiId: i.apiId, apiHash, testDc: i.testDc }), `stored_secret:${SETTINGS}`);
-      await sql`insert into stored_secrets (name, sealed, created_at) values (${SETTINGS}, ${sealed}, ${now()}) on conflict (name) do update set sealed = excluded.sealed`.execute(d.db);
+      await writeSetting(TELEGRAM_SETTINGS, { apiId: i.apiId, apiHash, testDc: i.testDc });
       await audit(d.db, d.clock, { actorUser: actorId, action: 'messaging.telegram.configured', targetType: 'service', targetId: 'telegram', detail: { hash: i.apiHash ? 'replaced' : 'kept', testDc: i.testDc } });
     },
-
-    // —— The person's connection ——
-    async connection(userId: string): Promise<ConnectionView | null> {
-      const c = await connRow({ userId });
-      return c ? view(c) : null;
+    /** Whether the operator allows WhatsApp on this server (docs/plan-m3.md: off until allowed, after reading its risk). */
+    async whatsappSettings(): Promise<{ allowed: boolean }> {
+      return { allowed: await whatsappAllowed() };
+    },
+    async setWhatsappSettings(actorId: string, allowed: boolean) {
+      await writeSetting(WHATSAPP_POLICY, { allowed });
+      await audit(d.db, d.clock, { actorUser: actorId, action: allowed ? 'messaging.whatsapp.allowed' : 'messaging.whatsapp.forbidden', targetType: 'service', targetId: 'whatsapp' });
     },
 
-    async connect(userId: string): Promise<ConnectionView> {
-      const s = await settings();
-      if (!s) throw new AppError('conflict', { params: { reason: 'telegram_not_configured' } });
-      let c = await connRow({ userId });
-      if (!c) {
-        const id = uuidv7(d.clock());
-        const dbKey = randomBytes(32).toString('base64');
-        await sql`
-          insert into messaging_connections (id, user_id, service, state, db_key_sealed, test_dc, created_at, updated_at)
-          values (${id}, ${userId}, 'telegram', 'starting', ${d.sealer.seal(dbKey, keyContext(id))}, ${s.testDc}, ${now()}, ${now()})
-          on conflict (user_id, service) do nothing`.execute(d.db);
-        c = (await connRow({ userId }))!;
-        await audit(d.db, d.clock, { actorUser: userId, subjectUser: userId, action: 'messaging.connected', targetType: 'messaging_connection', targetId: c.id });
-      } else if (c.state === 'ready') {
-        return view(c);
-      } else {
-        await setState(c, 'starting', {});
+    // —— The person's connections ——
+    async connections(userId: string): Promise<ConnectionView[]> {
+      const r = await sql<ConnRow>`select ${COLS} from messaging_connections where user_id = ${userId} order by created_at, id`.execute(d.db);
+      return r.rows.map(view);
+    },
+    /** What the server offers to connect: Telegram once its credentials are in, WhatsApp once allowed. */
+    async offered(): Promise<Record<Service, boolean>> {
+      return { telegram: (await telegramApi()) !== null, whatsapp: await whatsappAllowed(), email: true, sms: true, notifications: true };
+    },
+    async connection(userId: string, connectionId: string): Promise<ConnectionView | null> {
+      const c = await connRow({ id: connectionId });
+      return c && c.user_id === userId ? view(c) : null;
+    },
+
+    /** Connects (or starts again) one of the person's services; device services for the phone that asks. */
+    async connect(userId: string, deviceId: string, input: ConnectInput): Promise<ConnectionView> {
+      if (input.service === 'sms' || input.service === 'notifications') {
+        const app = input.service === 'notifications' ? input.app : null;
+        const { c, created } = await create(userId, input.service, { account: app?.package ?? '', deviceId, label: app?.name ?? null, state: 'ready' });
+        // The phone runs it from now on (again, after it stopped).
+        if (created || c.state !== 'ready') await setState(c, 'ready', {});
+        return view((await connRow({ id: c.id }))!);
       }
+      let made: { c: ConnRow; created: boolean };
+      if (input.service === 'telegram') {
+        const s = await telegramApi();
+        if (!s) throw new AppError('conflict', { params: { reason: 'telegram_not_configured' } });
+        made = await create(userId, 'telegram', { secret: randomBytes(32).toString('base64'), state: 'starting', testDc: s.testDc });
+      } else if (input.service === 'whatsapp') {
+        if (!(await whatsappAllowed())) throw new AppError('conflict', { params: { reason: 'whatsapp_not_allowed' } });
+        made = await create(userId, 'whatsapp', { secret: randomBytes(32).toString('base64'), state: 'starting' });
+        if (made.created) await audit(d.db, d.clock, { actorUser: userId, subjectUser: userId, action: 'messaging.whatsapp.risk_accepted', targetType: 'messaging_connection', targetId: made.c.id });
+      } else {
+        const address = input.address.trim().toLowerCase();
+        made = await create(userId, 'email', { account: address, secret: JSON.stringify({ password: input.password, imap: input.imap, smtp: input.smtp }), state: 'starting' });
+        // Connecting again (a new password, other servers): the new ones count.
+        if (!made.created)
+          await sql`update messaging_connections set secret_sealed = ${d.sealer.seal(JSON.stringify({ password: input.password, imap: input.imap, smtp: input.smtp }), keyContext(made.c.id))} where id = ${made.c.id}`.execute(d.db);
+      }
+      let c = (await connRow({ id: made.c.id }))!;
+      if (!made.created && c.state === 'ready' && input.service !== 'email') return view(c);
+      if (!made.created) await setState(c, 'starting', {});
       if (!(await start(c))) throw new AppError('unavailable', { params: { reason: 'connectors' } });
-      return view((await connRow({ userId }))!);
+      c = (await connRow({ id: c.id }))!;
+      return view(c);
     },
 
     /** A login step on the person's device. The code and the password pass through and are never stored. */
-    async login(userId: string, step: 'phone' | 'code' | 'password' | 'qr' | 'resend', value: string): Promise<void> {
-      const c = await connRow({ userId });
-      if (!c) throw new AppError('not_found');
-      const fits: Record<typeof step, string[]> = { phone: ['wait_phone'], code: ['wait_code'], password: ['wait_password'], qr: ['wait_phone', 'wait_code', 'wait_password'], resend: ['wait_code'] };
-      if (!fits[step].includes(c.state)) throw new AppError('conflict', { params: { reason: 'login_state', state: c.state } });
+    async login(userId: string, connectionId: string, step: 'phone' | 'code' | 'password' | 'qr' | 'resend', value: string): Promise<void> {
+      const c = await connRow({ id: connectionId });
+      if (!c || c.user_id !== userId) throw new AppError('not_found');
+      const fits: Partial<Record<Service, Partial<Record<typeof step, string[]>>>> = {
+        telegram: { phone: ['wait_phone'], code: ['wait_code'], password: ['wait_password'], qr: ['wait_phone', 'wait_code', 'wait_password'], resend: ['wait_code'] },
+        whatsapp: { phone: ['wait_phone'], resend: ['wait_pairing'] },
+      };
+      if (!isServerService(c.service) || !fits[c.service]?.[step]?.includes(c.state)) throw new AppError('conflict', { params: { reason: 'login_state', state: c.state } });
       const h = hub();
-      if (!h?.send({ t: 'login', id: c.id, step, value })) throw new AppError('unavailable', { params: { reason: 'connectors' } });
+      if (!h?.send(c.service, { t: 'login', id: c.id, step, value })) throw new AppError('unavailable', { params: { reason: 'connectors' } });
       // A new try clears the last error.
       if (c.detail.error) await setState(c, c.state, { ...c.detail, error: undefined });
     },
 
     /**
-     * Logs out of Telegram and deletes UCAP's copies, TDLib's database included. `loggedOut` false: the connectors were
-     * away, so the session must also be ended in Telegram.
+     * Logs out of the service and deletes UCAP's copies (for Telegram its database too). `loggedOut` false: the service's
+     * process was away, so the session must also be ended on the service.
      */
-    async disconnect(userId: string): Promise<{ loggedOut: boolean }> {
-      const c = await connRow({ userId });
-      if (!c) return { loggedOut: true };
-      // Logged out of Telegram and TDLib's database deleted by the connectors process, if it runs.
-      const loggedOut = hub()?.send({ t: 'remove', id: c.id }) === true;
+    async disconnect(userId: string, connectionId: string): Promise<{ loggedOut: boolean }> {
+      const c = await connRow({ id: connectionId });
+      if (!c || c.user_id !== userId) return { loggedOut: true };
+      // Logged out on the service, and its local state deleted by its process, if it runs. A phone is told below.
+      const loggedOut = isServerService(c.service) ? hub()?.send(c.service, { t: 'remove', id: c.id }) === true : true;
       const f = await sql<{ file_id: string }>`
         select a.file_id from messaging_attachments a join messaging_messages m on m.id = a.message_id join messaging_conversations v on v.id = m.conversation_id
         where v.connection_id = ${c.id} and a.file_id is not null`.execute(d.db);
       await d.db.transaction().execute(async (trx) => {
         await d.files.remove(trx, f.rows.map((x) => x.file_id));
         await sql`delete from messaging_connections where id = ${c.id}`.execute(trx);
-        await audit(trx, d.clock, { actorUser: userId, subjectUser: userId, action: 'messaging.disconnected', targetType: 'messaging_connection', targetId: c.id, detail: { loggedOut } });
+        await audit(trx, d.clock, { actorUser: userId, subjectUser: userId, action: 'messaging.disconnected', targetType: 'messaging_connection', targetId: c.id, detail: { loggedOut, service: c.service } });
       });
       await rm(join(d.filesDir, 'incoming', c.id), { recursive: true, force: true });
       await notify(userId, 'messaging.connection', { connectionId: c.id, state: 'removed' });
       return { loggedOut };
     },
 
-    /** For the admin's page: whether the connectors process is connected, and the connections by state (no names). */
+    /** For the admin's page: which services' processes are connected, and the connections by service and state (no names). */
     async status() {
-      const r = await sql<{ state: string; n: number }>`select state, count(*)::int as n from messaging_connections group by state`.execute(d.db);
-      return { running: hub()?.connected === true, configured: (await settings()) !== null, connections: Object.fromEntries(r.rows.map((x) => [x.state, x.n])) };
+      const r = await sql<{ service: Service; state: string; n: number }>`select service, state, count(*)::int as n from messaging_connections group by service, state`.execute(d.db);
+      const connections: Partial<Record<Service, Record<string, number>>> = {};
+      for (const x of r.rows) connections[x.service] = { ...connections[x.service], [x.state]: x.n };
+      const h = hub();
+      return {
+        running: { telegram: h?.connected('telegram') === true, whatsapp: h?.connected('whatsapp') === true, email: h?.connected('email') === true },
+        configured: (await telegramApi()) !== null,
+        whatsappAllowed: await whatsappAllowed(),
+        connections,
+      };
     },
 
-    /** Whether the person's messaging works now (the assistant offers its tools only then). */
-    async ready(userId: string): Promise<boolean> {
-      const c = await connRow({ userId });
-      return c?.state === 'ready';
+    /**
+     * The services the person has connected, in the order they were connected (the assistant offers its message tools
+     * then, naming them). A connection that was never ready (a link not finished) has nothing to read yet.
+     */
+    async servicesOf(userId: string): Promise<string[]> {
+      const r = await sql<{ service: Service; label: string | null }>`
+        select service, label from messaging_connections where user_id = ${userId} and ready_at is not null
+        group by service, label order by min(created_at)`.execute(d.db);
+      return [...new Set(r.rows.map((x) => serviceName(x.service, x.label)))];
     },
 
-    // —— From the connectors process ——
-    async onHello(running: string[]) {
-      const r = await sql<{ id: string }>`select id from messaging_connections`.execute(d.db);
+    // —— From the connectors processes ——
+    async onHello(services: ServerService[], runningIds: string[]) {
+      const r = await sql<{ id: string }>`select id from messaging_connections where service = any(${services}::text[])`.execute(d.db);
       const ours = new Set(r.rows.map((x) => x.id));
-      for (const id of running) if (!ours.has(id)) hub()?.send({ t: 'remove', id });
+      for (const id of runningIds) if (!ours.has(id)) hub()?.send(services[0]!, { t: 'remove', id });
       // Logins in progress and ready connections run again; ended ones wait for the person ("Neu verbinden").
       const want = await sql<ConnRow>`
-        select id, user_id, service, state, detail, me_name, db_key_sealed, test_dc from messaging_connections
-        where state in ('starting', 'wait_phone', 'wait_code', 'wait_password', 'wait_qr', 'ready')`.execute(d.db);
-      for (const c of want.rows) if (!running.includes(c.id)) await start(c);
-      for (const c of want.rows) if (c.state === 'ready') await retryDownloads(c.id);
-      await flushQueued();
+        select ${COLS} from messaging_connections where service = any(${services}::text[]) and state = any(${LIVE_STATES}::text[])`.execute(d.db);
+      for (const c of want.rows) if (!runningIds.includes(c.id)) await start(c);
+      for (const c of want.rows) if (c.state === 'ready') await retryDownloads(c);
+      await flushQueued(services);
     },
 
-    async onEvent(e: FromConnectors) {
+    /** An event of a connectors process; `from`: the services that process runs. */
+    async onEvent(e: FromConnectors, from: ServerService[] = ['telegram']) {
       if (e.t === 'hello') return;
       const c = await connRow({ id: e.id });
       if (!c) {
         // Removed here while it still ran there.
-        if (e.t === 'conn.state' && e.state !== 'closed' && e.state !== 'logged_out') hub()?.send({ t: 'remove', id: e.id });
+        if (e.t === 'conn.state' && e.state !== 'closed' && e.state !== 'logged_out' && from[0]) hub()?.send(from[0], { t: 'remove', id: e.id });
         return;
       }
+      // Never another service's process speaking for this connection.
+      if (!isServerService(c.service) || !from.includes(c.service)) return;
       switch (e.t) {
         case 'conn.state': {
           const detail: ConnectionView['detail'] = {
             ...(e.code ? { code: e.code } : {}),
             ...(e.qr ? { qr: e.qr } : {}),
+            ...(e.pairing ? { pairing: e.pairing } : {}),
             ...(e.passwordHint !== undefined ? { passwordHint: e.passwordHint } : {}),
             ...(e.error ? { error: e.error } : {}),
           };
           await setState(c, e.state, detail, e.me);
           if (e.state === 'ready') {
-            await flushQueued(c.id);
-            await retryDownloads(c.id);
+            await flushQueued([c.service]);
+            await retryDownloads(c);
           }
           return;
         }
@@ -474,7 +602,7 @@ export function createMessaging(d: {
           return;
         case 'msg.upsert': {
           const up = await store.upsertMessage(c.id, e.msg);
-          if (up.inserted && e.msg.kind === 'voice') await requestDownload(c.id, up.id, e.msg.file);
+          if (up.inserted && e.msg.kind === 'voice') await requestDownload(c, up.id, e.msg.file);
           if (up.inserted && e.live) {
             const v = await sql<{ kind: string; muted: boolean }>`select kind, muted from messaging_conversations where id = ${up.conversationId}`.execute(d.db);
             const fresh = !e.msg.outgoing && v.rows[0]?.kind !== 'channel' && d.clock() - e.msg.date * 1000 < FRESH_MS;
@@ -503,8 +631,20 @@ export function createMessaging(d: {
 
     // —— Reading ——
     async overview(userId: string, limit = 10) {
-      const r = await sql<{ id: string; title: string; kind: string; muted: boolean; last_message_at: Date | null; unread: string; draft: string | null; draft_at: Date | null; service: Service; last_out: boolean | null }>`
-        select v.id, v.title, v.kind, v.muted, v.last_message_at, v.draft, v.draft_at, k.service,
+      const r = await sql<{
+        id: string;
+        title: string;
+        kind: string;
+        muted: boolean;
+        last_message_at: Date | null;
+        unread: string;
+        draft: string | null;
+        draft_at: Date | null;
+        service: Service;
+        label: string | null;
+        last_out: boolean | null;
+      }>`
+        select v.id, v.title, v.kind, v.muted, v.last_message_at, v.draft, v.draft_at, k.service, k.label,
           (select count(*) from messaging_messages m where m.conversation_id = v.id and m.direction = 'in' and m.read_at is null and m.heard_at is null) as unread,
           (select m.direction = 'out' from messaging_messages m where m.conversation_id = v.id order by m.sent_at desc limit 1) as last_out
         from messaging_conversations v join messaging_connections k on k.id = v.connection_id
@@ -524,6 +664,7 @@ export function createMessaging(d: {
         waitingForReply: x.kind === 'private' && x.last_out === false,
         draft: x.draft && x.draft_at && x.draft_at.getTime() > d.clock() - DRAFT_MS ? x.draft : null,
         service: x.service,
+        serviceName: serviceName(x.service, x.label),
       }));
     },
 
@@ -646,8 +787,8 @@ export function createMessaging(d: {
 
     /** A recording to play: its signed URL, or that it is being fetched. */
     async audio(userId: string, messageId: string): Promise<{ url: string } | { pending: true } | null> {
-      const r = await sql<{ file_id: string | null; download: string; service_file_id: string; mime: string | null; bytes: string | null; duration_s: number | null; connection_id: string }>`
-        select a.file_id, a.download, a.service_file_id, a.mime, a.bytes, a.duration_s, v.connection_id
+      const r = await sql<{ file_id: string | null; download: string; service_file_id: string; mime: string | null; bytes: string | null; duration_s: number | null; connection_id: string; service: Service }>`
+        select a.file_id, a.download, a.service_file_id, a.mime, a.bytes, a.duration_s, v.connection_id, k.service
         from messaging_attachments a join messaging_messages m on m.id = a.message_id join messaging_conversations v on v.id = m.conversation_id
         join messaging_connections k on k.id = v.connection_id where a.message_id = ${messageId} and k.user_id = ${userId}`.execute(d.db);
       const a = r.rows[0];
@@ -655,41 +796,41 @@ export function createMessaging(d: {
       if (a.file_id) return { url: d.files.url(a.file_id, 3600) };
       if (a.download === 'too_large') return null;
       // Gone from here (older than a month) or never fetched: fetched now.
-      await requestDownload(a.connection_id, messageId, { fileId: Number(a.service_file_id), mime: a.mime, size: a.bytes === null ? null : Number(a.bytes), durationS: a.duration_s });
+      await requestDownload({ id: a.connection_id, service: a.service }, messageId, { fileId: Number(a.service_file_id), mime: a.mime, size: a.bytes === null ? null : Number(a.bytes), durationS: a.duration_s });
       return { pending: true };
     },
 
-    /** The person heard these originals: marked, and read on Telegram (only now: Appendix E). */
+    /** The person heard these originals: marked, and read on their service (only now: Appendix E). */
     async heard(userId: string, messageIds: string[]): Promise<void> {
       if (!messageIds.length) return;
-      const r = await sql<{ connection_id: string; chat: string; external_id: string }>`
+      const r = await sql<{ connection_id: string; chat: string; external_id: string; service: Service }>`
         update messaging_messages m set heard_at = ${now()} from messaging_conversations v, messaging_connections k
         where m.id = any(${messageIds}::uuid[]) and v.id = m.conversation_id and k.id = v.connection_id and k.user_id = ${userId} and m.heard_at is null
-        returning v.connection_id, v.external_id as chat, m.external_id`.execute(d.db);
-      const byChat = new Map<string, { id: string; chat: string; ids: string[] }>();
+        returning v.connection_id, v.external_id as chat, m.external_id, k.service`.execute(d.db);
+      const byChat = new Map<string, { id: string; chat: string; ids: string[]; service: Service }>();
       for (const x of r.rows) {
         const k = `${x.connection_id}|${x.chat}`;
-        const e = byChat.get(k) ?? { id: x.connection_id, chat: x.chat, ids: [] };
+        const e = byChat.get(k) ?? { id: x.connection_id, chat: x.chat, ids: [], service: x.service };
         e.ids.push(x.external_id);
         byChat.set(k, e);
       }
-      for (const e of byChat.values()) hub()?.send({ t: 'mark_read', id: e.id, chatId: e.chat, externalIds: e.ids });
+      for (const e of byChat.values()) if (isServerService(e.service)) hub()?.send(e.service, { t: 'mark_read', id: e.id, chatId: e.chat, externalIds: e.ids });
     },
 
     // —— Sending ——
     /**
      * One conversation, by its ref or by a name, never a guess: several that fit are named back. For sending: only
-     * chats one can write in, while Telegram is connected.
+     * chats one can write in, on a connection that is ready.
      */
-    async find(userId: string, to: string, o: { forSending: boolean }): Promise<{ conversationId: string; name: string; service: Service; contact: boolean | null } | { ambiguous: string[] } | null> {
+    async find(userId: string, to: string, o: { forSending: boolean }): Promise<{ conversationId: string; name: string; service: Service; label: string | null; contact: boolean | null } | { ambiguous: string[] } | null> {
       // A conversation's id wherever it stands ("chat:<id>", the id alone, "Anna Beispiel (chat:<id>)").
       const ref = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/.exec(to);
-      const r = await sql<{ id: string; title: string; kind: string; is_contact: boolean | null; service: Service }>`
-        select v.id, v.title, v.kind, p.is_contact, k.service from messaging_conversations v join messaging_connections k on k.id = v.connection_id
+      const r = await sql<{ id: string; title: string; kind: string; is_contact: boolean | null; service: Service; label: string | null }>`
+        select v.id, v.title, v.kind, p.is_contact, k.service, k.label from messaging_conversations v join messaging_connections k on k.id = v.connection_id
         left join messaging_participants p on p.connection_id = k.id and p.external_id = v.peer_external_id
         where k.user_id = ${userId} and v.title <> '' ${o.forSending ? sql`and k.state = 'ready' and v.kind in ('private', 'group')` : sql``}
         order by v.last_message_at desc nulls last`.execute(d.db);
-      const out = (x: (typeof r.rows)[number]) => ({ conversationId: x.id, name: x.title, service: x.service, contact: x.kind === 'private' ? x.is_contact === true : null });
+      const out = (x: (typeof r.rows)[number]) => ({ conversationId: x.id, name: x.title, service: x.service, label: x.label, contact: x.kind === 'private' ? x.is_contact === true : null });
       if (ref) {
         const x = r.rows.find((y) => y.id === ref[1]);
         return x ? out(x) : null;
@@ -709,7 +850,7 @@ export function createMessaging(d: {
       return null;
     },
 
-    /** The confirmed message, written before Telegram is asked; said back as C2 or, without a connection, C9. */
+    /** The confirmed message, written before the service is asked; said back as C2 or, without a connection, C9. */
     async send(o: { userId: string; deviceId: string; actionId: string | null; conversationId: string; text: string }): Promise<SendOutcome> {
       const id = uuidv7(d.clock());
       const r = await sql<{ id: string }>`
@@ -736,20 +877,20 @@ export function createMessaging(d: {
 
     /** What to tell the person about a message they sent (C3–C6), in their words. */
     async outbound(userId: string, id: string, lang?: Lang): Promise<{ state: string; told: Told[]; say: string | null } | null> {
-      const r = await sql<{ state: string; told: Told[]; error: string | null; title: string; service: Service }>`
-        select o.state, o.told, o.error, v.title, k.service from messaging_outbound o join messaging_conversations v on v.id = o.conversation_id
+      const r = await sql<{ state: string; told: Told[]; error: string | null; title: string; service: Service; label: string | null }>`
+        select o.state, o.told, o.error, v.title, k.service, k.label from messaging_outbound o join messaging_conversations v on v.id = o.conversation_id
         join messaging_connections k on k.id = o.connection_id where o.id = ${id} and o.user_id = ${userId}`.execute(d.db);
       const o = r.rows[0];
       if (!o) return null;
       const p = await langOf(userId);
       const L = lang ?? p.lang;
-      const params = { recipient: o.title, service: SERVICE_NAMES[o.service], reason: t(L, `messages.reason.${reasonKey(o.error)}`, {}, p.form) };
+      const params = { recipient: o.title, service: serviceName(o.service, o.label), reason: t(L, `messages.reason.${reasonKey(o.error)}`, {}, p.form) };
       const last = o.told.at(-1);
       const key = o.state === 'sent' ? 'C3' : o.state === 'failed' ? 'C4' : o.state === 'uncertain' ? 'C6' : last === 'C5' ? 'C5' : null;
       return { state: o.state, told: o.told, say: key ? t(L, `messages.${key}`, params, p.form) : null };
     },
 
-    /** C5 after 15 s without Telegram's answer. */
+    /** C5 after 15 s without the service's answer. */
     async slow(outboundId: string) {
       const r = await sql<{ state: string }>`select state from messaging_outbound where id = ${outboundId}`.execute(d.db);
       if (r.rows[0]?.state === 'pending_service') await told(outboundId, 'C5');

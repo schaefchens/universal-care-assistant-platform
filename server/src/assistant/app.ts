@@ -107,10 +107,18 @@ export async function buildAssistant(o: {
   const reminders = createReminderService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, people, nonceFor: deliveryNonce(o.secrets.pepper) });
   const llm = createLlm({ db: o.db, clock: o.clock, providers, fetch: o.providerFetch, log, ollamaUrl: o.config.ollamaUrl, ollamaModel: o.config.ollamaModel });
   const actions = createActions({ db: o.db, clock: o.clock, log });
-  // The person's Telegram (S10): the connectors process dials in; without its token there is no messaging.
+  // The person's messaging (S10, docs/plan-m3.md): a connectors process per service dials in; without their token there
+  // is no messaging.
   const messaging = createMessaging({ db: o.db, clock: o.clock, sealer, files, filesDir: o.config.filesDir, stt, log, ffmpeg: o.ffmpeg });
   if (o.secrets.connectorsToken)
-    messaging.attach(await registerConnectorHub(app, { token: o.secrets.connectorsToken, onHello: (running) => messaging.onHello(running), onEvent: (e) => messaging.onEvent(e), log }));
+    messaging.attach(
+      await registerConnectorHub(app, {
+        token: o.secrets.connectorsToken,
+        onHello: (services, running) => messaging.onHello(services, running),
+        onEvent: (e, from) => messaging.onEvent(e, from),
+        log,
+      }),
+    );
   const assistant = createAssistant({ db: o.db, clock: o.clock, llm, actions, notes, reminders, messaging, log });
   const contextFor = async (userId: string, deviceId: string, lang?: 'de' | 'en') => {
     const r = await sql<{ locale: string; address_form: 'du' | 'Sie'; timezone: string }>`select locale, address_form, timezone from users where id = ${userId}`.execute(o.db);
