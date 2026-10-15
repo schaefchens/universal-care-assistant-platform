@@ -2,8 +2,8 @@
  * UI-07 (docs/plan.md, Appendix J): a care announcement survives exploration. Labels never cut care or system speech;
  * only an explicit "Stopp" stops care.
  */
-import { describe, expect, it } from 'vitest';
-import { type SpeechBackend, SpeechOut, type Utterance } from '../src/audio/speech.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { type SpeechBackend, SpeechOut, stallAfterMs, type Utterance, webBackend } from '../src/audio/speech.ts';
 
 function fakeBackend() {
   const log: string[] = [];
@@ -145,5 +145,54 @@ describe('speech channels', () => {
     void out.sayAndWait('Hilferuf wird gesendet.', 'de', 'care');
     await tick();
     expect(await out.sayAndWait('Nachrichten', 'de', 'label')).toBe(false);
+  });
+});
+
+describe("the browser's speech engine", () => {
+  it('when it never tells an end (Chrome stalled), the utterance is cut after about twice its time, counted as not said, and what waits behind it goes on', async () => {
+    vi.useFakeTimers();
+    const said: string[] = [];
+    const ends = new Map<string, () => void>();
+    let cancelled = 0;
+    class Utt {
+      text: string;
+      voice: unknown = null;
+      lang = '';
+      rate = 1;
+      onend: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+    vi.stubGlobal('SpeechSynthesisUtterance', Utt);
+    vi.stubGlobal('speechSynthesis', {
+      getVoices: () => [{ localService: true, lang: 'de-DE', default: true }],
+      speak: (u: Utt) => {
+        said.push(u.text);
+        ends.set(u.text, () => u.onend?.());
+      },
+      cancel: () => cancelled++,
+    });
+    try {
+      const out = new SpeechOut(webBackend('de')!);
+      const news = 'Neue Nachricht von Anna Beispiel auf WhatsApp.';
+      const intro = 'Nachrichten. 3 neue Nachrichten.';
+      const first = out.sayAndWait(news, 'de', 'notice');
+      const second = out.sayAndWait(intro, 'de', 'system');
+      expect(said).toEqual([news]);
+      await vi.advanceTimersByTimeAsync(stallAfterMs(news, 1) - 1);
+      expect(said).toEqual([news]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await first).toBe(false);
+      expect(cancelled).toBe(1);
+      // The intro waited behind it, and now is said, to its end.
+      expect(said).toEqual([news, intro]);
+      ends.get(intro)!();
+      expect(await second).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 });

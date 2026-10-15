@@ -13,6 +13,7 @@ import type { Session } from '../identity/account.ts';
 import { useUi } from '../ui.tsx';
 import { useScreenVoice } from '../voice/screen.ts';
 import { TalkButton, VoiceContext } from '../voice/TalkButton.tsx';
+import { keepInFront } from './messages-list.ts';
 
 export interface MessageItem {
   id: string;
@@ -99,14 +100,12 @@ export function MessagesScreen(p: {
       // Which services are down, named: "WhatsApp ist gerade nicht verbunden."
       const down = [...new Set(r.connections.filter((x) => x.state !== 'ready').map((x) => x.name))];
       const names = down.length > 1 ? tr('messages.and', { first: down.slice(0, -1).join(', '), last: down.at(-1)! }) : (down[0] ?? '');
-      // A refresh keeps the message in front where it is: one heard just now stays first, so "Nächste" leads on to
-      // what came since.
+      // The message in front stays first (fetched again after a new message, or back from a reply's question), so
+      // "Nächste" leads on to the rest, the unread first.
       const keep = first ? (resume && Date.now() - resume.at < 5 * 60_000 ? resume.id : null) : (items?.[i]?.id ?? null);
-      const shown = !first && items?.[i];
-      const list = shown && !r.items.some((x) => x.id === shown.id) ? [shown, ...r.items] : r.items;
-      const k = keep ? Math.max(0, list.findIndex((x) => x.id === keep)) : 0;
+      const list = keepInFront(r.items, first ? r.items.find((x) => x.id === keep) : items?.[i]);
       setItems(list);
-      setI(k);
+      setI(0);
       if (!first || Date.now() - introducedAt < 1500) return;
       introducedAt = Date.now();
       ui.earcons.play('screen');
@@ -115,9 +114,9 @@ export function MessagesScreen(p: {
       const intro = `${tr('messages.title')}. ${tr('messages.count', { count: unread })}${down.length ? ` ${tr('messages.notReady', { names, count: down.length })}` : ''}`;
       if (!list.length) return say(`${intro} ${tr('messages.empty')}`, 'system');
       // Back from a reply's question: where it was, without reading it again.
-      if (keep && list[k]?.id === keep) return say(intro, 'system');
+      if (keep && list[0]?.id === keep) return say(intro, 'system');
       await ui.sayAndWait(intro, 'system');
-      void readItem(list[k]!);
+      void readItem(list[0]!);
     } catch {
       setItems([]);
       setState('unavailable');

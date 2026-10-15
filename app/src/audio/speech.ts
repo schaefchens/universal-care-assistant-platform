@@ -73,7 +73,24 @@ export function deviceBackend(lang?: string): SpeechBackend {
   };
 }
 
-/** speechSynthesis restricted to local voices; null when the browser has none for the language. */
+/**
+ * The longest an utterance may take before it counts as stalled: about twice as long as saying it takes, longer when
+ * spoken slowly, never shorter than at the usual rate (so the bounds of those who wait for it, voice/controller.ts, end
+ * first).
+ */
+export const stallAfterMs = (text: string, rate: number) => 4000 + (text.length * 160) / Math.min(1, rate);
+
+/** An utterance cut because its engine never told its end. */
+export class SpeechStalled extends Error {}
+
+/** Utterances being said: Chrome may drop the end of one that nothing else refers to. */
+const speaking = new Set<SpeechSynthesisUtterance>();
+
+/**
+ * speechSynthesis restricted to local voices; null when the browser has none for the language. Chrome may never tell
+ * an utterance's end (a hidden tab, an engine that stalled: seen in the browser walk, `speaking` still true 20 s
+ * on): after stallAfterMs it is cut and counted as not said, so what waits behind it goes on.
+ */
 export function webBackend(lang: string): SpeechBackend | null {
   if (typeof speechSynthesis === 'undefined') return null;
   const pick = () =>
@@ -85,15 +102,26 @@ export function webBackend(lang: string): SpeechBackend | null {
   return {
     kind: 'web',
     speak(u, rate) {
-      return new Promise<void>((resolve) => {
+      return new Promise<void>((resolve, reject) => {
         const voice = pick();
         if (!voice) return resolve();
         const utt = new SpeechSynthesisUtterance(u.text);
         utt.voice = voice;
         utt.lang = voice.lang;
         utt.rate = rate;
-        utt.onend = () => resolve();
-        utt.onerror = () => resolve();
+        speaking.add(utt);
+        const stalled = setTimeout(() => {
+          speaking.delete(utt);
+          speechSynthesis.cancel();
+          reject(new SpeechStalled());
+        }, stallAfterMs(u.text, rate));
+        const end = () => {
+          clearTimeout(stalled);
+          speaking.delete(utt);
+          resolve();
+        };
+        utt.onend = end;
+        utt.onerror = end;
         speechSynthesis.speak(utt);
       });
     },
@@ -222,11 +250,16 @@ export class SpeechOut {
     this.current = u;
     void this.backend
       .speak(u, this.rate)
-      .catch(() => {})
-      .finally(() => {
+      // One that stalled was not said to the end (nothing counts as heard from it); an engine's own error counts as
+      // said, as it always has, so an answer goes on.
+      .then(
+        () => true,
+        (e: unknown) => !(e instanceof SpeechStalled),
+      )
+      .then((completed) => {
         if (this.current === u) {
           this.current = null;
-          u.done?.(true);
+          u.done?.(completed);
           this.next();
         }
       });
