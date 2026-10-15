@@ -93,7 +93,8 @@ export type ToConnectors =
   | { t: 'login'; id: string; step: 'phone' | 'code' | 'password' | 'qr' | 'resend'; value?: string }
   /** The person disconnected: log out where it is logged in, then delete everything of it (TDLib's database too). */
   | { t: 'remove'; id: string }
-  | { t: 'send'; id: string; requestId: string; chatId: string; text: string }
+  /** `subject`: an email's, as the person confirmed it. */
+  | { t: 'send'; id: string; requestId: string; chatId: string; text: string; subject?: string }
   | { t: 'download'; id: string; requestId: string; fileId: number; dest: string }
   | { t: 'history'; id: string; chatId: string; limit: number }
   | { t: 'mark_read'; id: string; chatId: string; externalIds: string[] };

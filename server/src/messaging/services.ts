@@ -13,12 +13,16 @@ export const SERVICES: readonly Service[] = ['telegram', 'whatsapp', 'email', 's
 export const isServerService = (s: Service): s is ServerService => s === 'telegram' || s === 'whatsapp' || s === 'email';
 export const isService = (s: unknown): s is Service => typeof s === 'string' && (SERVICES as readonly string[]).includes(s);
 
-/** Proper names; email, SMS and previews are worded by the catalog ("per E-Mail", "Vorschau von Signal"). */
-export const SERVICE_NAMES: Record<Service, string> = { telegram: 'Telegram', whatsapp: 'WhatsApp', email: 'E-Mail', sms: 'SMS', notifications: 'Vorschau' };
+
+/** How far back UCAP fetches when a service is linked (Telegram's backfill; WhatsApp, email and SMS: docs/plan-m3.md). */
+export const HISTORY_DAYS = 30;
 
 export interface Capabilities {
-  /** How much of a conversation UCAP can know: what the service keeps, what came since connecting, or what notifications showed. */
-  history: 'full' | 'since_connect' | 'previews';
+  /**
+   * How much of a conversation UCAP can know: messages from a day on (fetched at linking, HISTORY_DAYS back, and all
+   * that came since; nothing older), or only what notifications showed (CONCEPT §3: never a conversation's history).
+   */
+  history: 'since' | 'previews';
   /** Whom it sends to: anyone by address or number, into conversations there are, only as a reply to a notification, nobody. */
   send: 'any' | 'conversations' | 'replies' | 'none';
   /**
@@ -38,9 +42,9 @@ export interface Capabilities {
 }
 
 export const CAPABILITIES: Record<Service, Capabilities> = {
-  telegram: { history: 'full', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
-  whatsapp: { history: 'since_connect', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
-  email: { history: 'full', send: 'any', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false },
-  sms: { history: 'full', send: 'any', sent: 'network', voice: false, readState: true, groups: true, subject: false, delivery: true },
+  telegram: { history: 'since', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
+  whatsapp: { history: 'since', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
+  email: { history: 'since', send: 'any', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false },
+  sms: { history: 'since', send: 'any', sent: 'network', voice: false, readState: true, groups: true, subject: false, delivery: true },
   notifications: { history: 'previews', send: 'replies', sent: 'app', voice: false, readState: true, groups: true, subject: false, delivery: false },
 };

@@ -5,7 +5,7 @@
  */
 import { hasMessage } from '@ucap/shared';
 import { type FormEvent, useEffect, useState } from 'react';
-import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, Radio, RadioGroup, TextField } from 'react-aria-components';
+import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, Radio, RadioGroup, Switch, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
 import { ApiError } from '../net/api.ts';
 import { useUi } from '../ui.tsx';
@@ -117,6 +117,46 @@ function TelegramAdmin(p: { session: Session; tell: (text: string, show: (t: str
           {status}
         </p>
       </Form>
+    </section>
+  );
+}
+
+/**
+ * WhatsApp on this server (docs/plan-m3.md, K1/K2): allowed by the operator after reading the risk, off until then.
+ * Each person still hears the risk and agrees before linking their own account.
+ */
+function WhatsappAdmin(p: { session: Session; tell: (text: string, show: (t: string) => void) => void }) {
+  const { tr } = useUi();
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [status, setStatus] = useState('');
+  useEffect(() => {
+    void p.session.call<{ allowed: boolean }>('/api/v1/ai-admin/whatsapp').then(
+      (r) => setAllowed(r.allowed),
+      () => {},
+    );
+  }, [p.session]);
+  async function change(on: boolean) {
+    try {
+      const r = await p.session.call<{ allowed: boolean }>('/api/v1/ai-admin/whatsapp', { method: 'PUT', body: { allowed: on } });
+      setAllowed(r.allowed);
+      p.tell(tr(r.allowed ? 'admin.whatsapp.allowed' : 'admin.whatsapp.forbidden'), setStatus);
+    } catch (err) {
+      p.tell(tr(`error.${err instanceof ApiError ? err.code : 'internal'}`), setStatus);
+    }
+  }
+  return (
+    <section className="settings-section">
+      <h2>{tr('admin.whatsapp.title')}</h2>
+      <p className="muted">{tr('admin.whatsapp.intro')}</p>
+      {allowed !== null && (
+        <Switch className="switch" isSelected={allowed} onChange={(on) => void change(on)}>
+          <span className="switch-indicator" aria-hidden />
+          {tr('admin.whatsapp.allow')}
+        </Switch>
+      )}
+      <p role="status" className="status">
+        {status}
+      </p>
     </section>
   );
 }
@@ -314,6 +354,7 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
       </section>
 
       <TelegramAdmin session={p.session} tell={tell} />
+      <WhatsappAdmin session={p.session} tell={tell} />
 
       <section className="settings-section">
         <h2>{tr('admin.herde')}</h2>

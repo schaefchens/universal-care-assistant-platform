@@ -113,7 +113,7 @@ test.afterAll(async () => {
   words.clear();
 });
 
-test('1 · the operator: an administrator from the CLI, a voice service and Telegram set up on the admin page', async () => {
+test('1 · the operator: an administrator from the CLI, a voice service and Telegram set up on the admin page, WhatsApp allowed after its risk', async () => {
   words.set('Maria', await signUp(maria, 'Maria', invitation(true)));
   await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await maria.getByRole('button', { name: 'KI und Stimmen verwalten' }).click();
@@ -135,6 +135,14 @@ test('1 · the operator: an administrator from the CLI, a voice service and Tele
   await telegram.getByLabel('api_hash', { exact: true }).fill('0123456789abcdef0123456789abcdef');
   await telegram.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(telegram.getByText('Eingerichtet: api_id 1234567.')).toBeVisible();
+  // WhatsApp: off until the operator, having read the risk, allows it (docs/plan-m3.md, acceptance step 1).
+  const whatsapp = maria.locator('section').filter({ has: maria.getByRole('heading', { name: 'WhatsApp', exact: true }) });
+  await expect(whatsapp.getByText(/Meta kann die Nummer eines Menschen dafür sperren/)).toBeVisible();
+  const allow = whatsapp.getByRole('switch', { name: 'WhatsApp auf diesem Server erlauben' });
+  await expect(allow).not.toBeChecked();
+  await whatsapp.getByText('WhatsApp auf diesem Server erlauben').click();
+  await expect(whatsapp.getByText('WhatsApp ist erlaubt.')).toBeVisible();
+  await expect(allow).toBeChecked();
 });
 
 test('2 · the person creates an identity: twelve words, three checked, a reply voice chosen by listening; four areas', async () => {
@@ -306,17 +314,26 @@ test('7 · Telegram: connected on the person’s device; a new message announced
   await clocks.advance(31 * 60_000); // past the reopen window of the last request
   await home(clara);
   await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
-  await clara.getByRole('button', { name: 'Telegram', exact: true }).click();
+  await clara.getByRole('button', { name: 'Nachrichtendienste', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Nachrichtendienste');
+  await expect(clara.getByText('Noch ist kein Nachrichtendienst verbunden.')).toBeVisible();
+  await clara.getByRole('button', { name: 'Telegram verbinden' }).click();
+  await expect(heading(clara)).toHaveText('Telegram');
   await clara.getByRole('button', { name: 'Telegram verbinden' }).click();
   await clara.getByLabel('Telefonnummer').fill('+49 170 1234567');
   await clara.getByRole('button', { name: 'Weiter', exact: true }).click();
   await clara.getByLabel('Code', { exact: true }).fill('22222');
   await clara.getByRole('button', { name: 'Anmelden', exact: true }).click();
   await expect(clara.getByText('Verbunden als Clara Test.')).toBeVisible();
+  // Back on the list: the connection says what it can do, its history from a day on, never "all of it" (Appendix K; CONCEPT §3).
+  let from = await mark(clara);
+  await clara.getByRole('button', { name: 'Zurück', exact: true }).click();
+  await expect(clara.getByText(/^Telegram: verbunden\. hat Nachrichten ab dem \d+\. \S+ \d{4}; antwortet in den Unterhaltungen, die es gibt; „gesendet“, sobald Telegram es bestätigt\.$/)).toBeVisible();
+  await said(clara, /^Nachrichtendienste\. Telegram: verbunden\.$/, from);
   await home(clara);
 
   // Anna writes; the person hears who, never what.
-  let from = await mark(clara);
+  from = await mark(clara);
   const sent = await fetch(`${TELEGRAM}/incoming`, { method: 'POST', body: JSON.stringify({ chat: 'anna', text: 'Kannst du morgen zum Kaffee kommen?' }) });
   expect(sent.ok).toBe(true);
   await said(clara, /^Neue Nachricht von Anna Beispiel\.$/, from);

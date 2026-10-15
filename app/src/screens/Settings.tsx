@@ -57,8 +57,8 @@ export function Settings(p: {
   onPeople: () => void;
   onReminders: () => void;
   onVoices: () => void;
-  /** The person's own Telegram (S10). */
-  onTelegram: () => void;
+  /** The person's own messaging services (docs/plan-m3.md): Telegram, and more to come. */
+  onMessaging: () => void;
   /** Administrators only: providers, keys, usage, herde. */
   onAiAdmin?: () => void;
   /** Administrators only: the server's state, the accounts, account invitations. */
@@ -121,8 +121,8 @@ export function Settings(p: {
         <Button className="button" onPress={p.onDevices}>
           {tr('settings.devices')}
         </Button>
-        <Button className="button" onPress={p.onTelegram}>
-          {tr('settings.telegram')}
+        <Button className="button" onPress={p.onMessaging}>
+          {tr('settings.messaging')}
         </Button>
         {/* Only once the account's state is known: "einrichten" and "neue" lead to different flows. */}
         {p.me && (

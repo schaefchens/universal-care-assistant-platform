@@ -855,3 +855,29 @@ The plan: [plan-m3.md](plan-m3.md).
    - `packages/herde-project` stays Apache-2.0, as vendored.
    - The font stays under the SIL Open Font License (NOTICE).
    - It combines with Baileys' `libsignal` (GPL-3.0), so the WhatsApp connector needs no licence of its own.
+
+### To confirm
+
+1. **K1's check on the emulator, the messages screen with two services, waits for K3.** plan-m3.md's K1 exit: "on the
+   emulator, the messages screen with two services". The emulator's app is signed in to the owner's account on the dev
+   stack, which holds the owner's real Telegram; a second service there would be a connection on the owner's account.
+   Built: the screen with two services is covered by the store, tool and route tests and by the browser walk with the
+   stand-ins; on the emulator it is checked in K3, with a Hetzner test mailbox, after asking the owner. The other
+   choice: a second account on the emulator now, which signs the owner's account out of the app there.
+
+### Decided (within the plan)
+
+- **History is said from a day on.** plan-m3.md: "how much history it has: all of it, from a date, or previews only".
+  UCAP fetches 30 days when a service is linked (Telegram: the last 50 messages of each conversation active in that
+  time) and keeps all that comes after, so Telegram, WhatsApp, email and SMS say "hat Nachrichten ab dem 15. September";
+  "all of it" waits for a service whose whole history UCAP can reach. The model gets the day too.
+- **A connection keeps only what differs from its service's capabilities** (migration 0018); the service's own come
+  from the code. Each connection had held a copy, Telegram's with "all of it".
+- **A new message to a name on several services** goes to the service where that person wrote last, if that was in
+  the last 14 days and later than on the others; otherwise UCAP asks which service ("Per SMS oder auf Telegram?").
+  plan-m3.md: "goes where they last wrote; when that is not clear, UCAP asks".
+- **Services are named in the person's language** ("E-Mail", "Email"); a preview by its app ("Signal").
+- **The messages tools are offered once a connection has been ready**; one still being linked has nothing to read.
+- **Einstellungen → Nachrichtendienste lists each connection with its state and what it can do**, said as the page
+  opens ("Telegram: verbunden."). Each service's own page comes with its step: Telegram's now, WhatsApp's in K2,
+  email's in K3, SMS in K4, previews in K5.

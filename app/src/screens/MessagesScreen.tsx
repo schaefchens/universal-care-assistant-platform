@@ -17,6 +17,9 @@ import { TalkButton, VoiceContext } from '../voice/TalkButton.tsx';
 export interface MessageItem {
   id: string;
   conversationId: string;
+  /** The connection it came through: a reply needs that one ready. */
+  connectionId: string;
+  service: string;
   conversation: string;
   group: boolean;
   from: string;
@@ -56,6 +59,7 @@ export function MessagesScreen(p: {
   const { voice } = useContext(VoiceContext);
   const [items, setItems] = useState<MessageItem[] | null>(null);
   const [state, setState] = useState<'none' | 'ready' | 'not_ready' | 'unavailable'>('ready');
+  const [conns, setConns] = useState<{ id: string; name: string; state: string }[]>([]);
   const [i, setI] = useState(0);
   const reading = useRef(0);
   const current = items?.[i];
@@ -87,10 +91,14 @@ export function MessagesScreen(p: {
 
   const load = async (first: boolean) => {
     try {
-      const r = await p.session.call<{ connections: { service: string; name: string; state: string }[]; items: MessageItem[] }>(`/api/v1/messaging/queue?lang=${ui.lang}`);
+      const r = await p.session.call<{ connections: { id: string; service: string; name: string; state: string }[]; items: MessageItem[] }>(`/api/v1/messaging/queue?lang=${ui.lang}`);
       // Ready while one of the person's services is (each message keeps its own service).
       const st = !r.connections.length ? 'none' : r.connections.some((x) => x.state === 'ready') ? 'ready' : 'not_ready';
       setState(st);
+      setConns(r.connections);
+      // Which services are down, named: "WhatsApp ist gerade nicht verbunden."
+      const down = [...new Set(r.connections.filter((x) => x.state !== 'ready').map((x) => x.name))];
+      const names = down.length > 1 ? tr('messages.and', { first: down.slice(0, -1).join(', '), last: down.at(-1)! }) : (down[0] ?? '');
       // A refresh keeps the message in front where it is: one heard just now stays first, so "Nächste" leads on to
       // what came since.
       const keep = first ? (resume && Date.now() - resume.at < 5 * 60_000 ? resume.id : null) : (items?.[i]?.id ?? null);
@@ -104,7 +112,7 @@ export function MessagesScreen(p: {
       ui.earcons.play('screen');
       if (st === 'none') return say(`${tr('messages.title')}. ${tr('messages.notConnected')}`, 'system');
       const unread = r.items.filter((x) => x.unread).length;
-      const intro = `${tr('messages.title')}. ${tr('messages.count', { count: unread })}${st === 'not_ready' ? ` ${tr('messages.notReady')}` : ''}`;
+      const intro = `${tr('messages.title')}. ${tr('messages.count', { count: unread })}${down.length ? ` ${tr('messages.notReady', { names, count: down.length })}` : ''}`;
       if (!list.length) return say(`${intro} ${tr('messages.empty')}`, 'system');
       // Back from a reply's question: where it was, without reading it again.
       if (keep && list[k]?.id === keep) return say(intro, 'system');
@@ -140,7 +148,8 @@ export function MessagesScreen(p: {
 
   async function reply() {
     if (!current || current.kind === 'service') return say(tr('messages.reply.none'), 'system');
-    if (state !== 'ready') return say(tr('messages.reply.notReady'), 'system');
+    const conn = conns.find((x) => x.id === current.connectionId);
+    if (conn?.state !== 'ready') return say(tr('messages.reply.notReady', { service: conn?.name ?? tr(`messaging.service.${current.service}`) }), 'system');
     reading.current++;
     p.stop();
     const ok = await ui.sayAndWait(tr('messages.reply.hint', { name: current.conversation }), 'system');
@@ -161,7 +170,7 @@ export function MessagesScreen(p: {
   const choices =
     state === 'none'
       ? [
-          { id: 'connect', label: tr('telegram.connect'), role: 'messages' as const },
+          { id: 'connect', label: tr('messaging.connect'), role: 'messages' as const },
           { id: 'back', label: tr('messages.area.back'), role: 'nav' as const },
           { id: 'help', label: tr('area.help.label'), role: 'help' as const },
         ]

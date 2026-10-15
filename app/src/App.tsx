@@ -43,6 +43,7 @@ import { record } from './debug.ts';
 import { ceremony } from './identity/ceremony.ts';
 import { HelpQuestion } from './screens/HelpQuestion.tsx';
 import { MessagesScreen } from './screens/MessagesScreen.tsx';
+import { MessagingServices } from './screens/MessagingServices.tsx';
 import { NotesScreen } from './screens/NotesScreen.tsx';
 import { TelegramPage } from './screens/TelegramPage.tsx';
 import { Devices } from './screens/Devices.tsx';
@@ -97,8 +98,9 @@ type Page =
   | { help: { fromAssistant: boolean; occurrenceId?: string; live?: boolean } }
   /** The person's notes (S9). */
   | 'notes'
-  /** The person's messages, and connecting their Telegram (S10). */
+  /** The person's messages; their messaging services (docs/plan-m3.md), and Telegram's sign-in (S10). */
   | 'messages'
+  | 'messagingServices'
   | 'telegram'
   /** An action of the assistant waiting for the person's yes; then back where it was asked (the messages). */
   | { confirm: { id: string; contentHash: string; prompt: string }; back?: 'messages' | 'notes' }
@@ -674,7 +676,8 @@ export function App() {
 
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
-    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'telegram') setPage('settings');
+    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
+    else if (page === 'telegram') setPage('messagingServices');
     else if (typeof page === 'object' && ('remindersOf' in page || 'configOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
@@ -1071,10 +1074,11 @@ export function App() {
           void careRef.current?.press('touch');
           setPage('care');
         }}
-        onConnect={() => setPage('telegram')}
+        onConnect={() => setPage('messagingServices')}
       />
     );
-  else if (page === 'telegram') content = <TelegramPage session={session} refresh={messagingRev} onClose={() => setPage('settings')} />;
+  else if (page === 'messagingServices') content = <MessagingServices session={session} refresh={messagingRev} onTelegram={() => setPage('telegram')} onClose={() => setPage('settings')} />;
+  else if (page === 'telegram') content = <TelegramPage session={session} refresh={messagingRev} onClose={() => setPage('messagingServices')} />;
   else if (page === 'leak')
     content = (
       <main className="area-screen" aria-label={ui.tr('voice.leak.title')}>
@@ -1174,7 +1178,7 @@ export function App() {
         onPeople={() => setPage('helpers')}
         onReminders={() => setPage('reminders')}
         onVoices={() => setPage('voices')}
-        onTelegram={() => setPage('telegram')}
+        onMessaging={() => setPage('messagingServices')}
         onAiAdmin={me?.isAdmin ? () => setPage('aiAdmin') : undefined}
         onServerAdmin={me?.isAdmin ? () => setPage('serverAdmin') : undefined}
         onNewWords={() => setPage('newWords')}

@@ -33,6 +33,8 @@ export const MIGRATIONS: { id: string; url: URL }[] = [
   { id: '0014_live.sql', url: new URL('0014_live.sql', SERVER) },
   { id: '0015_live_news.sql', url: new URL('0015_live_news.sql', SERVER) },
   { id: '0016_messaging_services.sql', url: new URL('0016_messaging_services.sql', SERVER) },
+  { id: '0017_outbound_subject.sql', url: new URL('0017_outbound_subject.sql', SERVER) },
+  { id: '0018_capabilities_own.sql', url: new URL('0018_capabilities_own.sql', SERVER) },
 ];
 
 const checksum = (text: string) => createHash('sha256').update(text).digest('hex');

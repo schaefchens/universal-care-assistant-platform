@@ -8,7 +8,8 @@
  * - a long one, or several from one person, summed up by the person's dialogue model in reported speech, as CONCEPT
  *   §19 has it ("Maria asked how you are doing and if she should bring launch later this day"): "Maria fragt, …";
  *   without a model: how many came;
- * - a voice message or a photo by what it is; at most three conversations, then how many more.
+ * - a voice message or a photo by what it is; at most three conversations, then how many more;
+ * - the service named when the person has more than one ("Anna schrieb auf WhatsApp: …"; docs/plan-m3.md).
  *
  * Each message is announced once, on any device (`live_announced_at`); the conversation becomes the device's focus,
  * so "Antworte ihr, …" knows whom. What was said is not kept.
@@ -18,7 +19,7 @@ import { sql } from 'kysely';
 import type { Llm } from '../ai/llm/service.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
-import type { Item, Messaging } from '../messaging/service.ts';
+import { type Item, type Messaging, via } from '../messaging/service.ts';
 
 /** A message this long or shorter, alone from its sender, is read word for word. */
 const SHORT = 160;
@@ -76,6 +77,9 @@ export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: M
       // Asked, the person hears what is still unread, also what was announced but cut short.
       const pending = await d.messaging.pending(userId, { announced: o.asked });
       if (!pending.length) return o.asked ? [{ kind: 'system', text: tr('live.news.nothing') }] : [];
+      // With more than one service, each news says which.
+      const several = (await d.messaging.servicesOf(userId)).length > 1;
+      const on = (m: Item) => (several ? ` ${via(lang, m.service, m.label)}` : '');
       // By conversation, in the order the first message of each came.
       const byChat = new Map<string, Item[]>();
       for (const m of pending) byChat.set(m.conversationId, [...(byChat.get(m.conversationId) ?? []), m]);
@@ -89,16 +93,16 @@ export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: M
         const texts = msgs.filter((m) => m.kind === 'text' && m.text.trim());
         const others = msgs.filter((m) => !(m.kind === 'text' && m.text.trim()));
         if (texts.length === 1 && others.length === 0 && texts[0]!.text.length <= SHORT && !texts[0]!.text.includes('\n')) {
-          out.push({ kind: 'original', text: tr('live.news.wrote', { name: from, where, text: texts[0]!.text.trim() }), source: { message: texts[0]!.id } });
+          out.push({ kind: 'original', text: tr('live.news.wrote', { name: from, where, via: on(first), text: texts[0]!.text.trim() }), source: { message: texts[0]!.id } });
           continue;
         }
         if (texts.length) {
           const s = await summary(userId, lang, who.form, who.name, from, texts, o.signal);
-          out.push(s ? { kind: 'summary', text: s } : { kind: 'system', text: tr('live.news.many', { name: from, where, n: texts.length }) });
+          out.push(s ? { kind: 'summary', text: s } : { kind: 'system', text: tr('live.news.many', { name: from, where, via: on(first), n: texts.length }) });
         }
         for (const m of others) {
-          if (m.kind === 'voice') out.push({ kind: 'system', text: tr('live.news.voice', { name: from, where, seconds: m.durationS ?? 0 }) });
-          else out.push({ kind: 'system', text: tr(`live.news.media.${MEDIA[m.kind] ?? 'other'}`, { name: from, where }) });
+          if (m.kind === 'voice') out.push({ kind: 'system', text: tr('live.news.voice', { name: from, where, via: on(m), seconds: m.durationS ?? 0 }) });
+          else out.push({ kind: 'system', text: tr(`live.news.media.${MEDIA[m.kind] ?? 'other'}`, { name: from, where, via: on(m) }) });
         }
       }
       const rest = chats.slice(MAX_CONVERSATIONS).reduce((n, m) => n + m.length, 0);

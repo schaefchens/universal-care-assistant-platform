@@ -91,7 +91,10 @@ export function registerMessagingRoutes(
   const m = o.messaging;
 
   // —— The person's connections ——
-  app.get('/api/v1/messaging/connections', { preHandler: requireAuth }, async (req) => ({ connections: await m.connections(auth(req).userId), offered: await m.offered() }));
+  app.get('/api/v1/messaging/connections', { preHandler: requireAuth, schema: { querystring: LangQuery } }, async (req) => ({
+    connections: await m.connections(auth(req).userId, (req.query as { lang?: 'de' | 'en' }).lang),
+    offered: await m.offered(),
+  }));
   app.post('/api/v1/messaging/connections', { preHandler: requireAuth, schema: { body: ConnectBody } }, async (req) => {
     const a = auth(req);
     return { connection: await m.connect(a.userId, a.deviceId, connectInput(req.body as ConnectBody)) };
@@ -151,7 +154,7 @@ export function registerMessagingRoutes(
   // —— Reading ——
   app.get('/api/v1/messaging/queue', { preHandler: requireAuth, schema: { querystring: LangQuery } }, async (req) => {
     const userId = auth(req).userId;
-    const connections = (await m.connections(userId)).map((c) => ({ id: c.id, service: c.service, name: c.name, state: c.state, running: c.running }));
+    const connections = (await m.connections(userId, (req.query as { lang?: 'de' | 'en' }).lang)).map((c) => ({ id: c.id, service: c.service, name: c.name, state: c.state, running: c.running }));
     if (!connections.length) return { connections, items: [] };
     return { connections, items: await m.spoken(userId, await m.queue(userId), (req.query as { lang?: 'de' | 'en' }).lang) };
   });

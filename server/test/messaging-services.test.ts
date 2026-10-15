@@ -38,6 +38,7 @@ describe('messaging across services', () => {
   const mail = new FakeConnectors();
   const wa = new FakeConnectors();
   let emailId = '';
+  let client: ReturnType<typeof accountClient>;
   let telegramId = '';
 
   const providerFetch: typeof fetch = async (u, init) => {
@@ -68,7 +69,7 @@ describe('messaging across services', () => {
       .filter(Boolean)
       .map((l) => JSON.parse(l) as { t: string; [k: string]: unknown });
   };
-  type View = { id: string; service: string; account: string; name: string; deviceId: string | null; state: string; capabilities: Record<string, unknown>; running: boolean };
+  type View = { id: string; service: string; account: string; name: string; deviceId: string | null; state: string; capabilities: Record<string, unknown>; historySince: string | null; running: boolean };
   const connections = async (a: Account) => ((await as(a, 'GET', '/api/v1/messaging/connections')).json() as { connections: View[]; offered: Record<string, boolean> });
   const email = (address: string, password: string, imap: Record<string, unknown> = IMAP) => ({ service: 'email', address, password, imap, smtp: SMTP });
   const now = () => Math.floor(clock() / 1000);
@@ -82,6 +83,7 @@ describe('messaging across services', () => {
     url = `ws://127.0.0.1:${(assistant.app.server.address() as { port: number }).port}/internal/connectors`;
     await assistant.llm.ensureConfigured();
     const c = accountClient(core);
+    client = c;
     anna = await c.create((await core.identity.createInvite(db, { kind: 'account', createdBy: null })).code, 'Anna');
     bernd = await c.create((await core.identity.createInvite(db, { kind: 'account', createdBy: null })).code, 'Bernd');
     await sql`update users set is_admin = true where id = ${bernd.userId}`.execute(db);
@@ -113,7 +115,16 @@ describe('messaging across services', () => {
     const c = (r.json() as { connection: View }).connection;
     emailId = c.id;
     expect(c).toMatchObject({ service: 'email', account: 'anna.beispiel@example.org', name: 'E-Mail', deviceId: null, state: 'starting', running: true });
-    expect(c.capabilities).toEqual({ history: 'full', send: 'any', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false });
+    expect(c.capabilities).toEqual({ history: 'since', send: 'any', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false });
+    // Its messages start 30 days before it was linked: never "the whole history" (CONCEPT §3).
+    const back = clock() - Date.parse(c.historySince!);
+    expect(back).toBeGreaterThanOrEqual(30 * 86_400_000);
+    expect(back).toBeLessThan(30 * 86_400_000 + 60_000);
+    // Kept with it: only what differs from its service's, so a correction in the code reaches every connection.
+    expect((await sql<{ capabilities: unknown }>`select capabilities from messaging_connections where id = ${c.id}`.execute(db)).rows[0]!.capabilities).toEqual({});
+    // Named in the language asked for.
+    const en = (await as(anna, 'GET', '/api/v1/messaging/connections?lang=en')).json() as { connections: View[] };
+    expect(en.connections.find((x) => x.id === c.id)!.name).toBe('Email');
     expect(await mail.next('start')).toEqual({ t: 'start', id: c.id, service: 'email', address: 'anna.beispiel@example.org', password: 'pw-geheim-123', imap: IMAP, smtp: SMTP, lang: 'de' });
     expect(tg.got).toEqual([]);
     const sealed = (await sql<{ secret_sealed: Buffer }>`select secret_sealed from messaging_connections where id = ${c.id}`.execute(db)).rows[0]!.secret_sealed;
@@ -152,7 +163,7 @@ describe('messaging across services', () => {
     // No WhatsApp process yet: kept, and started when one dials in.
     expect((await connect({ service: 'whatsapp', acceptedRisk: true })).json()).toEqual({ error: { code: 'unavailable', params: { reason: 'connectors' } } });
     const c = (await connections(anna)).connections.find((x) => x.service === 'whatsapp')!;
-    expect(c).toMatchObject({ state: 'starting', running: false, capabilities: { history: 'since_connect', send: 'conversations', sent: 'service' } });
+    expect(c).toMatchObject({ state: 'starting', running: false, capabilities: { history: 'since', send: 'conversations', sent: 'service' } });
     await wa.connect(url, SECRETS.connectorsToken!, [], ['whatsapp']);
     const start = (await wa.next('start')) as Extract<ToConnectors, { t: 'start'; service: 'whatsapp' }>;
     expect(start).toMatchObject({ id: c.id, service: 'whatsapp', dir: c.id, lang: 'de' });
@@ -165,11 +176,12 @@ describe('messaging across services', () => {
   it("a phone's own connections: SMS for the phone that asks, previews per app, each with what it can do; one goes, the others stay", async () => {
     const sms = ((await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'sms' })).json() as { connection: View }).connection;
     expect(sms).toMatchObject({ service: 'sms', name: 'SMS', deviceId: anna.deviceId, state: 'ready', running: true });
-    expect(sms.capabilities).toMatchObject({ history: 'full', send: 'any', sent: 'network', delivery: true });
+    expect(sms.capabilities).toMatchObject({ history: 'since', send: 'any', sent: 'network', delivery: true });
     const signal = { service: 'notifications', app: { package: 'org.thoughtcrime.securesms', name: 'Signal' } };
     const prev = ((await as(anna, 'POST', '/api/v1/messaging/connections', signal)).json() as { connection: View }).connection;
     expect(prev).toMatchObject({ service: 'notifications', account: 'org.thoughtcrime.securesms', name: 'Signal', deviceId: anna.deviceId, state: 'ready' });
     expect(prev.capabilities).toMatchObject({ history: 'previews', send: 'replies', sent: 'app' });
+    expect(prev.historySince).toBeNull();
     // The same app on the same phone is one connection.
     expect(((await as(anna, 'POST', '/api/v1/messaging/connections', signal)).json() as { connection: View }).connection.id).toBe(prev.id);
     expect((await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'notifications', app: { package: 'not a package', name: 'X' } })).statusCode).toBe(400);
@@ -212,11 +224,13 @@ describe('messaging across services', () => {
 
     // A reply in the email thread goes to the email process, never to Telegram's.
     script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Praxis Dr. Klein', text: 'Danke für die Nachricht.' }], help: false });
-    const a = (await turn(anna, 'Antworte der Praxis: Danke für die Nachricht.')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string };
+    const a = (await turn(anna, 'Antworte der Praxis: Danke für die Nachricht.')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string; prompt: string };
+    // An email is asked about with its subject (the thread's, as a reply); a sender not in the contacts is named as such, as on Telegram.
+    expect(a.prompt).toBe('Achtung: Praxis Dr. Klein ist nicht in deinen Kontakten. E-Mail an Praxis Dr. Klein, Betreff „Re: Ihr Termin am Dienstag“: „Danke für die Nachricht.“. Senden?');
     const n = mail.got.length;
     const t0 = tg.got.length;
     await as(anna, 'POST', `/api/v1/assistant/actions/${a.id}/confirm`, { contentHash: a.contentHash, via: 'voice' });
-    expect(await mail.next('send', n)).toMatchObject({ t: 'send', id: emailId, chatId: '<thread-1@example.org>', text: 'Danke für die Nachricht.' });
+    expect(await mail.next('send', n)).toMatchObject({ t: 'send', id: emailId, chatId: '<thread-1@example.org>', text: 'Danke für die Nachricht.', subject: 'Re: Ihr Termin am Dienstag' });
     expect(tg.got.slice(t0).filter((c) => c.t === 'send')).toEqual([]);
   });
 
@@ -224,8 +238,7 @@ describe('messaging across services', () => {
     script = () => ({ say: [{ kind: 'reply', text: 'Ok.', ref: null }], calls: [], help: false });
     seen.length = 0;
     await turn(anna, 'Hallo');
-    expect(seen[0]!.system).toContain('Nachrichten kommen aus E-Mail und Telegram.');
-    expect(seen[0]!.system).not.toContain('WhatsApp');
+    expect(/Nachrichten kommen aus ([^.]+)\./.exec(seen[0]!.system)?.[1]).toBe('E-Mail und Telegram');
   });
 
   // —— A phone's own connections (K1): forwarded and sent by the phone, signed with its key ——
@@ -265,7 +278,7 @@ describe('messaging across services', () => {
 
   it('a reply by SMS waits for the phone, which is told, takes it once and reports it: pending, then sent (C3); what was heard, the phone marks read', async () => {
     const { a, said } = await reply('Ich rufe gleich an.');
-    expect(said).toBe('Bestätigt. Die Nachricht wird gesendet, sobald die Verbindung wieder da ist.');
+    expect(said).toBe('Bestätigt. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist.');
     const o = await outbound(a.id);
     expect(o.state).toBe('queued');
     expect((await events('messaging.device.send')).at(-1)).toEqual({ connectionId: smsId, deviceId: anna.deviceId });
@@ -303,5 +316,76 @@ describe('messaging across services', () => {
     await assistant.messaging.sweep();
     expect(await outbound(a.id)).toMatchObject({ state: 'uncertain', told: ['C6'] });
     expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([]);
+  });
+
+  // —— Speech and tools across services (K1) ——
+  let previewId = '';
+
+  it('frames say the service as it is said: per E-Mail with its subject, per SMS, a preview as one, Telegram as before', async () => {
+    previewId = ((await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'notifications', app: { package: 'org.thoughtcrime.securesms', name: 'Signal' } })).json() as { connection: View }).connection.id;
+    await forward(
+      anna,
+      [
+        { t: 'chat.upsert', chat: { externalId: 'lena', title: 'Lena', kind: 'private', userId: 'lena', muted: false, unread: 1, readInboxMaxId: null, readOutboxMaxId: null } },
+        { t: 'user.upsert', user: { externalId: 'lena', name: 'Lena', isContact: true, isBot: false } },
+        { t: 'msg.upsert', msg: { chatId: 'lena', externalId: 'a1b2c3d4', fromId: 'lena', outgoing: false, date: now() - 5, editDate: null, kind: 'text', text: 'Bin gleich zurück.', file: null, fileName: null }, live: true },
+      ],
+      previewId,
+    );
+    const items = ((await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { items: { text: string; say: { frame: string } }[] }).items;
+    const frameOf = (text: string) => items.find((i) => i.text === text)?.say.frame;
+    expect(frameOf('Ihr Termin am Dienstag fällt aus.')).toMatch(/^Praxis Dr\. Klein schrieb .+ per E-Mail mit dem Betreff „Ihr Termin am Dienstag“:$/);
+    expect(frameOf('Ruf mich bitte an.')).toMatch(/^Mama schrieb .+ per SMS:$/);
+    expect(frameOf('Bin gleich zurück.')).toMatch(/^Vorschau von Signal: Lena schrieb .+ auf Signal:$/);
+    expect(frameOf('Kommst du morgen?')).toMatch(/^Clara Beispiel schrieb .+ auf Telegram:$/);
+  });
+
+  it('the confirmation names the service: a reply through a preview, an SMS', async () => {
+    const ask = async (chat: string, text: string) => {
+      script = () => ({ say: [], calls: [{ tool: 'messages.send', chat, text }], help: false });
+      return ((await turn(anna, `Schreib ${chat}: ${text}`)).find((e) => e.t === 'action') as unknown as { prompt: string }).prompt;
+    };
+    expect(await ask('Lena', 'Bis gleich.')).toBe('Antwort an Lena über Signal: „Bis gleich.“. Senden?');
+    expect(await ask('Mama', 'Gute Nacht.')).toBe('SMS an Mama: „Gute Nacht.“. Senden?');
+  });
+
+  it('one name on two services: where that person last wrote lately; else UCAP says which services and the model asks; a named service picks one', async () => {
+    tg.emit({ t: 'chat.upsert', id: telegramId, chat: { externalId: '555001', title: 'Mama', kind: 'private', userId: 'user:55', muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } });
+    tg.emit({ t: 'user.upsert', id: telegramId, user: { externalId: 'user:55', name: 'Mama', isContact: true, isBot: false } });
+    tg.emit({ t: 'msg.upsert', id: telegramId, msg: { chatId: '555001', externalId: '2048', fromId: 'user:55', outgoing: false, date: now() - 21 * 86_400, editDate: null, kind: 'text', text: 'Alles Gute!', file: null, fileName: null } });
+    await until(async () => (await sql`select 1 from messaging_messages where external_id = '2048'`.execute(db)).rows.length > 0, 'stored');
+    const find = (to: string, service: string | null = null) => assistant.messaging.find(anna.userId, to, { forSending: true, service });
+    // Mama wrote by SMS minutes ago, on Telegram three weeks ago.
+    expect(await find('Mama')).toMatchObject({ service: 'sms' });
+    for (const said of ['Telegram', 'auf Telegram']) expect(await find('Mama', said)).toMatchObject({ service: 'telegram' });
+    expect(await find('Mama', 'per SMS')).toMatchObject({ service: 'sms' });
+    expect(await find('Mama', 'WhatsApp')).toBeNull();
+    // Two weeks on, neither is recent: the service is asked.
+    clock.advance(15 * 86_400_000);
+    await client.renew(anna);
+    expect(await find('Mama')).toEqual({ services: ['SMS', 'Telegram'] });
+    let round = 0;
+    script = () => (++round === 1 ? { say: [], calls: [{ tool: 'messages.send', chat: 'Mama', text: 'Hallo' }], help: false } : { say: [{ kind: 'reply', text: 'Per SMS oder auf Telegram?', ref: null }], calls: [], help: false });
+    seen.length = 0;
+    expect((await turn(anna, 'Schreib Mama Hallo')).filter((e) => e.t === 'segment').map((e) => e.text)).toEqual(['Per SMS oder auf Telegram?']);
+    expect(seen.at(-1)!.messages.at(-1)!.content).toContain('service_ambiguous: SMS, Telegram');
+  });
+
+  it('says what each connection can do, as data for the model', async () => {
+    let round = 0;
+    script = () => (++round === 1 ? { say: [], calls: [{ tool: 'messages.connections' }], help: false } : { say: [{ kind: 'reply', text: 'WhatsApp ist noch nicht verbunden.', ref: null }], calls: [], help: false });
+    seen.length = 0;
+    await turn(anna, 'Was kann WhatsApp hier?');
+    const data = seen.at(-1)!.messages.at(-1)!.content;
+    expect(data).toMatch(/"service":"WhatsApp","connected":false,"history":"since","historySince":"\d{4}-\d{2}-\d{2}","sends":"conversations","sent":"service"/);
+    expect(data).toContain('"service":"Signal","connected":true,"history":"previews","sends":"replies","sent":"app"');
+    expect(data).toContain('"service":"E-Mail","account":"anna.beispiel@example.org","connected":true');
+  });
+
+  it('LIVE news names the service once there is more than one', async () => {
+    await sql`update messaging_messages set heard_at = now() where heard_at is null`.execute(db);
+    await forward(anna, [{ t: 'msg.upsert', msg: { chatId: '12', externalId: '310', fromId: '+4917012345', outgoing: false, date: now(), editDate: null, kind: 'text', text: 'Bist du wach?', file: null, fileName: null }, live: true }]);
+    const news = ((await as(anna, 'POST', '/api/v1/assistant/live/news', { asked: false, lang: 'de' })).json() as { segments: { kind: string; text: string }[] }).segments;
+    expect(news).toEqual([{ kind: 'original', text: 'Mama schrieb per SMS: „Bist du wach?“', source: { message: expect.any(String) } }]);
   });
 });
