@@ -13,9 +13,10 @@ e2e/.results/
 .env
 .env.*
 !.env.example
-# The owner's API keys for development (YouTube, OpenAI, …), kept locally.
+# The owner's API keys for development (YouTube, OpenAI, …), kept locally, and Telegram's keys from my.telegram.org.
 .secrets
 .secrets.*
+.telegram_*
 
 # Android build output and files that `cap sync` generates.
 app/android/.gradle/

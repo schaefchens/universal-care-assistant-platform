@@ -82,7 +82,8 @@ docker stop ucap-fake-telegram && docker compose start connectors
 ```
 
 With credentials, `UCAP_TG_TEST=1 TG_API_ID=… TG_API_HASH=… npx vitest run --project connectors testdc` logs two test
-accounts in on Telegram's test servers and sends a message between them.
+accounts in on Telegram's test servers and sends a message between them. On 2026-10-15 those servers refused their
+documented test code (`PHONE_CODE_INVALID`; docs/decisions.md, S10).
 
 ## Licence
 

@@ -77,7 +77,10 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - A message being sent has a temporary id until `updateMessageSendSucceeded`, which can come before `sendMessage`'s own
   answer and, after a restart, for a message sent by the process before. `Acknowledged` is not sent.
 - A WebSocket client may close with 1000 or 3000–4999 only: `close(1001)` throws (it crashed the connectors' shutdown).
-- Develop and try the app's messaging with `tools/dev/fake-telegram.ts`; real logins need the owner's api_id/api_hash.
+- Develop and try the app's messaging with `tools/dev/fake-telegram.ts`; real logins need the owner's api_id/api_hash
+  (in `.secrets` as TELEGRAM_APP_ID / TELEGRAM_APP_HASH; on a server they go in on the admin page).
+- TDLib's log from verbosity 3 contains the api_hash (setTdlibParameters) and login codes: keep it at 1, and delete
+  any diagnostic log at once. Telegram's test servers refused their documented code on 2026-10-15 (decisions.md S10).
 
 **Capacitor and Android**
 - Never `await` or return a Capacitor plugin object (it is a Proxy that answers `then`).

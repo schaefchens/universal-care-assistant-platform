@@ -1,6 +1,7 @@
 # The build context never carries secrets or local state into an image.
 .secrets
 .secrets.*
+.telegram_*
 .env
 .env.*
 .git

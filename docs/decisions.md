@@ -495,7 +495,14 @@ then they stay as built, and nothing here is frozen.
 - **The real TDLib, end to end short of a login:** on the emulator, Clara's "Telegram verbinden" started TDLib in the
   connectors container on Telegram's test servers; the phone step came back as Telegram's `API_ID_INVALID` for the
   deliberately invalid test credentials, said on her page. A login with an account needs the operator's api_id and
-  api_hash (my.telegram.org), and then `connectors/test/testdc.test.ts` (opt-in, not run yet).
+  api_hash (my.telegram.org), and then `connectors/test/testdc.test.ts` (opt-in).
+- **The opt-in suite with the owner's api_id and api_hash (2026-10-15):** TDLib reached Telegram's test servers
+  (149.154.175.10, then 149.154.167.40 after `PHONE_MIGRATE_2`), and the code was asked for (5 digits, by SMS). The
+  documented test code was refused as `PHONE_CODE_INVALID`: 22222 and 222222 for numbers +99966 2 YYYY, 11111 and
+  111111 for +99966 1 YYYY, with numbers drawn at random. The login, a send confirmed by Telegram and the message's
+  arrival are therefore still to be seen on a real account (the owner's own login, through the app). The suite now
+  logs in from wherever a stored session stopped, stops at a refusal with Telegram's code, and draws its own numbers.
+  The MTProto keys and server addresses from my.telegram.org are not needed: TDLib has them built in.
 - **With the stand-in, on the emulator:** login by phone, a wrong code ("Der Code stimmt nicht."), the password with
   its hint, "Verbunden als …"; on the home screen "Neue Nachricht von Anna Beispiel."; the messages screen ("Nachrichten.
   Eine neue Nachricht." and the message framed); a voice message fetched, transcribed by whisper word for word, played
@@ -573,12 +580,16 @@ then they stay as built, and nothing here is frozen.
 1. **"Server und Konten" lists each account by name, its number of devices, when it was made and when one of its
    devices was last seen**, nothing else. "Zuletzt aktiv" helps an operator find accounts nobody uses; it also tells an
    administrator when someone last used UCAP. CONCEPT §7: "Admin rights grant no access to anyone's data."
+   **Confirmed by the owner, 2026-10-15.**
 2. **A device whose app storage was lost signs in again by itself** when Android kept its key and who it is (the
    WebView's storage alone was lost; `pm clear` loses both, and then the words are needed). No words are asked: the
    key never left the device. Appendix C: "On Android the Keystore survives WebView eviction."
+   **Confirmed by the owner, 2026-10-15:** "asking a disabled person about this is most of the time no good situation."
 3. **The end-to-end tests run on the dev stack with its real clock and no fakes.** The plan's Verification: "Playwright
    with person and helper contexts, the fake providers and the fake clock." The help path they cover uses no
    provider; the fakes come when the e2e covers the assistant and timed escalation.
+   **The owner chose the plan's version, 2026-10-15:** a stack of its own, a clock the tests move, stand-ins for the
+   providers, and browser tests along the acceptance script (in progress).
 
 ### Decided (within the plan)
 

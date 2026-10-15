@@ -129,13 +129,13 @@ slowest 3.7 s. Test: `server/test/care.test.ts`.
 
 | Step | What | State |
 |---|---|---|
-| 1 | Operator setup | done on the dev stack (setup, compose, the CLI bootstrap; Ollama, stt-mlx, OpenAI and ElevenLabs keys). **Owner:** joining herde, Telegram's api_id and api_hash |
+| 1 | Operator setup | done on the dev stack (setup, compose, the CLI bootstrap; Ollama, stt-mlx, OpenAI and ElevenLabs keys). **Owner:** joining herde; Telegram's api_id and api_hash on the admin page |
 | 2 | First identity on the tablet | emulator (S2, S7): invitation link, words spoken and shown, the quiz, the card, a voice chosen by listening, four areas; the same onboarding in a browser makes the e2e accounts |
 | 3 | Inviting a helper by the spoken code | emulator and Chrome (S3); with the link's code in the e2e setup; Maria on a phone: owner's devices |
 | 4 | Help request | emulator and Chrome (S4, S5): exploring sends nothing, A1, A2, A4, A6, A7, A12; in two browsers on every `npm run test:e2e` (`e2e/help.spec.ts`: A1, A2, A6, A12). **Owner's phone:** ringing in Doze, the unlock for "Annehmen" |
 | 5 | Escalation to Tom | `server/test/care.test.ts`; the alarm updated in place on the emulator (S5). Two real phones: owner |
 | 6 | Reminder "Trinken" | emulator (S6, S9): rings with the app closed and the server stopped; "Kann mir jemand Wasser bringen?" → A17 → "Ja" → a linked request |
-| 7 | Telegram | emulator with the stand-in (S10): summary labelled as one, the original framed, a voice message played and transcribed, C1 → "Ja" → C2 → C3. **Owner:** a real account (api_id/api_hash) |
+| 7 | Telegram | emulator with the stand-in (S10): summary labelled as one, the original framed, a voice message played and transcribed, C1 → "Ja" → C2 → C3. Telegram's test servers refuse their documented test code (2026-10-15, decisions.md S10). **Owner:** a login with a real account (the api_id and api_hash are in hand) |
 | 8 | Remote change | emulator and Chrome (S11) |
 | 9 | No language model | the tests above (CR-04); whisper stopped on the emulator gave A19 (S8). Ollama is the Mac's shared app and was not stopped |
 | 10 | Recovery on another device | emulator (S2, S12) with the English words; the other devices told and a revoked device cut off within a second: `server/test/identity.test.ts` |
