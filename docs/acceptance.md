@@ -67,7 +67,7 @@ and "Annehmen" signed by its key). Maria and Clara use the app in browsers of th
 
 | Id | Check | Where | State |
 |---|---|---|---|
-| AS-01 | the send flow; C3 only after Telegram confirms | `server/test/messaging.test.ts`; emulator with the stand-in (S10); e2e step 7, with the stand-in holding Telegram's confirmation | test, emulator, e2e |
+| AS-01 | the send flow; C3 only after Telegram confirms | `server/test/messaging.test.ts`; emulator with the stand-in (S10); e2e step 7, with the stand-in holding Telegram's confirmation; the owner's real account on the emulator (2026-10-15) | test, emulator, e2e |
 | AS-02/03/04 | stale hash; "ja" with nothing waiting or on another device; expiry | `server/test/assistant.test.ts` | test |
 | AS-05 | the adversarial model | `server/test/assistant.test.ts` | test |
 | AS-06 | originals byte for byte, framed | `server/test/assistant.test.ts`; e2e step 7 (the model's text is replaced by the message's) | test, e2e |
@@ -142,7 +142,7 @@ slowest 3.7 s. Test: `server/test/care.test.ts`.
 | 4 | Help request | emulator and Chrome (S4, S5): exploring sends nothing, A1, A2, A4, A6, A7, A12; e2e step 4 (A1, A2, A4, A6, A7, A12). **Owner's phone:** ringing in Doze, the unlock for "Annehmen" |
 | 5 | Escalation to Tom | `server/test/care.test.ts`; the alarm updated in place on the emulator (S5); e2e step 5 (A9 after two minutes, Tom's phone alerted through ntfy, its receipt and accept; Maria told who took over). Two real phones: owner |
 | 6 | Reminder "Trinken" | emulator (S6, S9): rings with the app closed and the server stopped; "Kann mir jemand Wasser bringen?" → A17 → "Ja" → a linked request; e2e step 6 (set by Maria for 15:00, the clock moved there) |
-| 7 | Telegram | emulator with the stand-in (S10): summary labelled as one, the original framed, a voice message played and transcribed, C1 → "Ja" → C2 → C3; e2e step 7 (without the voice message). Telegram's test servers refuse their documented test code (2026-10-15, decisions.md S10). The owner's own account is connected on the emulator (2026-10-15): login, history and voice messages transcribed; **owner:** reading, the voice message and a reply by voice |
+| 7 | Telegram | emulator with the stand-in (S10): summary labelled as one, the original framed, a voice message played and transcribed, C1 → "Ja" → C2 → C3; e2e step 7 (without the voice message). Telegram's test servers refuse their documented test code (2026-10-15, decisions.md S10). With the owner's own account on the emulator (2026-10-15): login, history and voice messages transcribed, the assistant by voice (8 turns answered), a reply sent after "Ja" and confirmed by Telegram. The owner: "voice assist works great" |
 | 8 | Remote change | emulator and Chrome (S11); e2e step 8 |
 | 9 | No language model | the tests above (CR-04); whisper stopped on the emulator gave A19 (S8); e2e step 9 with both stand-ins down. Ollama is the Mac's shared app and was not stopped |
 | 10 | Recovery on another device | emulator (S2, S12) with the English words; the other devices told and a revoked device cut off within a second: `server/test/identity.test.ts`; e2e step 10 |
