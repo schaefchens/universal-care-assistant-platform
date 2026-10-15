@@ -30,6 +30,8 @@ npm run android:install           # build and install the app on the emulator; n
 npm run backup:check              # backup, restore into a scratch database, compare every table
 docker compose logs -f core       # core restarts on save (node --watch); connectors: docker compose restart connectors
 services/stt-mlx/run.sh           # native whisper on 127.0.0.1:8813 (Docker cannot reach the Mac's GPU)
+npm --prefix app run dev          # Vite on 127.0.0.1:8812: the app in a browser, through the stack (its /api proxy)
+node tools/live/drive.ts state    # LIVE mode on the emulator: play recordings into its capture (docs/spikes/m2.md)
 ```
 
 **Ports:**
