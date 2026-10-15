@@ -206,7 +206,7 @@ export function App() {
         const m = await session.call<Me>('/api/v1/me');
         if (cancelled) return;
         setMe(m);
-        if (m.recoveryState === 'unconfirmed') ui.say(ui.tr('settings.recovery.reminder'), 'system');
+        if (m.recoveryState === 'unconfirmed') ui.say(ui.tr('settings.recovery.reminder'), 'notice');
       } catch (e) {
         // Offline: the device keeps working with what it has. Signed out elsewhere: back to onboarding.
         if (!cancelled && e instanceof ApiError && e.status === 401) {
@@ -229,7 +229,7 @@ export function App() {
       onEvent: (e) => {
         if (e.type === 'device.added' && e.data.deviceId !== session.ref.deviceId && e.data.via === 'recover') {
           ui.earcons.play('screen');
-          ui.say(ui.tr('devices.added', { name: String(e.data.name ?? '') }), 'system');
+          ui.say(ui.tr('devices.added', { name: String(e.data.name ?? '') }), 'notice');
         } else if (e.type === 'device.revoked' && e.data.deviceId === session.ref.deviceId) {
           void session.forget().then(() => signedOut(ui.tr('devices.signedOut')));
         } else if (e.type === 'relationship.changed') {
@@ -279,13 +279,42 @@ export function App() {
     document.documentElement.lang = prefs.lang;
   }, [prefs.lang]);
 
+  // Clips in the person's voices (replies, reading aloud, recordings); a new action of the person stops them too.
+  const player = useMemo(() => new ClipPlayer(), []);
   const ui = useMemo(
-    () => makeUi({ lang: prefs.lang, form: prefs.addressForm, speech, earcons, assistive, haptics: config.touch.haptics }),
-    [prefs.lang, prefs.addressForm, speech, earcons, assistive, config.touch.haptics],
+    () => makeUi({ lang: prefs.lang, form: prefs.addressForm, speech, earcons, assistive, haptics: config.touch.haptics, onAct: () => player.stop() }),
+    [prefs.lang, prefs.addressForm, speech, earcons, assistive, config.touch.haptics, player],
   );
   // Long-lived clients (care, realtime) speak with the current words and voice, whatever changed since they started.
   const uiRef = useRef(ui);
   uiRef.current = ui;
+
+  // Any other control the person presses (a button, a choice, a field) makes what was said before old (speech.ts).
+  // Areas say so themselves when activated: touching one only explores it.
+  useEffect(() => {
+    let last = 0;
+    const control = (t: EventTarget | null) => {
+      const el = t instanceof Element ? t : null;
+      if (!el || el.closest('.area-grid')) return false;
+      return !!el.closest('button, [role=button], [role=radio], [role=checkbox], [role=switch], label, input, select, textarea, a[href]');
+    };
+    const act = () => {
+      last = performance.now();
+      uiRef.current.acted();
+    };
+    const down = (e: PointerEvent) => void (control(e.target) && act());
+    const key = (e: KeyboardEvent) => void ((e.key === 'Enter' || e.key === ' ') && control(e.target) && act());
+    // A screen reader's or a switch's activation is a click with no pointer or key before it.
+    const click = (e: MouseEvent) => void (performance.now() - last > 800 && control(e.target) && act());
+    document.addEventListener('pointerdown', down, true);
+    document.addEventListener('keydown', key, true);
+    document.addEventListener('click', click, true);
+    return () => {
+      document.removeEventListener('pointerdown', down, true);
+      document.removeEventListener('keydown', key, true);
+      document.removeEventListener('click', click, true);
+    };
+  }, []);
   const gestureRef = useRef('');
   gestureRef.current = ui.tr(`care.gesture.${config.touch.mode === 'hold' ? 'hold' : config.touch.mode === 'direct' || assistive === 'gesture-at' ? 'direct' : 'explore'}`);
 
@@ -402,7 +431,6 @@ export function App() {
     };
   }, [session]);
 
-  const player = useMemo(() => new ClipPlayer(), []);
   /** Messages read aloud in the voice for reading, else the device voice; true when said to their end. */
   const readAloud = async (text: string, isCurrent: () => boolean): Promise<boolean> => {
     if (session && (await speakAs({ session, text, purpose: 'reading', player, screenReader: assistive === 'screen-reader', notice: (reason) => uiRef.current.say(uiRef.current.tr(`voices.fallback.${reason}`), 'system') })))
@@ -618,8 +646,8 @@ export function App() {
     if (type === 'care.cancel') u.say(u.tr('care.helper.cancelled', { person: v.person.displayName }), 'care');
     else if (type === 'care.watchdog') u.say(u.tr('care.helper.watchdog', { person: v.person.displayName }), 'care');
     else if (type === 'care.update') {
-      if (v.status === 'accepted' && v.acceptedBy && v.acceptedBy.id !== session.ref.userId) u.say(u.tr('care.helper.acceptedBy', { helper: v.acceptedBy.displayName ?? '', person: v.person.displayName }), 'system');
-      else if (v.status === 'resolved') u.say(u.tr('care.helper.resolved', { person: v.person.displayName }), 'system');
+      if (v.status === 'accepted' && v.acceptedBy && v.acceptedBy.id !== session.ref.userId) u.say(u.tr('care.helper.acceptedBy', { helper: v.acceptedBy.displayName ?? '', person: v.person.displayName }), 'notice');
+      else if (v.status === 'resolved') u.say(u.tr('care.helper.resolved', { person: v.person.displayName }), 'notice');
     }
     // An alert screen for a request someone else took, or that ended, closes.
     setPage((pg) => (typeof pg === 'object' && 'alert' in pg && pg.alert === id ? 'inbox' : pg));
@@ -644,7 +672,7 @@ export function App() {
       // To a helper, quietly: never an alarm, never a help request (CONCEPT §9).
       const o = await reminderApi(session, String(data.personId)).occurrence(oid).catch(() => null);
       const person = await people(session).relationships().then((r) => r.asHelper.find((x) => x.person.id === data.personId)?.person.displayName ?? '', () => '');
-      if (o) u.say(u.tr('reminder.followup', { name: person, title: titleOf(u.tr, o), time: new Date(o.dueAt) }), 'system');
+      if (o) u.say(u.tr('reminder.followup', { name: person, title: titleOf(u.tr, o), time: new Date(o.dueAt) }), 'notice');
     }
   }
 
@@ -665,10 +693,10 @@ export function App() {
       const m = await session.call<{ from: string; conversation: string }>(`/api/v1/messaging/messages/${String(data.messageId)}?lang=${u.lang}`).catch(() => null);
       if (!m) return;
       u.earcons.play('message');
-      u.say(u.tr('messages.announce', { name: m.from || m.conversation }), 'system');
+      u.say(u.tr('messages.announce', { name: m.from || m.conversation }), 'notice');
     } else if (type === 'messaging.outbound' && data.deviceId === session.ref.deviceId) {
       const o = await session.call<{ say: string | null }>(`/api/v1/messaging/outbound/${String(data.outboundId)}?lang=${u.lang}`).catch(() => null);
-      if (o?.say) u.say(o.say, 'system');
+      if (o?.say) u.say(o.say, 'notice');
     }
   }
 
@@ -681,14 +709,14 @@ export function App() {
     const other = iAmPerson ? r.helper.displayName : r.person.displayName;
     if (state === 'pending' && iAmPerson) {
       ui.earcons.play('screen');
-      ui.say(ui.tr('people.event.pending', { name: other }), 'system');
+      ui.say(ui.tr('people.event.pending', { name: other }), 'notice');
       // Straight to the question when nothing else is open; otherwise it waits under Helfer.
       setPage((pg) => (pg === 'areas' ? { approve: id } : pg));
     } else if (state === 'active' && !iAmPerson && r.approvedAt && Date.now() - Date.parse(r.approvedAt) < 120_000) {
       // Approved just now (a later change of scopes is also 'active', and is not news of approval).
-      ui.say(ui.tr('people.event.approved', { name: other }), 'system');
+      ui.say(ui.tr('people.event.approved', { name: other }), 'notice');
     } else if (state === 'ended') {
-      ui.say(ui.tr('people.event.ended', { name: other }), 'system');
+      ui.say(ui.tr('people.event.ended', { name: other }), 'notice');
     }
   }
 

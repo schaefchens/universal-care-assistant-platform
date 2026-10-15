@@ -36,6 +36,39 @@ function fakeBackend() {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+describe('a new action of the person', () => {
+  it('drops what was said about the last ones, queued or being said, and says the new one at once', async () => {
+    const f = fakeBackend();
+    const s = new SpeechOut(f.backend);
+    s.say('Einstellungen. 12 Felder.', 'de', 'system');
+    s.say('Gespeichert.', 'de', 'system');
+    s.say('Das ist die Antwort.', 'de', 'assistant');
+    s.acted();
+    s.say('Startseite. 4 Felder.', 'de', 'system');
+    await tick();
+    expect(f.log).toEqual(['start system: Einstellungen. 12 Felder.', 'stop', 'end system: Einstellungen. 12 Felder.', 'start system: Startseite. 4 Felder.']);
+  });
+
+  it('keeps help requests and news from elsewhere: said to their end, then what the person does now', async () => {
+    const f = fakeBackend();
+    const s = new SpeechOut(f.backend);
+    s.say('Neue Nachricht von Anna.', 'de', 'notice');
+    s.say('Dein Hilferuf wurde gesendet.', 'de', 'care');
+    s.say('Notizen. 3 Notizen.', 'de', 'system');
+    s.acted();
+    s.say('Startseite. 4 Felder.', 'de', 'system');
+    await tick();
+    // Care first (it took over from the news, which waits), then the news again, then the present.
+    for (let i = 0; i < 3; i++) await f.done();
+    expect(f.log.filter((l) => l.startsWith('start'))).toEqual([
+      'start notice: Neue Nachricht von Anna.',
+      'start care: Dein Hilferuf wurde gesendet.',
+      'start notice: Neue Nachricht von Anna.',
+      'start system: Startseite. 4 Felder.',
+    ]);
+  });
+});
+
 describe('speech channels', () => {
   it('drops a label while care speaks, and care is never cut by exploring', async () => {
     const f = fakeBackend();

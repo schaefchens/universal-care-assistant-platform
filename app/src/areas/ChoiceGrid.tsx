@@ -63,6 +63,7 @@ export function ChoiceGrid(p: { id: string; choices: Choice[]; config: DeviceCon
       onCancelLabel={() => ui.speech.stop('label')}
       onActivate={(a, how) => {
         record('activations', { area: ceremony.active ? redactWords(a.id) : a.id, how });
+        ui.acted();
         ui.earcons.play('activate');
         ui.haptic();
         p.onChoose(ids.get(a.id) ?? a.id);

@@ -688,6 +688,14 @@ then they stay as built, and nothing here is frozen.
   geändert"): the order, the phone fallback and what happens to an unanswered question had left no entry, also when a
   helper made them. Counts and switches only, no names or numbers.
 - **The notice of a change by someone else is said once**: in development, React's double effects said it twice.
+- **A new action drops what was said about the last ones** (the owner, 2026-10-15: "it keeps it in a long backlog.
+  i think its better to cancel talking when the user did something, so the current thing should be said, and the old
+  thing dropped"). Pressing an area or any other control stops confirmations, screen announcements, replies and
+  labels, being said or waiting, and stops a clip in a server voice; what the press brings is said at once. Kept, as
+  the plan has it: help-request speech (care), cut by nothing but "Stopp". Kept too, in a new channel `notice`: news
+  from elsewhere ("Neue Nachricht von …", "Gesendet an …", a device added with the recovery words, the test alarm's
+  answer), said to its end, and said again when a help request cut it off. On the emulator a second press cut the
+  first screen's announcement and the next one was said at once (DeviceTts: speak, stop, speak).
 - **`npm run android:check`** runs on the emulator what can be checked there by itself: backups off, the security
   policy, axe, Help first in focus order, earcon usage, and Do Not Disturb in each mode through real heartbeats (a
   heartbeat never rings, so the phone reports the mode rather than "silenced"). Doze stays with the ntfy app.

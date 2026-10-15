@@ -158,7 +158,8 @@ export function AndroidPushSetup(p: { session: Session; server: ServerRef }) {
     });
     off();
     setTest(result);
-    say(tr(`alarm.test.${result.state}`, 'seconds' in result ? { n: result.seconds } : {}), 'system');
+    // Comes back later, from the phone's alarm: news, kept if the person meanwhile did something else.
+    say(tr(`alarm.test.${result.state}`, 'seconds' in result ? { n: result.seconds } : {}), 'notice');
     reload();
   }
 

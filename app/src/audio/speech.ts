@@ -5,9 +5,14 @@
  * | Channel | Priority | Rules |
  * |---|---|---|
  * | care | highest | queued, never cut by anything but an explicit "Stopp" |
- * | system | | confirmations, screen changes, "Wo bin ich?" |
+ * | notice | | news from elsewhere ("Neue Nachricht von …", "Gesendet an …"): queued, kept when the person acts |
+ * | system | | confirmations, screen changes, "Wo bin ich?": dropped when the person acts |
  * | assistant | | replies; any touch interrupts it |
  * | label | lowest | area labels; a new label replaces the old one; dropped while something more important speaks |
+ *
+ * When the person does something (an area, a button), what was said about what they did before is old: it stops and
+ * is dropped, and what they do now is said at once (the owner, 2026-10-15: "the current thing should be said, and the
+ * old thing dropped"). Help requests and news from elsewhere are kept.
  *
  * Backends:
  * - native: the device voice (DeviceTts, local installed voices only);
@@ -17,8 +22,10 @@
  */
 import { DeviceTts, has } from '../native/plugins.ts';
 
-export type Channel = 'care' | 'system' | 'assistant' | 'label';
-const PRIORITY: Record<Channel, number> = { care: 3, system: 2, assistant: 1, label: 0 };
+export type Channel = 'care' | 'notice' | 'system' | 'assistant' | 'label';
+const PRIORITY: Record<Channel, number> = { care: 3, notice: 2, system: 2, assistant: 1, label: 0 };
+/** What a new action of the person makes old. */
+const DROPPED_ON_ACT = new Set<Channel>(['system', 'assistant', 'label']);
 
 export interface Utterance {
   text: string;
@@ -35,7 +42,7 @@ export interface SpeechBackend {
 }
 
 function liveRegion(u: Utterance) {
-  const el = document.getElementById(u.channel === 'care' || u.channel === 'system' ? 'live-assertive' : 'live-polite');
+  const el = document.getElementById(u.channel === 'care' || u.channel === 'notice' || u.channel === 'system' ? 'live-assertive' : 'live-polite');
   if (!el) return;
   // Clearing first makes a repeated text count as new.
   el.textContent = '';
@@ -131,10 +138,12 @@ export class SpeechOut {
       return;
     }
     if (cur && (cur.channel === 'label' || PRIORITY[cur.channel] < PRIORITY[channel])) {
-      this.interrupt();
+      // News cut off by a help request is said again after it; anything else of lower priority is dropped.
+      if (cur.channel === 'notice') this.requeue();
+      else this.interrupt();
     } else if (cur) {
-      // Same priority: care and system queue behind each other, assistant text replaces assistant text.
-      if (channel === 'care' || channel === 'system') {
+      // Same priority: care, news and system queue behind each other, assistant text replaces assistant text.
+      if (channel === 'care' || channel === 'notice' || channel === 'system') {
         this.enqueue(u);
         return;
       }
@@ -147,6 +156,18 @@ export class SpeechOut {
   stop(channel: Channel): void {
     for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i]!.channel === channel) this.queue.splice(i, 1)[0]!.done?.(false);
     if (this.current?.channel === channel) {
+      this.interrupt();
+      this.next();
+    }
+  }
+
+  /**
+   * The person did something: speech about what they did before stops and is dropped (queued or being said), so what
+   * they do now is said at once. Help requests (care) and news from elsewhere (notice) are kept and said to the end.
+   */
+  acted(): void {
+    for (let i = this.queue.length - 1; i >= 0; i--) if (DROPPED_ON_ACT.has(this.queue[i]!.channel)) this.queue.splice(i, 1)[0]!.done?.(false);
+    if (this.current && DROPPED_ON_ACT.has(this.current.channel)) {
       this.interrupt();
       this.next();
     }
@@ -176,6 +197,16 @@ export class SpeechOut {
 
   private enqueue(u: Utterance) {
     this.queue.push(u);
+    this.queue.sort((a, b) => PRIORITY[b.channel] - PRIORITY[a.channel]);
+  }
+
+  /** Stops what is being said and puts it back at the front of its turn, to be said again. */
+  private requeue() {
+    const cur = this.current;
+    if (!cur) return;
+    this.current = null;
+    this.backend.stop();
+    this.queue.unshift(cur);
     this.queue.sort((a, b) => PRIORITY[b.channel] - PRIORITY[a.channel]);
   }
 

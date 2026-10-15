@@ -165,6 +165,7 @@ export function AreaScreen(p: {
         onCancelLabel={() => speech.stop('label')}
         onActivate={(a, how) => {
           record('activations', { area: a.id, how });
+          ui.acted();
           activate(a);
         }}
         onTouch={() => {

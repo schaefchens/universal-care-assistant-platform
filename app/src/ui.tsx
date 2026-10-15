@@ -21,12 +21,14 @@ export interface Ui {
   /** Says it and resolves when it ended (true) or was cut off (false): for the parts of an answer, one after another. */
   sayAndWait: (text: string, channel: Channel) => Promise<boolean>;
   speech: SpeechOut;
+  /** The person did something: what was said about what they did before stops (speech.ts), clips of a voice too. */
+  acted: () => void;
   earcons: EarconPlayer;
   assistive: AssistiveMode;
   haptic: () => void;
 }
 
-export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; earcons: EarconPlayer; assistive: AssistiveMode; haptics: boolean }): Ui {
+export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; earcons: EarconPlayer; assistive: AssistiveMode; haptics: boolean; onAct?: () => void }): Ui {
   return {
     lang: o.lang,
     form: o.form,
@@ -40,6 +42,10 @@ export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; ea
       return o.speech.sayAndWait(text, o.lang, channel);
     },
     speech: o.speech,
+    acted: () => {
+      o.speech.acted();
+      o.onAct?.();
+    },
     earcons: o.earcons,
     assistive: o.assistive,
     haptic: () => {
