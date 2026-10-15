@@ -846,3 +846,7 @@ The plan: [plan-m3.md](plan-m3.md).
    by the person. It never reaches messages.
 5. **Helpers may manage appointments and tasks by a new permission**, "Termine und Aufgaben verwalten"
    (`agenda.manage`). It never reaches messages or notes.
+6. **WhatsApp in development is the owner's own account, connected by hand.** There is no spare number, and nothing
+   automated runs against it ("we might connect it, but not do automated testing on it"). Every automated test uses
+   the stand-in.
+7. **The new third-party code is allowed** (plan-m3.md's list: "ok to new 3rd party code, we need those").
