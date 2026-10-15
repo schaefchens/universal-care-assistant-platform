@@ -47,7 +47,7 @@ node tools/live/drive.ts state    # LIVE mode on the emulator: play recordings i
 | 8813 | stt-mlx |
 | 8814 | Caddy TLS |
 | 8815 | e2e stack (its entry; compose profile `e2e`) |
-| 8824 / 8825 | e2e: the engines' stand-ins (in the test process) / the Telegram stand-in's control |
+| 8824 / 8825 | e2e: the engines' stand-ins (in the test process) / the messaging stand-in's control |
 | 8816 / 8817 | core / assistant (debug) |
 | 55440 | Postgres |
 
@@ -92,8 +92,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - A message being sent has a temporary id until `updateMessageSendSucceeded`, which can come before `sendMessage`'s own
   answer and, after a restart, for a message sent by the process before. `Acknowledged` is not sent.
 - A WebSocket client may close with 1000 or 3000–4999 only: `close(1001)` throws (it crashed the connectors' shutdown).
-- Develop and try the app's messaging with `tools/dev/fake-telegram.ts`; real logins need the owner's api_id/api_hash
-  (in `.secrets` as TELEGRAM_APP_ID / TELEGRAM_APP_HASH; on a server they go in on the admin page).
+- Develop and try the app's messaging with `tools/dev/fake-services.ts` (Telegram, WhatsApp and email;
+  `UCAP_FAKE_SERVICES` picks them, so it can run beside the real Telegram connector); real logins need the owner's
+  api_id/api_hash (in `.secrets` as TELEGRAM_APP_ID / TELEGRAM_APP_HASH; on a server they go in on the admin page).
 - TDLib's log quotes content: from level 1 (errors) a link in a message's preview, from level 3 the api_hash
   (setTdlibParameters) and login codes. It runs at 0 (fatal only); delete any diagnostic log at once. Telegram's test
   servers refused their documented code on 2026-10-15 (decisions.md S10).
@@ -129,7 +130,8 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - ntfy 2.29 declares users, tokens and access in its environment (`NTFY_AUTH_*`); a VAPID `Authorization` header
   without UCAP's token is refused, so the token goes in that header and no VAPID is sent to ntfy.
 - Chrome pauses `speechSynthesis` in a hidden tab and never fires `onend`: nothing (a recording, the rest of an
-  answer) may wait on speech without a bound.
+  answer) may wait on speech without a bound. In the browser walk it stalls in visible pages too (`speaking` stays
+  true): the web backend cuts an utterance after `stallAfterMs` (`app/src/audio/speech.ts`), so the queue goes on.
 - On a busy emulator, `adb shell input text` key events pile up behind a slow WebView and freeze input to the app
   ("isn't responding"); insert text over DevTools (`Input.insertText`) instead, and tap with `adb shell input tap`.
 - The Keystore outlives the WebView's storage: a new enrolment removes any old key first (the server refuses a key it
@@ -141,7 +143,7 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - End-to-end tests: a link with only a new `#…` does not reload the app, so an invitation link is opened after
   `about:blank`; a new help alert takes the helper's whole screen; wait for a list to load before deciding from it.
   A reload empties the app's debug record: `listen(page)` keeps what was said in the test. A React Aria radio's label
-  takes the press (`check()` hits the hidden input): `setChoice`/`choose`. Moving the servers' clock moves Telegram's
+  takes the press (`check()` hits the hidden input): `setChoice`/`choose`. Moving the servers' clock moves the messaging
   stand-in too (a message stamped with the real time looks hours old and is not announced). Enter on the twelfth
   recovery word submits the words. Speech in a server voice is in the debug record as the device voice's is.
 - TalkBack gestures on the emulator: `adb emu event mouse <x> <y> 0 1|0` is a real finger to TalkBack; `sendevent` is

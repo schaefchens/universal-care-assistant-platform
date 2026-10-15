@@ -42,7 +42,7 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
   const questionRef = useRef<HTMLParagraphElement>(null);
 
   const stateOf = (c: Connection) => {
-    if (!c.running && !ON_PHONE.has(c.service)) return tr('messaging.state.notRunning');
+    if (!c.running) return tr(ON_PHONE.has(c.service) ? 'messaging.state.signedOut' : 'messaging.state.notRunning');
     if (c.state === 'ready') return tr('messaging.state.ready');
     if (c.state === 'starting') return tr('messaging.state.starting');
     if (LOGIN.has(c.state)) return tr('messaging.state.login');

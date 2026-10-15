@@ -196,6 +196,8 @@ describe('messaging', () => {
     fake.emit({ t: 'msg.upsert', id: connId, msg: msg(500, 'Wer bringt den Kuchen?', { chatId: '-100500', fromId: 'user:43', date: now() + 5 }), live: true });
     fake.emit({ t: 'msg.upsert', id: connId, msg: msg(600, 'Eilmeldung', { chatId: '-100600', fromId: 'chat:-100600' }), live: true });
     await until(async () => (await sql<{ n: number }>`select count(*)::int as n from messaging_messages`.execute(db)).rows[0]!.n === 4, 'four messages');
+    // Each event is written just after its message.
+    await until(async () => (await events('messaging.message')).length === 3, 'three events');
     const announced = await events('messaging.message');
     expect(announced.map((e) => e.announce)).toEqual([true, false, false]);
 
@@ -206,7 +208,8 @@ describe('messaging', () => {
       ['Kommst du morgen zum Kaffee?', true],
       ['Wer bringt den Kuchen?', true],
     ]);
-    expect(q.items[0]!.say).toEqual({ frame: expect.stringMatching(/^Anna Beispiel schrieb heute um \d{1,2}:\d{2} auf Telegram:$/), text: 'Kommst du morgen zum Kaffee?' });
+    // One service: announced without it ("Neue Nachricht von Anna Beispiel.").
+    expect(q.items[0]!.say).toEqual({ frame: expect.stringMatching(/^Anna Beispiel schrieb heute um \d{1,2}:\d{2} auf Telegram:$/), text: 'Kommst du morgen zum Kaffee?', announce: 'Neue Nachricht von Anna Beispiel.' });
     expect(q.items[1]!.say.frame).toMatch(/^Bernd Beispiel schrieb heute um \d{1,2}:\d{2} in „Familie“ auf Telegram:$/);
     // Channels are not counted as unread.
     const conv = (await as(anna, 'GET', '/api/v1/messaging/conversations')).json() as { conversations: { name: string; unread: number; channel: boolean }[] };

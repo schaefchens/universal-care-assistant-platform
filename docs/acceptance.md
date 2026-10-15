@@ -22,7 +22,7 @@ node tools/android/a11y-tree.ts --dom   # its accessibility tree and DOM, to com
 **The browser walk** (`npm run test:e2e`, about two minutes): a stack of its own (compose profile `e2e`, a fresh
 database `ucap_e2e` for every run, entry http://localhost:8815), the servers' clock moved forward where the script
 waits (test mode, never in production), the AI engines replaced by stand-ins that speak their APIs (`e2e/engines.ts`),
-Telegram by `tools/dev/fake-telegram.ts`, Tom's phone simulated (`e2e/phone.ts`: UnifiedPush through ntfy, receipts
+Telegram, WhatsApp and email by `tools/dev/fake-services.ts`, Tom's phone simulated (`e2e/phone.ts`: UnifiedPush through ntfy, receipts
 and "Annehmen" signed by its key). Maria and Clara use the app in browsers of their own, with a fake microphone.
 
 ## Identity

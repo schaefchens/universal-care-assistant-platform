@@ -487,7 +487,7 @@ then they stay as built, and nothing here is frozen.
 - **The assistant never ends a turn in silence:** rounds that end without words, a question or an action say that it did
   not work. Help is proposed only for what the person says about themself, never for what a message says.
 - **Logs:** a tool's refusal by the tool's name and the error's code only (a reason may name people).
-- **`tools/dev/fake-telegram.ts`**, a stand-in for the connectors process for development: an invented account (code
+- **`tools/dev/fake-telegram.ts`** (since M3 `tools/dev/fake-services.ts`), a stand-in for the connectors process for development: an invented account (code
   22222), sends that are confirmed, refused or never answered, voice messages from a file. Never reaches Telegram.
 
 ### Measured
@@ -665,7 +665,7 @@ then they stay as built, and nothing here is frozen.
     the test process (`e2e/engines.ts`, port 8824) speaking Ollama's chat API, the transcription API UCAP's whisper
     server speaks, and OpenAI's speech API, so the assistant's own adapters run against them. Only the clock needed a
     hook in the product.
-  - **Telegram** is `tools/dev/fake-telegram.ts` (control on 8825), which can now hold a send unconfirmed and keeps
+  - **Telegram** is `tools/dev/fake-telegram.ts` (since M3 `fake-services.ts`; control on 8825), which can now hold a send unconfirmed and keeps
     the moved clock's time (a message stamped with the real time looked hours old and was not announced). **Tom's
     phone** is simulated (`e2e/phone.ts`): an account made as the app makes one, UnifiedPush through the stack's
     ntfy, each alert decrypted and confirmed with a signed receipt, "Annehmen" signed by the device.
@@ -864,6 +864,11 @@ The plan: [plan-m3.md](plan-m3.md).
    Built: the screen with two services is covered by the store, tool and route tests and by the browser walk with the
    stand-ins; on the emulator it is checked in K3, with a Hetzner test mailbox, after asking the owner. The other
    choice: a second account on the emulator now, which signs the owner's account out of the app there.
+2. **A new message is announced with its service once the person has more than one**: "Neue Nachricht von Anna
+   Beispiel auf WhatsApp.", "… per SMS.", "… per E-Mail.". Appendix E says "Neue Nachricht von {name}.", written for
+   Telegram alone; plan-m3.md has LIVE name the service "when the person has more than one" (K8). With one service it
+   stays as it was. The other choice: the announcement without the service, which is then said when the message is
+   read.
 
 ### Decided (within the plan)
 
@@ -881,3 +886,9 @@ The plan: [plan-m3.md](plan-m3.md).
 - **Einstellungen → Nachrichtendienste lists each connection with its state and what it can do**, said as the page
   opens ("Telegram: verbunden."). Each service's own page comes with its step: Telegram's now, WhatsApp's in K2,
   email's in K3, SMS in K4, previews in K5.
+- **A phone that is signed out runs nothing any more.** Its SMS and preview connections are turned off by the next
+  sweep; what waited for it is not sent (C4: "das Telefon, das sie senden sollte, ist abgemeldet") and kept as a
+  draft, as when the SMS role goes back.
+- **The messaging stand-in plays every server service**: `tools/dev/fake-services.ts` (was `fake-telegram.ts`), with
+  Telegram, WhatsApp (the pairing code UCAP2026) and email; `UCAP_FAKE_SERVICES` picks them. The browser walk's
+  simulated phone (`e2e/phone.ts`) joins the person's account with their words and is UCAP the SMS app.

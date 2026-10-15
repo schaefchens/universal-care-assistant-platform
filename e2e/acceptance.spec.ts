@@ -9,9 +9,9 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { fromWords, toWords } from '@ucap/identity';
-import { choose, clocks, heading, home, invitation, listen, mark, ORIGIN, said, setChoice, signUp, spoken, sql, talk, TELEGRAM } from './app.ts';
+import { choose, clocks, heading, home, invitation, listen, mark, ORIGIN, said, setChoice, signUp, spoken, sql, talk, MESSAGING } from './app.ts';
 import { type ChatRequest, type Engines, reply, startEngines } from './engines.ts';
-import { type Phone, phone } from './phone.ts';
+import { type Phone, phone, smsPhone } from './phone.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -129,7 +129,7 @@ test('1 · the operator: an administrator from the CLI, a voice service and Tele
   await form.getByLabel('Stimmen', { exact: true }).fill('alloy:Alloy:de,en');
   await form.getByRole('button', { name: 'Hinzufügen', exact: true }).click();
   await expect(form.getByText('Teststimmen hinzugefügt.')).toBeVisible();
-  // Telegram's credentials, invented: the stand-in for the connectors never reaches Telegram.
+  // Telegram's credentials, invented: the messaging stand-in never reaches Telegram.
   const telegram = maria.locator('section').filter({ has: maria.getByRole('heading', { name: 'Telegram', exact: true }) });
   await telegram.getByLabel('api_id', { exact: true }).fill('1234567');
   await telegram.getByLabel('api_hash', { exact: true }).fill('0123456789abcdef0123456789abcdef');
@@ -334,7 +334,7 @@ test('7 · Telegram: connected on the person’s device; a new message announced
 
   // Anna writes; the person hears who, never what.
   from = await mark(clara);
-  const sent = await fetch(`${TELEGRAM}/incoming`, { method: 'POST', body: JSON.stringify({ chat: 'anna', text: 'Kannst du morgen zum Kaffee kommen?' }) });
+  const sent = await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ chat: 'anna', text: 'Kannst du morgen zum Kaffee kommen?' }) });
   expect(sent.ok).toBe(true);
   await said(clara, /^Neue Nachricht von Anna Beispiel\.$/, from);
 
@@ -353,7 +353,7 @@ test('7 · Telegram: connected on the person’s device; a new message announced
   expect(original).toMatch(/^Anna Beispiel schrieb .*auf Telegram:/);
 
   // The reply: the confirmation question (C1), "Ja", then "Wird gesendet." (C2); "Gesendet" (C3) only once Telegram confirms.
-  expect((await fetch(`${TELEGRAM}/hold`, { method: 'POST', body: JSON.stringify({ on: true }) })).ok).toBe(true);
+  expect((await fetch(`${MESSAGING}/hold`, { method: 'POST', body: JSON.stringify({ on: true }) })).ok).toBe(true);
   engines.model = asked(/Antworte/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Anna Beispiel', text: 'Morgen passt.' }], help: false }));
   from = await mark(clara);
   await talk(clara, engines, 'Antworte, dass morgen passt');
@@ -362,7 +362,86 @@ test('7 · Telegram: connected on the person’s device; a new message announced
   await said(clara, /^Wird gesendet\.$/, from);
   await new Promise((r) => setTimeout(r, 2_000));
   expect((await spoken(clara)).slice(from).some((t) => /^Gesendet an/.test(t))).toBe(false);
-  expect((await fetch(`${TELEGRAM}/hold`, { method: 'POST', body: JSON.stringify({ on: false }) })).ok).toBe(true);
+  expect((await fetch(`${MESSAGING}/hold`, { method: 'POST', body: JSON.stringify({ on: false }) })).ok).toBe(true);
+  await said(clara, /^Gesendet an Anna Beispiel\.$/, from);
+});
+
+test('7b · across services (docs/plan-m3.md, K1): WhatsApp linked and UCAP the SMS app on Clara’s phone; the assistant, the services page and the messages screen name each message’s service; a reply by SMS waits for the phone, "Gesendet" at its report', async () => {
+  await home(clara);
+  // Clara's phone joins her account with her words; UCAP is its SMS app.
+  let from = await mark(clara);
+  const ph = await smsPhone('Clara', words.get('Clara')!);
+  await said(clara, /^Mit deinen Wiederherstellungswörtern wurde ein neues Gerät hinzugefügt: Telefon von Clara\.$/, from);
+  // WhatsApp, linked from it (its own page comes in K2): the number, then the pairing code typed in WhatsApp.
+  const wa = (await ph.call<{ connection: { id: string } }>('POST', '/api/v1/messaging/connections', { service: 'whatsapp', acceptedRisk: true })).connection.id;
+  const waState = async () => (await ph.call<{ connections: { id: string; state: string; detail: { pairing?: string } }[] }>('GET', '/api/v1/messaging/connections')).connections.find((c) => c.id === wa);
+  await expect.poll(async () => (await waState())?.state).toBe('wait_phone');
+  await ph.call('POST', `/api/v1/messaging/connections/${wa}/login`, { step: 'phone', value: '+49 170 1234567' });
+  await expect.poll(async () => (await waState())?.detail.pairing).toBe('UCAP2026');
+  expect((await fetch(`${MESSAGING}/pair`, { method: 'POST' })).ok).toBe(true);
+  await expect.poll(async () => (await waState())?.state).toBe('ready');
+
+  // The services page names all three, each with its state.
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Nachrichtendienste', exact: true }).click();
+  await said(clara, /^Nachrichtendienste\. Telegram: verbunden\. SMS: verbunden\. WhatsApp: verbunden\.$/, from);
+  await home(clara);
+
+  // Anna writes on WhatsApp and by SMS, stamped with the servers' time; each is announced by its sender and, as there
+  // is more than one service now, where it came.
+  from = await mark(clara);
+  expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ service: 'whatsapp', chat: 'anna', text: 'Am Samstag grillen wir, kommst du?' }) })).ok).toBe(true);
+  await said(clara, /^Neue Nachricht von Anna Beispiel auf WhatsApp\.$/, from);
+  from = await mark(clara);
+  await ph.receive({ number: '+4915112345678', name: 'Anna Beispiel' }, 'Ich bin um drei bei dir.', await clocks.now());
+  await said(clara, /^Neue Nachricht von Anna Beispiel per SMS\.$/, from);
+
+  // "Lies meine neuen Nachrichten": the model gets each message with its service.
+  let data = '';
+  engines.model = asked(
+    /Lies meine neuen Nachrichten/,
+    () => ({ say: [], calls: [{ tool: 'messages.read', chat: null, unread_only: true }], help: false }),
+    (req) => {
+      data = engines.last(req);
+      return { say: [{ kind: 'summary', text: 'Anna lädt dich zum Grillen ein und kommt um drei.', ref: null }], calls: [], help: false };
+    },
+  );
+  from = await mark(clara);
+  await talk(clara, engines, 'Lies meine neuen Nachrichten');
+  await said(clara, /^Zusammenfassung: Anna lädt dich zum Grillen ein und kommt um drei\.$/, from);
+  for (const service of ['WhatsApp', 'SMS']) expect(data).toContain(`"service":"${service}"`);
+
+  // The messages screen reads the unread, oldest first, each with where it came from: WhatsApp's, the SMS, Anna's answer
+  // on Telegram to step 7's reply (4 s after it, so it may come after the others), and step 7's own message when its
+  // original was not heard to its end there. "Nächste" leads on. The first waits for the news still being said, and a
+  // browser's speech that stalls is cut only after about twice its time (src/audio/speech.ts): it may take a while.
+  await expect.poll(() => sql(`select count(*) from messaging_messages where text = 'Schön, bis dann!'`)).toBe('1');
+  const frames = [/^Anna Beispiel schrieb .* auf Telegram: Schön, bis dann!$/, /^Anna Beispiel schrieb .* auf WhatsApp: Am Samstag grillen wir, kommst du\?$/, /^Anna Beispiel schrieb .* per SMS: Ich bin um drei bei dir\.$/];
+  const framed = async () => (await spoken(clara)).slice(from).filter((t) => /^Anna Beispiel schrieb .* (auf \S+|per SMS): /.test(t));
+  const allRead = async () => {
+    const read = await framed();
+    return frames.every((f) => read.some((t) => f.test(t)));
+  };
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Nachrichten', exact: true }).click();
+  for (let n = 1; n <= 5 && !(await allRead()); n++) {
+    await expect.poll(async () => (await framed()).length, { message: `message ${n} read with its service`, timeout: n === 1 ? 90_000 : undefined }).toBeGreaterThanOrEqual(n);
+    if (!(await allRead())) await clara.getByRole('button', { name: 'Nächste', exact: true }).click();
+  }
+  const read = await framed();
+  for (const f of frames) expect(read.some((t) => f.test(t)), String(f)).toBe(true);
+  await home(clara);
+
+  // A reply by SMS: C1 names SMS; confirmed, it waits for the phone, which sends it and reports; then "Gesendet".
+  engines.model = asked(/per SMS/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Anna Beispiel', text: 'Ich freue mich.', service: 'SMS' }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Antworte Anna per SMS, dass ich mich freue');
+  await said(clara, /^SMS an Anna Beispiel: „Ich freue mich\.“\. Senden\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Bestätigt\. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist\.$/, from);
+  expect((await spoken(clara)).slice(from).some((t) => /^Gesendet an/.test(t))).toBe(false);
+  expect((await ph.sendWaiting()).map((s) => s.text)).toEqual(['Ich freue mich.']);
   await said(clara, /^Gesendet an Anna Beispiel\.$/, from);
 });
 

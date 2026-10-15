@@ -164,8 +164,8 @@ services:
 
   # The end-to-end stack (npm run test:e2e; docs/plan.md, Appendix G), started only with its profile: its own
   # database (ucap_e2e, made afresh for each run) and files, test mode (a clock the tests move forward), the AI
-  # engines replaced by stand-ins in the test process (e2e/engines.ts, on the host's 8824), Telegram by
-  # tools/dev/fake-telegram.ts, and the app from Vite on the host, all on one origin: http://localhost:8815.
+  # engines replaced by stand-ins in the test process (e2e/engines.ts, on the host's 8824), Telegram, WhatsApp and
+  # email by tools/dev/fake-services.ts, and the app from Vite on the host, all on one origin: http://localhost:8815.
   # It shares Postgres and ntfy with the dev stack and never touches its data.
   core-e2e:
     <<: *node
@@ -219,7 +219,7 @@ services:
   connectors-e2e:
     <<: *node
     profiles: [e2e]
-    command: node tools/dev/fake-telegram.ts
+    command: node tools/dev/fake-services.ts
     secrets: [connectors_token]
     volumes:
       - ./:/app

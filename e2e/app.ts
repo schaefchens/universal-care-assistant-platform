@@ -10,8 +10,8 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import type { Engines } from './engines.ts';
 
 export const ORIGIN = 'http://localhost:8815';
-/** The Telegram stand-in's control (tools/dev/fake-telegram.ts, published by compose's connectors-e2e). */
-export const TELEGRAM = 'http://localhost:8825';
+/** The messaging stand-in's control (tools/dev/fake-services.ts, published by compose's connectors-e2e). */
+export const MESSAGING = 'http://localhost:8825';
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 
 /** The e2e server's CLI, as an operator runs it. */
@@ -175,8 +175,8 @@ export const clocks = {
       const r = await fetch(`${ORIGIN}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ at }) });
       expect(r.ok, path).toBe(true);
     }
-    // Telegram's stand-in keeps the same time, or new messages would look hours old.
-    expect((await fetch(`${TELEGRAM}/clock`, { method: 'POST', body: JSON.stringify({ at: await clocks.now() }) })).ok).toBe(true);
+    // The messaging stand-in keeps the same time, or new messages would look hours old.
+    expect((await fetch(`${MESSAGING}/clock`, { method: 'POST', body: JSON.stringify({ at: await clocks.now() }) })).ok).toBe(true);
   },
   async advance(ms: number): Promise<void> {
     await clocks.moveTo((await clocks.now()) + ms);

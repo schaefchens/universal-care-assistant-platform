@@ -318,6 +318,36 @@ describe('messaging across services', () => {
     expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([]);
   });
 
+  it('a phone signed out runs nothing any more: its connection is off, and what waited for it is not sent (C4) and kept as a draft', async () => {
+    const carl = await client.create((await core.identity.createInvite(db, { kind: 'account', createdBy: null })).code, 'Carl');
+    const sms = ((await as(carl, 'POST', '/api/v1/messaging/connections', { service: 'sms' })).json() as { connection: View }).connection.id;
+    await forward(
+      carl,
+      [
+        { t: 'chat.upsert', chat: { externalId: '40', title: 'Tom', kind: 'private', userId: '+4915100000', muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } },
+        { t: 'user.upsert', user: { externalId: '+4915100000', name: 'Tom', isContact: true, isBot: false } },
+        { t: 'msg.upsert', msg: { chatId: '40', externalId: '401', fromId: '+4915100000', outgoing: false, date: now() - 10, editDate: null, kind: 'text', text: 'Hallo', file: null, fileName: null } },
+      ],
+      sms,
+    );
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Tom', text: 'Bis morgen.' }], help: false });
+    const a = (await turn(carl, 'Schreib Tom: Bis morgen.')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string };
+    await as(carl, 'POST', `/api/v1/assistant/actions/${a.id}/confirm`, { contentHash: a.contentHash, via: 'voice' });
+    const o = await outbound(a.id);
+    expect(o.state).toBe('queued');
+    // Signed out from another device: this phone never reports again.
+    await sql`update devices set revoked_at = now() where id = ${carl.deviceId}`.execute(db);
+    expect((await assistant.messaging.connections(carl.userId, 'de')).find((c) => c.id === sms)).toMatchObject({ state: 'ready', running: false });
+    await assistant.messaging.sweep();
+    expect((await assistant.messaging.connections(carl.userId, 'de')).find((c) => c.id === sms)).toMatchObject({ state: 'off', detail: { error: 'signed_out' }, running: false });
+    expect(await outbound(a.id)).toMatchObject({ state: 'failed', error: 'signed_out', told: ['C4'] });
+    expect((await assistant.messaging.outbound(carl.userId, o.id, 'de'))?.say).toBe('Nicht gesendet: das Telefon, das sie senden sollte, ist abgemeldet. Der Entwurf ist gespeichert.');
+    expect((await sql<{ draft: string }>`select v.draft from messaging_conversations v join messaging_connections k on k.id = v.connection_id where k.id = ${sms}`.execute(db)).rows[0]!.draft).toBe('Bis morgen.');
+    // Once is enough: the next sweep finds nothing to do.
+    await assistant.messaging.sweep();
+    expect((await outbound(a.id)).told).toEqual(['C4']);
+  });
+
   // —— Speech and tools across services (K1) ——
   let previewId = '';
 
@@ -338,6 +368,15 @@ describe('messaging across services', () => {
     expect(frameOf('Ruf mich bitte an.')).toMatch(/^Mama schrieb .+ per SMS:$/);
     expect(frameOf('Bin gleich zurück.')).toMatch(/^Vorschau von Signal: Lena schrieb .+ auf Signal:$/);
     expect(frameOf('Kommst du morgen?')).toMatch(/^Clara Beispiel schrieb .+ auf Telegram:$/);
+    // Announced with its service, since there is more than one ("Neue Nachricht von Mama per SMS.").
+    const announce = async (text: string) => {
+      const id = (items.find((i) => i.text === text) as unknown as { id: string }).id;
+      return ((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { say: { announce: string } }).say.announce;
+    };
+    expect(await announce('Ruf mich bitte an.')).toBe('Neue Nachricht von Mama per SMS.');
+    expect(await announce('Ihr Termin am Dienstag fällt aus.')).toBe('Neue Nachricht von Praxis Dr. Klein per E-Mail.');
+    expect(await announce('Bin gleich zurück.')).toBe('Neue Nachricht von Lena auf Signal.');
+    expect(await announce('Kommst du morgen?')).toBe('Neue Nachricht von Clara Beispiel auf Telegram.');
   });
 
   it('the confirmation names the service: a reply through a preview, an SMS', async () => {

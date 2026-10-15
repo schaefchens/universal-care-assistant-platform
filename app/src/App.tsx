@@ -904,10 +904,11 @@ export function App() {
       const conv = String(data.conversationId ?? '');
       if (Date.now() - (announcedAt.current.get(conv) ?? 0) < 20_000) return;
       announcedAt.current.set(conv, Date.now());
-      const m = await session.call<{ from: string; conversation: string }>(`/api/v1/messaging/messages/${String(data.messageId)}?lang=${u.lang}`).catch(() => null);
+      const m = await session.call<{ from: string; conversation: string; say?: { announce?: string } }>(`/api/v1/messaging/messages/${String(data.messageId)}?lang=${u.lang}`).catch(() => null);
       if (!m) return;
       u.earcons.play('message');
-      u.say(u.tr('messages.announce', { name: m.from || m.conversation }), 'notice');
+      // With the service once there is more than one ("… auf WhatsApp."), as the server words it.
+      u.say(m.say?.announce ?? u.tr('messages.announce', { name: m.from || m.conversation }), 'notice');
     } else if (type === 'messaging.outbound' && data.deviceId === session.ref.deviceId) {
       const o = await session.call<{ say: string | null }>(`/api/v1/messaging/outbound/${String(data.outboundId)}?lang=${u.lang}`).catch(() => null);
       if (o?.say) u.say(o.say, 'notice');

@@ -118,8 +118,11 @@ interface ConnRow {
   test_dc: boolean;
   capabilities: Capabilities;
   created_at: Date;
+  /** The phone that runs it was signed out (it never reports again). */
+  device_revoked: boolean | null;
 }
-const COLS = sql`id, user_id, service, account, device_id, label, state, detail, me_name, secret_sealed, test_dc, capabilities, created_at`;
+const COLS = sql`id, user_id, service, account, device_id, label, state, detail, me_name, secret_sealed, test_dc, capabilities, created_at,
+  (select v.revoked_at is not null from devices v where v.id = messaging_connections.device_id) as device_revoked`;
 
 /** What a person asks to connect (on their own device). */
 export type ConnectInput =
@@ -199,7 +202,7 @@ export function createMessaging(d: {
     return r.rows[0] ?? null;
   }
 
-  const running = (c: ConnRow) => (isServerService(c.service) ? hub()?.connected(c.service) === true : true);
+  const running = (c: ConnRow) => (isServerService(c.service) ? hub()?.connected(c.service) === true : c.device_revoked !== true);
   const view = (c: ConnRow, lang: Lang): ConnectionView => {
     const capabilities = { ...CAPABILITIES[c.service], ...c.capabilities };
     return {
@@ -297,6 +300,24 @@ export function createMessaging(d: {
     await sql`
       update messaging_conversations v set draft = o.text, draft_at = ${now()} from messaging_outbound o
       where o.id = ${outboundId} and v.id = o.conversation_id`.execute(d.db);
+  }
+
+  /** The services the person has connected (ready once), in the order they were connected, named in their language. */
+  async function servicesOf(userId: string, lang: Lang = 'de'): Promise<string[]> {
+    const r = await sql<{ service: Service; label: string | null }>`
+      select service, label from messaging_connections where user_id = ${userId} and ready_at is not null
+      group by service, label order by min(created_at)`.execute(d.db);
+    return [...new Set(r.rows.map((x) => serviceName(x.service, x.label, lang)))];
+  }
+
+  /** A phone's connection can no longer send: what waited for it is not sent (C4), and kept as a draft. */
+  async function dropQueued(c: ConnRow, error: 'off' | 'signed_out') {
+    const r = await sql<{ id: string }>`
+      update messaging_outbound set state = 'failed', error = ${error}, updated_at = ${now()} where connection_id = ${c.id} and state = 'queued' returning id`.execute(d.db);
+    for (const o of r.rows) {
+      await saveDraft(o.id);
+      await told(o.id, 'C4');
+    }
   }
 
   async function told(outboundId: string, what: Told) {
@@ -647,12 +668,7 @@ export function createMessaging(d: {
      * The services the person has connected, in the order they were connected (the assistant offers its message tools
      * then, naming them). A connection that was never ready (a link not finished) has nothing to read yet.
      */
-    async servicesOf(userId: string): Promise<string[]> {
-      const r = await sql<{ service: Service; label: string | null }>`
-        select service, label from messaging_connections where user_id = ${userId} and ready_at is not null
-        group by service, label order by min(created_at)`.execute(d.db);
-      return [...new Set(r.rows.map((x) => serviceName(x.service, x.label)))];
-    },
+    servicesOf: (userId: string, lang?: Lang) => servicesOf(userId, lang),
 
     // —— From the connectors processes ——
     async onHello(services: ServerService[], runningIds: string[]) {
@@ -689,15 +705,9 @@ export function createMessaging(d: {
       for (const ev of events) {
         if (ev.t === 'conn.state') {
           if (ev.state !== c.state) await setState(c, ev.state, ev.error ? { error: ev.error } : {});
-          if (ev.state === 'off') {
-            // It can no longer send (the SMS role went back): what waited for it is not sent, and kept as a draft.
-            const r = await sql<{ id: string }>`
-              update messaging_outbound set state = 'failed', error = 'off', updated_at = ${now()} where connection_id = ${c.id} and state = 'queued' returning id`.execute(d.db);
-            for (const o of r.rows) {
-              await saveDraft(o.id);
-              await told(o.id, 'C4');
-            }
-          } else {
+          // It can no longer send (the SMS role went back): what waited for it is not sent, and kept as a draft.
+          if (ev.state === 'off') await dropQueued(c, 'off');
+          else {
             const waiting = await sql`select 1 from messaging_outbound where connection_id = ${c.id} and state = 'queued' limit 1`.execute(d.db);
             if (waiting.rows.length) await notify(userId, 'messaging.device.send', { connectionId: c.id, deviceId });
           }
@@ -866,13 +876,17 @@ export function createMessaging(d: {
      * How the messages screen says an item: UCAP's frame, then the original (a caption introduced as one). A voice
      * message's original is its recording, played after the frame.
      */
-    async spoken(userId: string, list: Item[], lang?: Lang): Promise<(Item & { say: { frame: string; text: string } })[]> {
+    async spoken(userId: string, list: Item[], lang?: Lang): Promise<(Item & { say: { frame: string; text: string; announce: string } })[]> {
       const p = await langOf(userId);
       const L = lang ?? p.lang;
+      // "Neue Nachricht von Anna auf WhatsApp.": the service named once the person has more than one.
+      const several = (await servicesOf(userId)).length > 1;
       return list.map((i) => {
         const f = frame(L, p.form, p.timezone, i);
         const text = i.kind === 'voice' || !i.text ? '' : CAPTIONED.has(i.kind) ? `${t(L, 'messages.frame.caption', {}, p.form)} ${i.text}` : i.text;
-        return { ...i, say: { frame: f, text } };
+        const name = i.from || i.conversation;
+        const announce = several ? t(L, 'messages.announce.via', { name, via: via(L, i.service, i.label) }, p.form) : t(L, 'messages.announce', { name }, p.form);
+        return { ...i, say: { frame: f, text, announce } };
       });
     },
 
@@ -1042,6 +1056,13 @@ export function createMessaging(d: {
      * took a send has longer than a connectors process to say how it went: it may lose its network meanwhile.
      */
     async sweep() {
+      // A phone signed out never reports again: what it ran is off, and what waited for it is kept as a draft.
+      const gone = await sql<ConnRow>`
+        select ${COLS} from messaging_connections where state <> 'off' and device_id in (select id from devices where revoked_at is not null)`.execute(d.db);
+      for (const c of gone.rows) {
+        await setState(c, 'off', { error: 'signed_out' });
+        await dropQueued(c, 'signed_out');
+      }
       const stuck = await sql<{ id: string }>`
         update messaging_outbound o set state = 'uncertain', updated_at = ${now()} from messaging_connections k
         where k.id = o.connection_id and (
@@ -1091,6 +1112,7 @@ function frameKind(kind: string): string {
 function reasonKey(error: string | null, service: Service): string {
   if (error === 'offline') return 'offline';
   if (error === 'off') return service === 'sms' ? 'off.sms' : 'off.preview';
+  if (error === 'signed_out') return 'signedOut';
   if (error === 'tg_403') return 'forbidden';
   if (error === 'tg_400') return 'refused';
   return 'service';

@@ -126,7 +126,7 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       let focus = s.focus;
       // The messaging tools only for a person with a connection (what is kept here can be read while it reconnects),
       // and the model is told which services those are.
-      const services = d.messaging ? await d.messaging.servicesOf(o.userId) : [];
+      const services = d.messaging ? await d.messaging.servicesOf(o.userId, who.lang) : [];
       const messaging = services.length ? d.messaging : undefined;
       const tools = toolsFor({ messaging: messaging !== undefined });
       const offered = new Map(tools.map((x) => [x.name, x]));

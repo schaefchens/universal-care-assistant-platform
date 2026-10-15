@@ -72,14 +72,15 @@ connects their own account on their own device (Einstellungen → Telegram: phon
 helpers get no access to it. The connectors process runs TDLib; restart it by hand after a change
 (`docker compose restart connectors`).
 
-Without credentials, a stand-in shows the messaging in the app (an invented account, code 22222; it never reaches
-Telegram):
+Without credentials, a stand-in shows the messaging in the app: invented accounts on Telegram (code 22222), WhatsApp
+(pairing code UCAP2026) and email (any password but „falsch“); it never reaches a real service:
 
 ```sh
 docker compose stop connectors
-docker compose run --rm -d --name ucap-fake-telegram -p 127.0.0.1:8823:8823 connectors node tools/dev/fake-telegram.ts
+docker compose run --rm -d --name ucap-fake-services -p 127.0.0.1:8823:8823 connectors node tools/dev/fake-services.ts
 curl -X POST localhost:8823/incoming -d '{"chat":"anna","text":"Kommst du morgen zum Kaffee?"}'
-docker stop ucap-fake-telegram && docker compose start connectors
+curl -X POST localhost:8823/incoming -d '{"service":"whatsapp","chat":"anna","text":"Bis Samstag!"}'
+docker stop ucap-fake-services && docker compose start connectors
 ```
 
 With credentials, `UCAP_TG_TEST=1 TG_API_ID=… TG_API_HASH=… npx vitest run --project connectors testdc` logs two test
