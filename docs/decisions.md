@@ -736,3 +736,18 @@ then they stay as built, and nothing here is frozen.
   follows the page's relationships.
 - **Still open:** the 48-hour push soak on a real phone, and the other checks on real phones (see acceptance.md); the
   ntfy app on the emulator (AN-01, AN-07).
+
+## M2: LIVE Assistance Mode (planned 2026-10-15)
+
+The plan: [plan-m2.md](plan-m2.md).
+
+### Decided by the owner (2026-10-15)
+
+1. **The keyword gate is on the device**: an offline German keyword spotter in the app (Vosk's small German model)
+   while the gate is closed, so nothing leaves the device until the keyword is said. plan.md's roadmap said "The
+   keyword gate after quiet periods starts as a transcript match and moves to an on-device wake word once measured";
+   the owner chose the device from the start.
+2. **The person names the assistant, and the name is the keyword**; the person may choose a keyword of their own
+   ("person names the assistant and potentially a own selected keyword").
+3. **Helpers switch LIVE on directly**: helpers with `device.configure` switch it on and off as other device settings.
+   As every remote change in M1, it is announced on the device and kept in the person's history.
