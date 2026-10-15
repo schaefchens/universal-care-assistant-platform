@@ -610,7 +610,7 @@ then they stay as built, and nothing here is frozen.
 4. **A helper added after the order was set is notified last**, after the order's steps, until someone places them
    (the server's rule since S4: a responder the stored plan does not name goes into a last tier, two minutes on, so
    nobody who answers help requests is ever left out). The order screen now shows it. The other choice: notify them at
-   once.
+   once. **Confirmed by the owner, 2026-10-15:** last.
 
 ### Decided (within the plan)
 
@@ -696,6 +696,10 @@ then they stay as built, and nothing here is frozen.
   from elsewhere ("Neue Nachricht von …", "Gesendet an …", a device added with the recovery words, the test alarm's
   answer), said to its end, and said again when a help request cut it off. On the emulator a second press cut the
   first screen's announcement and the next one was said at once (DeviceTts: speak, stop, speak).
+  Touching an area to explore it is not acting: an answer in the device voice stops (the plan: "any touch interrupts
+  it"), screen announcements and readbacks go on, and meanwhile an explored area gives its earcon without its name.
+  The other choice, exploring dropping them too, was put to the owner: **left as it is for now (the owner,
+  2026-10-15).** Not yet the same in a server voice: touching an area does not stop an answer played as a clip.
 - **`npm run android:check`** runs on the emulator what can be checked there by itself: backups off, the security
   policy, axe, Help first in focus order, earcon usage, and Do Not Disturb in each mode through real heartbeats (a
   heartbeat never rings, so the phone reports the mode rather than "silenced"). Doze stays with the ntfy app.
