@@ -170,7 +170,9 @@ export function AreaScreen(p: {
         }}
         onTouch={() => {
           earcons.wake();
-          speech.stop('assistant');
+          // An answer stops at a touch, in whichever voice it is said (plan.md, Appendix H: "assistant: any touch
+          // interrupts it").
+          ui.stopAnswer();
         }}
       />
     </main>

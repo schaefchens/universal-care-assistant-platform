@@ -23,12 +23,14 @@ export interface Ui {
   speech: SpeechOut;
   /** The person did something: what was said about what they did before stops (speech.ts), clips of a voice too. */
   acted: () => void;
+  /** A touch on an area: the assistant's answer stops, in the device voice or in a server voice alike. */
+  stopAnswer: () => void;
   earcons: EarconPlayer;
   assistive: AssistiveMode;
   haptic: () => void;
 }
 
-export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; earcons: EarconPlayer; assistive: AssistiveMode; haptics: boolean; onAct?: () => void }): Ui {
+export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; earcons: EarconPlayer; assistive: AssistiveMode; haptics: boolean; onAct?: () => void; onStopAnswer?: () => void }): Ui {
   return {
     lang: o.lang,
     form: o.form,
@@ -45,6 +47,10 @@ export function makeUi(o: { lang: Lang; form: AddressForm; speech: SpeechOut; ea
     acted: () => {
       o.speech.acted();
       o.onAct?.();
+    },
+    stopAnswer: () => {
+      o.speech.stop('assistant');
+      o.onStopAnswer?.();
     },
     earcons: o.earcons,
     assistive: o.assistive,

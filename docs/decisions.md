@@ -699,7 +699,8 @@ then they stay as built, and nothing here is frozen.
   Touching an area to explore it is not acting: an answer in the device voice stops (the plan: "any touch interrupts
   it"), screen announcements and readbacks go on, and meanwhile an explored area gives its earcon without its name.
   The other choice, exploring dropping them too, was put to the owner: **left as it is for now (the owner,
-  2026-10-15).** Not yet the same in a server voice: touching an area does not stop an answer played as a clip.
+  2026-10-15).** The same in a server voice since: touching an area stops an answer played as a clip, as it stops one
+  in the device voice (a reminder's question and a voice message's recording play on, in either).
 - **`npm run android:check`** runs on the emulator what can be checked there by itself: backups off, the security
   policy, axe, Help first in focus order, earcon usage, and Do Not Disturb in each mode through real heartbeats (a
   heartbeat never rings, so the phone reports the mode rather than "silenced"). Doze stays with the ntfy app.

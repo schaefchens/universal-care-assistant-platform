@@ -41,4 +41,22 @@ describe('the clip player', () => {
     FakeAudio.last!.onended!();
     await expect(second).resolves.toBe(true);
   });
+
+  it('a touch on an area stops an answer in a server voice, as in the device voice; anything else plays on', async () => {
+    vi.stubGlobal('Audio', FakeAudio);
+    const p = new ClipPlayer();
+    const reminder = p.play(['question.mp3']);
+    await Promise.resolve();
+    expect(p.stopAnswer()).toBe(false);
+    expect(p.playing).toBe(true);
+    FakeAudio.last!.onended!();
+    await expect(reminder).resolves.toBe(true);
+    const answer = p.play(['reply.mp3'], { answer: true });
+    await Promise.resolve();
+    expect(p.stopAnswer()).toBe(true);
+    await expect(answer).resolves.toBe(false);
+    expect(p.cutOff).toBe(true);
+    // Nothing playing: nothing to stop.
+    expect(p.stopAnswer()).toBe(false);
+  });
 });

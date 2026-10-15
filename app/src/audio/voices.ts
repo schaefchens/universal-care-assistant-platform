@@ -50,15 +50,19 @@ export class ClipPlayer {
   private settle: ((ended: boolean) => void) | null = null;
   /** The last play() was stopped while a clip played (not refused or failed): nothing to say again in another voice. */
   cutOff = false;
+  /** What plays is an answer of the assistant (a reply, something it reads out), which a touch interrupts. */
+  private answer = false;
 
   /** Something is playing now (a clip of the person's voice, a recording). */
   get playing(): boolean {
     return this.audio !== null && !this.audio.paused && !this.audio.ended;
   }
 
-  async play(urls: string[]): Promise<boolean> {
+  /** `answer`: a reply or a reading of the assistant's, interrupted by a touch on an area as in the device voice. */
+  async play(urls: string[], o: { answer?: boolean } = {}): Promise<boolean> {
     this.stop();
     this.cutOff = false;
+    this.answer = o.answer === true;
     const mine = ++this.token;
     for (const url of urls) {
       if (mine !== this.token) return false;
@@ -81,8 +85,16 @@ export class ClipPlayer {
     return mine === this.token;
   }
 
+  /** A touch on an area: an answer stops, as one in the device voice does; anything else plays on. */
+  stopAnswer(): boolean {
+    if (!this.answer || !this.playing) return false;
+    this.stop();
+    return true;
+  }
+
   stop() {
     this.token++;
+    this.answer = false;
     this.audio?.pause();
     this.audio = null;
     const settle = this.settle;
@@ -123,6 +135,9 @@ export async function speakAs(o: { session: Session; text: string; purpose: 'rep
   if (!('segments' in r)) return false;
   // Kept in the debug record as the device voice's speech is: what the person heard, in whichever voice.
   record('spoken', { channel: o.purpose, text: o.text });
-  const ended = await o.player.play(r.segments.map((s) => `${o.session.ref.serverUrl}${s.url}`));
+  const ended = await o.player.play(
+    r.segments.map((s) => `${o.session.ref.serverUrl}${s.url}`),
+    { answer: o.purpose === 'reply' || o.purpose === 'reading' },
+  );
   return ended || (o.player.cutOff ? 'cut' : false);
 }

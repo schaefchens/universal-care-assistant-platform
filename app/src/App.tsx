@@ -295,7 +295,19 @@ export function App() {
   // Clips in the person's voices (replies, reading aloud, recordings); a new action of the person stops them too.
   const player = useMemo(() => new ClipPlayer(), []);
   const ui = useMemo(
-    () => makeUi({ lang: prefs.lang, form: prefs.addressForm, speech, earcons, assistive, haptics: config.touch.haptics, onAct: () => player.stop() }),
+    () =>
+      makeUi({
+        lang: prefs.lang,
+        form: prefs.addressForm,
+        speech,
+        earcons,
+        assistive,
+        haptics: config.touch.haptics,
+        onAct: () => player.stop(),
+        onStopAnswer: () => {
+          if (player.stopAnswer()) record('voice', { reason: 'answer stopped by a touch' });
+        },
+      }),
     [prefs.lang, prefs.addressForm, speech, earcons, assistive, config.touch.haptics, player],
   );
   // Long-lived clients (care, realtime) speak with the current words and voice, whatever changed since they started.
