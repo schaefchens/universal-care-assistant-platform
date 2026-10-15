@@ -823,3 +823,26 @@ The plan: [plan-m2.md](plan-m2.md).
 - **The keyword model is served by the assistant process** (`/api/v1/assistant/keyword-models`), from the models
   directory with its pinned SHA-256 (`tools/live/models.ts` downloads it); the app checks the digest again before it
   unpacks it into its own storage.
+
+## M3: More connectors (planned 2026-10-15)
+
+The plan: [plan-m3.md](plan-m3.md).
+
+### Decided by the owner (2026-10-15)
+
+1. **UCAP becomes the SMS app.** It takes Android's SMS role on the phone with the person's SIM, and receives, keeps
+   and sends SMS and MMS itself.
+   - plan.md's roadmap said "SMS through Android: Play allows SMS permissions mainly for the default SMS app, otherwise
+     the notification route".
+   - The owner chose the SMS app over two other routes: the notification route, and the Assistant role the research
+     found, which grants SMS permissions while Google Messages stays the SMS app.
+   - RCS chats most likely stop while UCAP holds the role.
+2. **A calendar and tasks come in M3**, moved from M5's roadmap entry ("Calendar, tasks, shopping lists, alarms").
+   - M5 keeps shopping lists, alarms and outside calendars.
+   - A message can become a note, an appointment, a task or a reminder, and each keeps it as its source.
+3. **Email connects with a password or an app password** (IMAP and SMTP). OAuth2 for Google and Microsoft is not in
+   M3, so Outlook.com and Microsoft 365 cannot connect yet.
+4. **Helpers may manage contacts by a new permission**, "Kontakte verwalten" (`contacts.manage`), granted and withdrawn
+   by the person. It never reaches messages.
+5. **Helpers may manage appointments and tasks by a new permission**, "Termine und Aufgaben verwalten"
+   (`agenda.manage`). It never reaches messages or notes.
