@@ -11,7 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildAssistant } from '../src/assistant/app.ts';
 import { buildCore } from '../src/core/app.ts';
 import type { Db } from '../src/lib/db.ts';
-import { type Account, accountClient } from './accounts.ts';
+import { formatSigHeader, signedRequestPayload } from '@ucap/identity';
+import { type Account, accountClient, ORG } from './accounts.ts';
 import { FakeConnectors, until } from './fake-connectors.ts';
 import { fakeClock, SECRETS, testConfig, testDb } from './helpers.ts';
 
@@ -225,5 +226,82 @@ describe('messaging across services', () => {
     await turn(anna, 'Hallo');
     expect(seen[0]!.system).toContain('Nachrichten kommen aus E-Mail und Telegram.');
     expect(seen[0]!.system).not.toContain('WhatsApp');
+  });
+
+  // —— A phone's own connections (K1): forwarded and sent by the phone, signed with its key ——
+  let smsId = '';
+  const signedPost = async (a: Account, url: string, body: Record<string, unknown>, idem = crypto.randomUUID()) => {
+    const sig = await a.dev.sign('req', signedRequestPayload({ srv: core.serverId, org: ORG, method: 'POST', path: url, body: body as never, idem }));
+    return assistant.app.inject({ method: 'POST', url, payload: body, headers: { 'ucap-sig': formatSigHeader({ did: a.deviceId, org: ORG, sig }), 'idempotency-key': idem } });
+  };
+  const forward = (a: Account, events: Record<string, unknown>[], connectionId = smsId) => signedPost(a, '/api/v1/messaging/device/events', { connectionId, events });
+  const events = async (kind: string) => (await sql<{ payload: Record<string, unknown> }>`select payload from outbox_events where kind = ${kind} order by id`.execute(db)).rows.map((r) => r.payload);
+  const outbound = async (actionId: string) => (await sql<{ id: string; state: string; told: string[]; error: string | null }>`select id, state, told, error from messaging_outbound where action_id = ${actionId}`.execute(db)).rows[0]!;
+  const reply = async (text: string) => {
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Mama', text }], help: false });
+    const a = (await turn(anna, `Schreib Mama: ${text}`)).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string };
+    return { a, said: ((await as(anna, 'POST', `/api/v1/assistant/actions/${a.id}/confirm`, { contentHash: a.contentHash, via: 'voice' })).json() as { say: string }).say };
+  };
+
+  it('a phone forwards what its SMS connection saw, signed by its key: kept with its service; only that phone, never for a server-side connection', async () => {
+    smsId = ((await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'sms' })).json() as { connection: View }).connection.id;
+    const r = await forward(anna, [
+      { t: 'chat.upsert', chat: { externalId: '12', title: 'Mama', kind: 'private', userId: '+4917012345', muted: false, unread: 1, readInboxMaxId: null, readOutboxMaxId: null } },
+      { t: 'user.upsert', user: { externalId: '+4917012345', name: 'Mama', isContact: true, isBot: false } },
+      { t: 'msg.upsert', msg: { chatId: '12', externalId: '301', fromId: '+4917012345', outgoing: false, date: now() - 10, editDate: null, kind: 'text', text: 'Ruf mich bitte an.', file: null, fileName: null }, live: true },
+    ]);
+    expect(r.json()).toEqual({ ok: true });
+    const q = (await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { items: { service: string; from: string; text: string; unread: boolean }[] };
+    expect(q.items.find((i) => i.service === 'sms')).toMatchObject({ from: 'Mama', text: 'Ruf mich bitte an.', unread: true });
+    expect((await events('messaging.message')).at(-1)).toMatchObject({ incoming: true, announce: true });
+    // Nobody else's phone, no server-side connection, nothing unsigned, nothing malformed.
+    expect((await forward(bernd, [{ t: 'conn.state', state: 'off' }])).statusCode).toBe(404);
+    expect((await forward(anna, [{ t: 'conn.state', state: 'off' }], emailId)).statusCode).toBe(404);
+    expect((await as(anna, 'POST', '/api/v1/messaging/device/events', { connectionId: smsId, events: [{ t: 'conn.state', state: 'off' }] })).statusCode).toBe(401);
+    expect((await forward(anna, [{ t: 'chat.upsert', chat: { externalId: '12', title: 'Kanal', kind: 'channel', userId: null, muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } }])).json()).toEqual({ error: { code: 'bad_request', params: { reason: 'event' } } });
+    expect((await forward(anna, [{ t: 'msg.upsert', msg: { chatId: '12', externalId: '302', fromId: null, outgoing: false, date: now(), editDate: null, kind: 'photo', text: '', file: { fileId: 1, mime: null, size: 1, durationS: null }, fileName: null } }])).statusCode).toBe(400);
+    expect((await sql<{ state: string }>`select state from messaging_connections where id = ${smsId}`.execute(db)).rows[0]!.state).toBe('ready');
+  });
+
+  it('a reply by SMS waits for the phone, which is told, takes it once and reports it: pending, then sent (C3); what was heard, the phone marks read', async () => {
+    const { a, said } = await reply('Ich rufe gleich an.');
+    expect(said).toBe('Bestätigt. Die Nachricht wird gesendet, sobald die Verbindung wieder da ist.');
+    const o = await outbound(a.id);
+    expect(o.state).toBe('queued');
+    expect((await events('messaging.device.send')).at(-1)).toEqual({ connectionId: smsId, deviceId: anna.deviceId });
+    // Another phone of nobody takes nothing; this one takes it once.
+    expect(((await signedPost(bernd, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([]);
+    expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([{ id: o.id, connectionId: smsId, chatId: '12', text: 'Ich rufe gleich an.' }]);
+    expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([]);
+    expect((await outbound(a.id)).state).toBe('attempting');
+    await forward(anna, [{ t: 'send.result', requestId: o.id, state: 'pending_service' }]);
+    expect((await outbound(a.id)).state).toBe('pending_service');
+    await forward(anna, [{ t: 'send.result', requestId: o.id, state: 'sent', externalId: '303' }]);
+    expect(await outbound(a.id)).toMatchObject({ state: 'sent', told: ['C3'] });
+    const msg = (await sql<{ id: string }>`select id from messaging_messages where external_id = '301'`.execute(db)).rows[0]!.id;
+    await as(anna, 'POST', '/api/v1/messaging/messages/heard', { ids: [msg] });
+    expect((await events('messaging.device.read')).at(-1)).toEqual({ connectionId: smsId, chatId: '12', externalIds: ['301'] });
+  });
+
+  it('a phone that stops running it (the SMS role went back): what waited is not sent (C4) and kept as a draft; when it runs again, it is told', async () => {
+    const { a } = await reply('Bis später.');
+    await forward(anna, [{ t: 'conn.state', state: 'off' }]);
+    expect(await outbound(a.id)).toMatchObject({ state: 'failed', error: 'off', told: ['C4'] });
+    expect((await sql<{ draft: string }>`select draft from messaging_conversations where external_id = '12'`.execute(db)).rows[0]!.draft).toBe('Bis später.');
+    expect((await connections(anna)).connections.find((c) => c.id === smsId)?.state).toBe('off');
+    await forward(anna, [{ t: 'conn.state', state: 'ready' }]);
+    expect((await connections(anna)).connections.find((c) => c.id === smsId)?.state).toBe('ready');
+  });
+
+  it('a phone that took a send and never said how it went: still sending after a minute, uncertain (C6) after ten, never sent again', async () => {
+    const { a } = await reply('Kommst du?');
+    await signedPost(anna, '/api/v1/messaging/device/outbound', {});
+    clock.advance(61_000);
+    await assistant.messaging.sweep();
+    expect((await outbound(a.id)).state).toBe('attempting');
+    clock.advance(10 * 60_000);
+    await assistant.messaging.sweep();
+    expect(await outbound(a.id)).toMatchObject({ state: 'uncertain', told: ['C6'] });
+    expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([]);
   });
 });

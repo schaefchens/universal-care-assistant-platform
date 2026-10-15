@@ -14,9 +14,11 @@ import { toolByName } from '../assistant/registry.ts';
 import { ToolError } from '../assistant/tools.ts';
 import type { ContextFor } from '../assistant/turns.ts';
 import { auth, requireAdmin, requireAuth } from '../core/auth.ts';
+import { signed } from '../core/signed.ts';
 import type { IdentityService } from '../domain/identity/service.ts';
 import { AppError } from '../lib/errors.ts';
 import type { AnyApp } from '../lib/http.ts';
+import { deviceEvent } from './device.ts';
 import type { ConnectInput, Messaging } from './service.ts';
 
 const Id = Type.Object({ id: Type.String({ format: 'uuid' }) });
@@ -82,7 +84,10 @@ function publicHost(host: string): boolean {
   return h.includes('.') && !/\.(local|lan|internal|localhost|home|corp)$/.test(h) && h !== 'localhost';
 }
 
-export function registerMessagingRoutes(app: AnyApp, o: { messaging: Messaging; identity: IdentityService; actions: Actions; contextFor: ContextFor }) {
+export function registerMessagingRoutes(
+  app: AnyApp,
+  o: { messaging: Messaging; identity: IdentityService; actions: Actions; contextFor: ContextFor; requireSigned: (req: import('fastify').FastifyRequest) => Promise<void> },
+) {
   const m = o.messaging;
 
   // —— The person's connections ——
@@ -114,6 +119,34 @@ export function registerMessagingRoutes(app: AnyApp, o: { messaging: Messaging; 
     },
   );
   app.delete('/api/v1/messaging/connections/:id', { preHandler: requireAuth, schema: { params: Id } }, async (req) => m.disconnect(auth(req).userId, (req.params as { id: string }).id));
+
+  // —— A phone's own connections (SMS, previews): signed by the phone, so its native code reports with the app closed ——
+  // Events go as loose objects and are checked one by one (device.ts).
+  app.post(
+    '/api/v1/messaging/device/events',
+    {
+      preHandler: o.requireSigned,
+      schema: {
+        body: Type.Object(
+          { connectionId: Type.String({ format: 'uuid' }), events: Type.Array(Type.Object({ t: Type.String({ maxLength: 20 }) }, { additionalProperties: true }), { minItems: 1, maxItems: 200 }) },
+          { additionalProperties: false },
+        ),
+      },
+    },
+    async (req) => {
+      const s = signed(req);
+      const b = req.body as { connectionId: string; events: unknown[] };
+      const events = b.events.map(deviceEvent);
+      if (events.some((e) => e === null)) throw new AppError('bad_request', { params: { reason: 'event' } });
+      await m.deviceEvents(s.userId, s.deviceId, b.connectionId, events as NonNullable<(typeof events)[number]>[]);
+      return { ok: true };
+    },
+  );
+  // What waits for the phone to send: taken, the phone sends it and reports how it went (send.result).
+  app.post('/api/v1/messaging/device/outbound', { preHandler: o.requireSigned, schema: { body: Type.Object({}, { additionalProperties: false }) } }, async (req) => {
+    const s = signed(req);
+    return { sends: await m.deviceTake(s.userId, s.deviceId) };
+  });
 
   // —— Reading ——
   app.get('/api/v1/messaging/queue', { preHandler: requireAuth, schema: { querystring: LangQuery } }, async (req) => {

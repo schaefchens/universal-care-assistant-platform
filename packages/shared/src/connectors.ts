@@ -121,3 +121,29 @@ export type FromConnectors =
    */
   | { t: 'send.result'; id: string; requestId?: string; state: 'pending_service' | 'sent' | 'failed'; externalId?: string; tempId?: string; error?: string }
   | { t: 'file.ready'; id: string; requestId: string; ok: boolean; path?: string; mime?: string | null };
+
+/**
+ * What a phone reports about one of its own connections (docs/plan-m3.md, K1): UCAP as its SMS app, or the previews of
+ * one app's notifications. The connector protocol's events for that connection, sent by native code and signed with
+ * the device's key, so they go out with the app closed.
+ */
+export type DeviceEvent =
+  /** The phone runs it, or stopped (the SMS role went back, notification access was taken away). */
+  | { t: 'conn.state'; state: 'ready' | 'off'; error?: string }
+  | { t: 'chat.upsert'; chat: WireChat }
+  | { t: 'user.upsert'; user: WireUser }
+  /** `live`: it just arrived (not fetched from the phone's history). */
+  | { t: 'msg.upsert'; msg: WireMessage; live?: boolean }
+  | { t: 'msg.delete'; chatId: string; externalIds: string[] }
+  | { t: 'chat.read'; chatId: string; inboxMaxId: string | null; outboxMaxId: string | null; unread?: number }
+  /** A send the phone took: handed to the network or the other app, then sent or failed. */
+  | { t: 'send.result'; requestId: string; state: 'pending_service' | 'sent' | 'failed'; externalId?: string; error?: string };
+
+/** A send waiting for the phone that runs its connection. */
+export interface DeviceSend {
+  id: string;
+  connectionId: string;
+  /** The conversation as the phone knows it (an SMS thread, a notification's conversation). */
+  chatId: string;
+  text: string;
+}

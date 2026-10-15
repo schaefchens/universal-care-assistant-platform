@@ -19,7 +19,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type AddressForm, type FromConnectors, type Lang, type MailServer, type ServerService, t, type ToConnectors, uuidv7, type WireFile } from '@ucap/shared';
+import { type AddressForm, type DeviceEvent, type DeviceSend, type FromConnectors, type Lang, type MailServer, type ServerService, t, type ToConnectors, uuidv7, type WireFile } from '@ucap/shared';
 import { judgeTranscript } from '@ucap/speech-text';
 import { sql } from 'kysely';
 import type { Stt } from '../ai/stt/service.ts';
@@ -239,12 +239,17 @@ export function createMessaging(d: {
   // —— Sending ——————————————————————————————————————————————————————————————————————————————————————————————————————
 
   async function attempt(outboundId: string): Promise<SendOutcome> {
-    const r = await sql<{ connection_id: string; chat: string; text: string; state: string; conn_state: string; service: Service }>`
-      select o.connection_id, v.external_id as chat, o.text, o.state, k.state as conn_state, k.service
+    const r = await sql<{ connection_id: string; chat: string; text: string; state: string; conn_state: string; service: Service; user_id: string; device_id: string | null }>`
+      select o.connection_id, v.external_id as chat, o.text, o.state, k.state as conn_state, k.service, k.user_id, k.device_id
       from messaging_outbound o join messaging_conversations v on v.id = o.conversation_id join messaging_connections k on k.id = o.connection_id
       where o.id = ${outboundId}`.execute(d.db);
     const o = r.rows[0];
-    if (!o || o.state !== 'queued' || !isServerService(o.service)) return 'queued';
+    if (!o || o.state !== 'queued') return 'queued';
+    if (!isServerService(o.service)) {
+      // A phone sends it: told now (if it listens), it takes what waits for it when it can (deviceTake).
+      if (o.conn_state === 'ready') await notify(o.user_id, 'messaging.device.send', { connectionId: o.connection_id, deviceId: o.device_id });
+      return 'queued';
+    }
     const h = hub();
     if (!h?.connected(o.service) || o.conn_state !== 'ready') return 'queued';
     // Written before the connectors are asked: a crash after this leaves it uncertain, never sent twice (AS-07).
@@ -347,6 +352,62 @@ export function createMessaging(d: {
     });
     await rm(join(d.filesDir, incoming), { force: true });
     await notify(c.user_id, 'messaging.message', { conversationId: a.conversation_id, messageId: a.message_id, media: true });
+  }
+
+  /** One event about a connection, from its connectors process or from the phone that runs it. */
+  async function apply(c: ConnRow, e: FromConnectors) {
+    switch (e.t) {
+      case 'conn.state': {
+        const detail: ConnectionView['detail'] = {
+          ...(e.code ? { code: e.code } : {}),
+          ...(e.qr ? { qr: e.qr } : {}),
+          ...(e.pairing ? { pairing: e.pairing } : {}),
+          ...(e.passwordHint !== undefined ? { passwordHint: e.passwordHint } : {}),
+          ...(e.error ? { error: e.error } : {}),
+        };
+        await setState(c, e.state, detail, e.me);
+        if (e.state === 'ready' && isServerService(c.service)) {
+          await flushQueued([c.service]);
+          await retryDownloads(c);
+        }
+        return;
+      }
+      case 'login.error':
+        await setState(c, c.state, { ...c.detail, error: e.error });
+        return;
+      case 'chat.upsert':
+        await store.upsertChat(c.id, e.chat);
+        return;
+      case 'user.upsert':
+        await store.upsertUser(c.id, e.user);
+        return;
+      case 'msg.upsert': {
+        const up = await store.upsertMessage(c.id, e.msg);
+        if (up.inserted && e.msg.kind === 'voice') await requestDownload(c, up.id, e.msg.file);
+        if (up.inserted && e.live) {
+          const v = await sql<{ kind: string; muted: boolean }>`select kind, muted from messaging_conversations where id = ${up.conversationId}`.execute(d.db);
+          const fresh = !e.msg.outgoing && v.rows[0]?.kind !== 'channel' && d.clock() - e.msg.date * 1000 < FRESH_MS;
+          // Muted chats are shown but not announced (Appendix F).
+          await notify(c.user_id, 'messaging.message', { conversationId: up.conversationId, messageId: up.id, incoming: !e.msg.outgoing, announce: fresh && !v.rows[0]?.muted });
+        } else if (up.changed) await notify(c.user_id, 'messaging.message', { conversationId: up.conversationId, messageId: up.id, changed: true });
+        return;
+      }
+      case 'msg.delete': {
+        const r = await store.deleteMessages(c.id, e.chatId, e.externalIds);
+        await d.files.remove(d.db, r.files);
+        if (r.conversationId) await notify(c.user_id, 'messaging.message', { conversationId: r.conversationId, deleted: true });
+        return;
+      }
+      case 'chat.read':
+        await store.read(c.id, e.chatId, e.inboxMaxId, e.outboxMaxId, e.unread);
+        return;
+      case 'send.result':
+        await onSendResult(c.id, e);
+        return;
+      case 'file.ready':
+        await onFileReady(c, e);
+        return;
+    }
   }
 
   // —— What the person reads ————————————————————————————————————————————————————————————————————————————————————————
@@ -575,58 +636,46 @@ export function createMessaging(d: {
       }
       // Never another service's process speaking for this connection.
       if (!isServerService(c.service) || !from.includes(c.service)) return;
-      switch (e.t) {
-        case 'conn.state': {
-          const detail: ConnectionView['detail'] = {
-            ...(e.code ? { code: e.code } : {}),
-            ...(e.qr ? { qr: e.qr } : {}),
-            ...(e.pairing ? { pairing: e.pairing } : {}),
-            ...(e.passwordHint !== undefined ? { passwordHint: e.passwordHint } : {}),
-            ...(e.error ? { error: e.error } : {}),
-          };
-          await setState(c, e.state, detail, e.me);
-          if (e.state === 'ready') {
-            await flushQueued([c.service]);
-            await retryDownloads(c);
+      await apply(c, e);
+    },
+
+    // —— From the person's phone (SMS, previews): signed by the phone that runs the connection ——
+    /** What a phone reports about one of its own connections; nobody else's, and never a server-side one. */
+    async deviceEvents(userId: string, deviceId: string, connectionId: string, events: DeviceEvent[]) {
+      let c = await connRow({ id: connectionId });
+      if (!c || c.user_id !== userId || c.device_id !== deviceId || isServerService(c.service)) throw new AppError('not_found');
+      for (const ev of events) {
+        if (ev.t === 'conn.state') {
+          if (ev.state !== c.state) await setState(c, ev.state, ev.error ? { error: ev.error } : {});
+          if (ev.state === 'off') {
+            // It can no longer send (the SMS role went back): what waited for it is not sent, and kept as a draft.
+            const r = await sql<{ id: string }>`
+              update messaging_outbound set state = 'failed', error = 'off', updated_at = ${now()} where connection_id = ${c.id} and state = 'queued' returning id`.execute(d.db);
+            for (const o of r.rows) {
+              await saveDraft(o.id);
+              await told(o.id, 'C4');
+            }
+          } else {
+            const waiting = await sql`select 1 from messaging_outbound where connection_id = ${c.id} and state = 'queued' limit 1`.execute(d.db);
+            if (waiting.rows.length) await notify(userId, 'messaging.device.send', { connectionId: c.id, deviceId });
           }
-          return;
+          c = (await connRow({ id: connectionId }))!;
+          continue;
         }
-        case 'login.error':
-          await setState(c, c.state, { ...c.detail, error: e.error });
-          return;
-        case 'chat.upsert':
-          await store.upsertChat(c.id, e.chat);
-          return;
-        case 'user.upsert':
-          await store.upsertUser(c.id, e.user);
-          return;
-        case 'msg.upsert': {
-          const up = await store.upsertMessage(c.id, e.msg);
-          if (up.inserted && e.msg.kind === 'voice') await requestDownload(c, up.id, e.msg.file);
-          if (up.inserted && e.live) {
-            const v = await sql<{ kind: string; muted: boolean }>`select kind, muted from messaging_conversations where id = ${up.conversationId}`.execute(d.db);
-            const fresh = !e.msg.outgoing && v.rows[0]?.kind !== 'channel' && d.clock() - e.msg.date * 1000 < FRESH_MS;
-            // Muted chats are shown but not announced (Appendix F).
-            await notify(c.user_id, 'messaging.message', { conversationId: up.conversationId, messageId: up.id, incoming: !e.msg.outgoing, announce: fresh && !v.rows[0]?.muted });
-          } else if (up.changed) await notify(c.user_id, 'messaging.message', { conversationId: up.conversationId, messageId: up.id, changed: true });
-          return;
-        }
-        case 'msg.delete': {
-          const r = await store.deleteMessages(c.id, e.chatId, e.externalIds);
-          await d.files.remove(d.db, r.files);
-          if (r.conversationId) await notify(c.user_id, 'messaging.message', { conversationId: r.conversationId, deleted: true });
-          return;
-        }
-        case 'chat.read':
-          await store.read(c.id, e.chatId, e.inboxMaxId, e.outboxMaxId, e.unread);
-          return;
-        case 'send.result':
-          await onSendResult(c.id, e);
-          return;
-        case 'file.ready':
-          await onFileReady(c, e);
-          return;
+        // A phone's message comes with what it says; there is nothing for it to fetch here (MMS pictures: K4).
+        if (ev.t === 'msg.upsert') await apply(c, { t: 'msg.upsert', id: c.id, msg: { ...ev.msg, file: null }, ...(ev.live ? { live: true } : {}) });
+        else await apply(c, { ...ev, id: c.id } as FromConnectors);
       }
+    },
+
+    /** The sends waiting for this phone, taken: from now on the phone is sending them (C6 if it never says how it went). */
+    async deviceTake(userId: string, deviceId: string): Promise<DeviceSend[]> {
+      const r = await sql<{ id: string; connection_id: string; chat: string; text: string }>`
+        update messaging_outbound o set state = 'attempting', attempted_at = ${now()}, updated_at = ${now()}
+        from messaging_connections k, messaging_conversations v
+        where o.connection_id = k.id and v.id = o.conversation_id and k.user_id = ${userId} and k.device_id = ${deviceId} and k.state = 'ready' and o.state = 'queued'
+        returning o.id, o.connection_id, v.external_id as chat, o.text`.execute(d.db);
+      return r.rows.map((x) => ({ id: x.id, connectionId: x.connection_id, chatId: x.chat, text: x.text }));
     },
 
     // —— Reading ——
@@ -814,7 +863,11 @@ export function createMessaging(d: {
         e.ids.push(x.external_id);
         byChat.set(k, e);
       }
-      for (const e of byChat.values()) if (isServerService(e.service)) hub()?.send(e.service, { t: 'mark_read', id: e.id, chatId: e.chat, externalIds: e.ids });
+      for (const e of byChat.values()) {
+        if (isServerService(e.service)) hub()?.send(e.service, { t: 'mark_read', id: e.id, chatId: e.chat, externalIds: e.ids });
+        // The phone marks them read itself (in its SMS store, or through the other app's mark-as-read).
+        else await notify(userId, 'messaging.device.read', { connectionId: e.id, chatId: e.chat, externalIds: e.ids });
+      }
     },
 
     // —— Sending ——
@@ -928,12 +981,17 @@ export function createMessaging(d: {
       await notify(a.user_id, 'messaging.message', { conversationId: a.conversation_id, messageId, transcript: true });
     },
 
-    /** Answers that never came (uncertain, C6), waits too long (not sent), old drafts and finished sends. */
+    /**
+     * Answers that never came (uncertain, C6), waits too long (not sent), old drafts and finished sends. A phone that
+     * took a send has longer than a connectors process to say how it went: it may lose its network meanwhile.
+     */
     async sweep() {
       const stuck = await sql<{ id: string }>`
-        update messaging_outbound set state = 'uncertain', updated_at = ${now()}
-        where (state = 'attempting' and attempted_at < ${new Date(d.clock() - ATTEMPT_MS)}) or (state = 'pending_service' and updated_at < ${new Date(d.clock() - PENDING_MS)})
-        returning id`.execute(d.db);
+        update messaging_outbound o set state = 'uncertain', updated_at = ${now()} from messaging_connections k
+        where k.id = o.connection_id and (
+          (o.state = 'attempting' and o.attempted_at < case when k.device_id is null then ${new Date(d.clock() - ATTEMPT_MS)}::timestamptz else ${new Date(d.clock() - PENDING_MS)}::timestamptz end)
+          or (o.state = 'pending_service' and o.updated_at < ${new Date(d.clock() - PENDING_MS)}))
+        returning o.id`.execute(d.db);
       for (const o of stuck.rows) await told(o.id, 'C6');
       const old = await sql<{ id: string }>`
         update messaging_outbound set state = 'failed', error = 'offline', updated_at = ${now()} where state = 'queued' and created_at < ${new Date(d.clock() - QUEUED_MS)} returning id`.execute(d.db);

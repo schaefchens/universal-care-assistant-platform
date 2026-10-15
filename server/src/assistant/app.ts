@@ -11,6 +11,7 @@ import { createProviders } from '../ai/providers.ts';
 import { createStt } from '../ai/stt/service.ts';
 import { createSpeech } from '../ai/tts/service.ts';
 import { registerAuth, requireAdmin } from '../core/auth.ts';
+import { createSignedCheck } from '../core/signed.ts';
 import { ensureServerId } from '../core/server-info.ts';
 import { deliveryNonce } from '../domain/care/service.ts';
 import { createIdentityService } from '../domain/identity/service.ts';
@@ -78,6 +79,9 @@ export async function buildAssistant(o: {
   const serverId = await ensureServerId(o.db);
   const identity = createIdentityService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, serverId, publicOrigins: o.config.publicOrigins });
   registerAuth(app, identity);
+  // Requests a phone signs instead of carrying a session (its SMS and previews, from native code): as core's.
+  app.decorateRequest('signed', null);
+  const requireSigned = createSignedCheck({ db: o.db, serverId, publicOrigins: o.config.publicOrigins });
   // Clips go to the shared files volume and are served by core: both sign URLs with the same derived key.
   const files = createFileStore({ dir: o.config.filesDir, key: deriveKey(o.secrets.masterKey, 'files'), clock: o.clock });
 
@@ -142,7 +146,7 @@ export async function buildAssistant(o: {
   registerModelRoutes(app, { modelsDir: o.config.modelsDir, log });
   registerLiveRoutes(app, { news: createLiveNews({ db: o.db, clock: o.clock, llm, messaging, log }) });
   registerAssistantRoutes(app, { actions, llm, contextFor });
-  registerMessagingRoutes(app, { messaging, identity, actions, contextFor });
+  registerMessagingRoutes(app, { messaging, identity, actions, contextFor, requireSigned });
   registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, stt, llm, herde, publicUrl: o.config.publicUrl });
 
   const handlers: Record<string, Handler> = {
