@@ -516,6 +516,11 @@ then they stay as built, and nothing here is frozen.
     connection came back by itself.
   - **TDLib's own error lines quote content** (a link in a message's preview, at level 1, the plan's "TDLib verbosity
     ≤ 1"): it now logs fatal errors only (level 0), and the container was made again, which dropped the old log.
+  - **By voice on the emulator, every turn was heard as "Vielen Dank!"**: the emulator recorded near silence (its
+    microphone is the Mac's only after `adb emu avd hostmicon`), and the one burst it took for speech, three frames
+    (60 ms, a click), whisper turned into "Vielen Dank!" with full confidence, so the filter for whisper's phantoms
+    let it through. An utterance now needs 120 ms of loud sound to be sent (S8's endpointing; "Ja" has about twice
+    that); less is "Ich habe nichts gehört."
 - **With the stand-in, on the emulator:** login by phone, a wrong code ("Der Code stimmt nicht."), the password with
   its hint, "Verbunden als …"; on the home screen "Neue Nachricht von Anna Beispiel."; the messages screen ("Nachrichten.
   Eine neue Nachricht." and the message framed); a voice message fetched, transcribed by whisper word for word, played

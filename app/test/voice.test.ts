@@ -42,6 +42,17 @@ describe('finding the utterance', () => {
     expect(e.utterance().length).toBe(0);
   });
 
+  it('a click or a knock is not speech: whisper would write words into it', () => {
+    const e = new Endpointer();
+    // 80 ms of something loud in a quiet room, then the pause that ends an utterance.
+    expect(feed(e, noise(400), voice(80), noise(1500))).toBe('end');
+    expect(e.speech).toBe(false);
+    // The shortest real word is longer than that.
+    const f = new Endpointer();
+    expect(feed(f, noise(400), voice(200), noise(1500))).toBe('end');
+    expect(f.speech).toBe(true);
+  });
+
   it('a loud room is the floor, not speech', () => {
     const e = new Endpointer();
     expect(feed(e, noise(7000, 0.03))).toBe('silence');

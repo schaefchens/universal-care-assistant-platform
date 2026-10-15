@@ -71,7 +71,10 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - A fetch's signal also aborts the body: a limit on how long a provider may take to start answering must be cleared
   once it started, or every long streamed answer is cut off. Give every streamed reply its own total and idle limits.
 - Whisper given a language hint that is not the speech's translates it: someone else's voice message is transcribed
-  without a hint. Under memory pressure Ollama's MLX runner can pause 20 s or more in the middle of an answer.
+  without a hint. It writes words into a click or a knock ("Vielen Dank!", confidently): an utterance needs 120 ms of
+  loud sound before it is sent.
+- The emulator hears the Mac's microphone only after `adb emu avd hostmicon` (and macOS letting the emulator use it);
+  otherwise it records near silence. Under memory pressure Ollama's MLX runner can pause 20 s or more in the middle of an answer.
 
 **Messaging (TDLib)**
 - TDLib refuses a second login step while one runs ("Another authorization query has started"): one at a time.

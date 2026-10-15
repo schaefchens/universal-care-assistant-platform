@@ -68,6 +68,12 @@ export const DEFAULT_ENDPOINT: EndpointOptions = { endSilenceMs: 900, noSpeechMs
 export type EndReason = 'end' | 'silence' | 'max' | 'stopped';
 
 /**
+ * How much loud sound an utterance needs to be speech: 120 ms, where "Ja" has twice that. A click or a knock is a few
+ * loud frames, and whisper writes words into them ("Vielen Dank!"), which would then be acted on.
+ */
+const MIN_VOICED_FRAMES = 6;
+
+/**
  * Finds one utterance in 16 kHz samples fed in as they come. The room's noise is measured in the first 200 ms and
  * followed while nobody speaks; speech is three frames (60 ms) clearly above it. The utterance keeps 300 ms before its
  * first loud frame (the start of a word is quiet) and 400 ms after its last.
@@ -80,6 +86,8 @@ export class Endpointer {
   private loudRun = 0;
   private firstVoiced = -1;
   private lastVoiced = -1;
+  /** Frames clearly above the room's noise, over the whole utterance. */
+  private voiced = 0;
   /** Held talk: only the release (or the longest utterance) ends it, never a pause. */
   private held = false;
   ended: EndReason | null = null;
@@ -89,7 +97,7 @@ export class Endpointer {
   }
 
   get speech(): boolean {
-    return this.firstVoiced >= 0;
+    return this.firstVoiced >= 0 && this.voiced >= MIN_VOICED_FRAMES;
   }
 
   get ms(): number {
@@ -122,6 +130,7 @@ export class Endpointer {
     const loud = Math.max(this.floor * 3, 0.012);
     const quiet = Math.max(this.floor * 2, 0.008);
     if (level > loud) {
+      this.voiced++;
       this.loudRun++;
       if (this.loudRun >= 3) {
         if (this.firstVoiced < 0) this.firstVoiced = n - 2;
