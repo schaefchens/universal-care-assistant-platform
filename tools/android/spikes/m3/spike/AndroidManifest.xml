@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spike K0 C and D (docs/plan-m3.md): Android's SMS role, and reading other apps' conversation notifications in a
+     process of its own. For the emulator only; its own package, so UCAP's installed app stays as it is. Commands come
+     from adb (`am broadcast`, guarded by DUMP, which the shell holds and ordinary apps do not). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="de.schaefchens.ucap.spike">
+
+    <!-- What the SMS role may grant: declared, so the spike can see which ones it does. -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <application android:label="UCAP Spike" android:allowBackup="false">
+
+        <activity android:name=".MainActivity" android:exported="true" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- The SMS role's four parts (Android's roles.xml): composing for other apps, SMS and MMS delivery, and quick
+             replies to a call. -->
+        <activity android:name=".ComposeActivity" android:exported="true" android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".SmsDeliverReceiver" android:exported="true" android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+        <receiver android:name=".MmsPushReceiver" android:exported="true" android:permission="android.permission.BROADCAST_WAP_PUSH">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+            </intent-filter>
+        </receiver>
+        <service android:name=".RespondService" android:exported="true" android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </service>
+
+        <receiver android:name=".CommandReceiver" android:exported="true" android:permission="android.permission.DUMP" />
+        <receiver android:name=".ResultReceiver" android:exported="false" />
+
+        <!-- Previews: the listener and its commands in a process of their own, as UCAP's would be. -->
+        <service
+            android:name=".PreviewListener"
+            android:exported="true"
+            android:process=":previews"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+        <receiver android:name=".PreviewCommandReceiver" android:exported="true" android:process=":previews" android:permission="android.permission.DUMP" />
+    </application>
+</manifest>

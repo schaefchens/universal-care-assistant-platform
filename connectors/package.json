@@ -11,6 +11,7 @@
     "spike:tdlib": "node spikes/tdlib-check.ts"
   },
   "devDependencies": {
+    "@types/mailparser": "3.9.0",
     "@types/node": "^24.13.6",
     "typescript": "~6.0.3"
   },
@@ -19,6 +20,9 @@
   },
   "dependencies": {
     "@ucap/shared": "*",
+    "imapflow": "2.3.0",
+    "mailparser": "3.9.37",
+    "nodemailer": "10.0.16",
     "prebuilt-tdlib": "0.1008067.0",
     "tdl": "8.1.0"
   }

@@ -102,6 +102,15 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - On SIGTERM the connectors close their TDLib clients, and TDLib reports each as closed: not passed on while stopping,
   or the assistant would leave every connection ended after a restart.
 
+**Email (imapflow, nodemailer, mailparser; docs/spikes/m3.md)**
+- At their debug levels imapflow and nodemailer log commands, and LOGIN carries the password: always `logger: false`.
+- imapflow never reconnects: after `close` make a new client (the old one refuses: `InstanceReused`). Without QRESYNC
+  a flag change heard in IDLE has no UID.
+- nodemailer resolves a host with its own DNS queries before the system resolver; in this Mac's sandbox each one
+  times out after 27 s, so pass the address from `dns.lookup` and the name as `servername`.
+- mailparser puts `List-*` under one `list` header. Its HTML-to-text keeps hidden text, image URLs and tracking pixels:
+  never speak it as is.
+
 **Capacitor and Android**
 - Never `await` or return a Capacitor plugin object (it is a Proxy that answers `then`).
 - The Android WebView has no `speechSynthesis`; use the `DeviceTts` plugin, local voices only.
@@ -145,5 +154,15 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   before a build to see its size.
 - A React Aria switch or radio is pressed through its label's text: a click on the hidden input (or `label.click()`
   from script) does not toggle it.
+- **The SMS role** (docs/spikes/m3.md):
+  - Android's dialog preselects the current SMS app, so it takes two choices.
+  - Giving the role back takes every permission it granted and ends the app's processes.
+  - Only the SMS app may delete from the SMS store: `adb shell content delete` silently does nothing. In tests,
+    `cmd role add-role-holder` moves the role without a dialog.
+  - The emulator's SMS centre time is an hour off.
+  - Try the role and notification access with `tools/android/spikes/m3` (own packages); `drive.ts restore` puts the
+    shared emulator back.
+- **A notification listener** restarted after its process died reports the notifications still showing as new again:
+  "each message once" belongs on the server. One-time codes are not redacted on the emulator.
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.
 - `dl.google.com` needs the HTTP/2 relay on this network (`tools/google-maven-relay.ts`).

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spike K0 D (docs/plan-m3.md): a stand-in messenger that posts conversation notifications as messengers do
+     (MessagingStyle, the whole recent conversation again with every new message, a reply action and a mark-as-read
+     action), and shows a reply as the person's own message. For the emulator only. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="de.schaefchens.ucap.spike.messenger">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application android:label="Stand-in Messenger" android:allowBackup="false">
+        <receiver android:name=".PostReceiver" android:exported="true" android:permission="android.permission.DUMP" />
+        <receiver android:name=".ReplyReceiver" android:exported="false" />
+        <receiver android:name=".ReadReceiver" android:exported="false" />
+    </application>
+</manifest>
