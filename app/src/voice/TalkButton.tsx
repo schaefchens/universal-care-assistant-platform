@@ -8,11 +8,15 @@ import { createContext, useContext, useRef } from 'react';
 import { Button } from 'react-aria-components';
 import { useUi } from '../ui.tsx';
 import type { VoiceController, VoiceState } from './controller.ts';
+import type { LiveState } from './live.ts';
 
 export interface VoiceView {
   voice: VoiceController | null;
   state: VoiceState;
   heard: string | null;
+  /** LIVE mode's state (docs/plan-m2.md: "LIVE on, paused and off are said and shown"), and what calls it. */
+  live?: LiveState;
+  keyword?: string | null;
 }
 
 export const VoiceContext = createContext<VoiceView>({ voice: null, state: 'idle', heard: null });
@@ -21,7 +25,8 @@ const HOLD_MS = 400;
 
 export function TalkButton(p: { className?: string }) {
   const { tr } = useUi();
-  const { voice, state, heard } = useContext(VoiceContext);
+  const { voice, state, heard, live, keyword } = useContext(VoiceContext);
+  const liveLine = live && live !== 'off' ? tr(`live.status.${live === 'waiting' && !keyword ? 'touch' : live}`, { keyword: keyword ?? '' }) : '';
   const pressed = useRef({ at: 0, listening: false, timer: null as ReturnType<typeof setTimeout> | null });
   if (!voice) return null;
   return (
@@ -52,7 +57,7 @@ export function TalkButton(p: { className?: string }) {
         </span>
       </Button>
       <span className="voice-status" aria-live="off">
-        {state === 'listening' ? tr('voice.listening') : heard ? tr('voice.heard', { text: heard }) : ''}
+        {state === 'listening' ? tr('voice.listening') : heard ? tr('voice.heard', { text: heard }) : liveLine}
       </span>
     </span>
   );

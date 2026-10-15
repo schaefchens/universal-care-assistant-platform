@@ -52,6 +52,11 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver android:name=".ActionReceiver" android:exported="false" />
+        <!-- LIVE mode (docs/plan-m2.md): the microphone while the app is not in front, with a notification that says so. -->
+        <service
+            android:name=".VoiceCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
         <!-- Reminders on the device (S6): their alarms, and setting them again after a restart. -->
         <receiver android:name=".ReminderReceiver" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="false">
@@ -78,6 +83,9 @@
     <!-- Push-to-talk (S8): the WebView's microphone, with the platform's echo canceller. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- LIVE mode: the microphone in a foreground service, started while the app is in front (Android 14+). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- The help alarm: notifications (asked for in the helper's checklist), the full-screen alarm (a user grant on
          Android 14+, a Play Console declaration), and keeping retries across a restart (JobScheduler, persisted). -->

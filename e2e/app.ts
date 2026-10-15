@@ -102,7 +102,7 @@ export async function home(page: Page): Promise<void> {
  * Onboarding with an invitation: the name, the twelve words one by one, the card, three of them checked. Returns the
  * words (German), for the recovery on a new device and for the phrase canary; the caller keeps them in memory only.
  */
-export async function signUp(page: Page, name: string, code: string, voice: (page: Page) => Promise<void> = laterVoice): Promise<string[]> {
+export async function signUp(page: Page, name: string, code: string, voice: (page: Page) => Promise<void> = laterVoice, assistantName?: string): Promise<string[]> {
   // A link opened from elsewhere starts the app afresh; only then is the invitation in it read.
   await page.goto('about:blank');
   await page.goto(`/#invite=${code}`);
@@ -133,8 +133,17 @@ export async function signUp(page: Page, name: string, code: string, voice: (pag
     await page.getByRole('button', { name: words[n - 1], exact: true }).click();
   }
   await voice(page);
+  await nameStep(page, assistantName);
   await expect(heading(page)).toHaveText('Startseite');
   return words;
+}
+
+/** The assistant's name, offered once after the voices (docs/plan-m2.md): one of the names, or later. */
+export async function nameStep(page: Page, name?: string): Promise<void> {
+  const screen = heading(page).filter({ hasText: 'Wie soll ich heißen?' });
+  await expect(screen.or(heading(page).filter({ hasText: 'Startseite' }))).toBeVisible();
+  if (!(await screen.isVisible())) return;
+  await page.getByRole('button', { name: name ?? 'Später', exact: true }).click();
 }
 
 /** The voices are offered once, by listening, when there is more than the device voice; the device voice will do. */

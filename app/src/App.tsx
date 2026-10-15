@@ -39,6 +39,7 @@ import { ConfirmAction } from './screens/ConfirmAction.tsx';
 import { ConfigChanged } from './screens/ConfigChanged.tsx';
 import { DeviceEditor } from './screens/DeviceEditor.tsx';
 import { type Change, ConfigSync } from './config/sync.ts';
+import { record } from './debug.ts';
 import { ceremony } from './identity/ceremony.ts';
 import { HelpQuestion } from './screens/HelpQuestion.tsx';
 import { MessagesScreen } from './screens/MessagesScreen.tsx';
@@ -52,6 +53,7 @@ import { Onboarding } from './screens/Onboarding.tsx';
 import { AiAdmin } from './screens/AiAdmin.tsx';
 import { ServerAdmin } from './screens/ServerAdmin.tsx';
 import { ReminderScreen } from './screens/ReminderScreen.tsx';
+import { NameIntro } from './screens/NameIntro.tsx';
 import { VoiceIntro, VoicesPage } from './screens/Voices.tsx';
 import { RemindersPage } from './screens/Reminders.tsx';
 import { reminders as reminderApi } from './reminders/api.ts';
@@ -65,6 +67,9 @@ import { applyTheme, platformPrefs } from './theme/apply.ts';
 import { resolveTheme } from './theme/themes.ts';
 import { makeUi, UiProvider } from './ui.tsx';
 import { VoiceController, type VoiceState } from './voice/controller.ts';
+import { LiveController, type LiveState } from './voice/live.ts';
+import { nativeLiveCapture } from './voice/live-native.ts';
+import { webLiveCapture } from './voice/live-web.ts';
 import { micInput } from './voice/mic.ts';
 import { currentVoice } from './voice/screen.ts';
 import { VoiceContext } from './voice/TalkButton.tsx';
@@ -81,6 +86,7 @@ type Page =
   | 'reminders'
   | 'voices'
   | 'voiceIntro'
+  | 'nameIntro'
   | 'aiAdmin'
   | 'serverAdmin'
   /**
@@ -133,8 +139,6 @@ export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const meRef = useRef(me);
   meRef.current = me;
-  /** LIVE mode paused by the person ("Pause" until "Weiter"): on this device only, for as long as the app runs. */
-  const livePaused = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [linkInvite, setLinkInvite] = useState(takeInviteFromUrl);
   const [a11y, setA11y] = useState<A11yState | null>(null);
@@ -346,8 +350,81 @@ export function App() {
       return speakAs({ session: s, text, purpose, player, screenReader: assistiveRef.current === 'screen-reader', notice: (reason) => uiRef.current.say(uiRef.current.tr(`voices.fallback.${reason}`), 'system') });
     },
     playRecording: (url) => player.play([url]),
+    live: () => (liveRef.current?.listening ? liveRef.current : null),
   });
   useEffect(() => () => voiceRef.current?.cancel(), [session]);
+
+  // LIVE mode (docs/plan-m2.md): the microphone open for the person's name, and the conversation without touching.
+  // Native in the app (the keyword gate on the device); in a browser only while its tab is in front, opened by touch.
+  const [liveState, setLiveState] = useState<LiveState>('off');
+  const liveRef = useRef<LiveController | null>(null);
+  liveRef.current ??= new LiveController(
+    has('VoiceCapture')
+      ? nativeLiveCapture({
+          session: () => sessionRef.current,
+          lang: () => uiRef.current.lang,
+          notice: () => ({ title: uiRef.current.tr('live.notice.title'), text: uiRef.current.tr('live.notice.text') }),
+          onNoModel: () => uiRef.current.say(uiRef.current.tr('live.noModel'), 'system'),
+        })
+      : webLiveCapture(),
+    {
+      now: () => Date.now(),
+      later: (fn, ms) => {
+        const t = setTimeout(fn, ms);
+        return () => clearTimeout(t);
+      },
+      earcon: (name) => uiRef.current.earcons.play(name),
+      say: (key, params) => uiRef.current.say(uiRef.current.tr(key, params), 'system'),
+      turn: async (wav, via, next) => {
+        const voice = voiceRef.current!;
+        const meant = await voice.liveTurn(wav, via, next);
+        record('voice', { via, meant });
+        // The quiet while counts from the end of the answer.
+        if (meant) void voice.spoken().then(() => liveRef.current?.spoke());
+        return meant;
+      },
+      // Barge-in: the person speaks, UCAP stops (care announcements excepted, as everywhere).
+      hush: () => {
+        const s = uiRef.current.speech;
+        for (const c of ['assistant', 'system', 'label', 'notice'] as const) s.stop(c);
+        player.stop();
+      },
+      speaking: () => (uiRef.current.speech.speaking !== null && uiRef.current.speech.speaking !== 'label') || player.playing,
+      onState: (s) => {
+        record('voice', { live: s });
+        setLiveState(s);
+        // The line beside the talk button says the new state, no longer what was heard before.
+        setVoiceView((v) => (v.heard ? { ...v, heard: null } : v));
+      },
+    },
+  );
+
+  // On and off with the device's configuration (the person, or a helper with device.configure), the name from the
+  // person's account; never while the recovery words are being shown or a leak is being dealt with (Appendix C).
+  const liveCfg = liveOf(config);
+  const liveKeyword = me?.keyword || me?.assistantName || null;
+  const liveAllowed = session !== null && page !== 'newWords' && page !== 'leak';
+  useEffect(() => {
+    liveRef.current!.configure({ enabled: liveAllowed && liveCfg.enabled, quietS: liveCfg.quietS, keyword: liveKeyword });
+  }, [liveAllowed, liveCfg.enabled, liveCfg.quietS, liveKeyword]);
+  // Android refuses the microphone service from the background: LIVE starts when the app is in front again.
+  useEffect(() => {
+    const retry = () => {
+      if (document.hidden) return;
+      liveRef.current?.retry();
+    };
+    document.addEventListener('visibilitychange', retry);
+    const resumed = has('App') ? CapApp.addListener('resume', retry) : null;
+    return () => {
+      document.removeEventListener('visibilitychange', retry);
+      void resumed?.then((h) => h.remove());
+    };
+  }, []);
+  // A question on the screen (the help question, a confirmation, a reminder's): with LIVE on, the answer needs no name.
+  const asking = typeof page === 'object' && ('help' in page || 'confirm' in page || 'reminder' in page) ? JSON.stringify(page) : null;
+  useEffect(() => {
+    if (asking) liveRef.current?.question();
+  }, [asking]);
 
   // Help requests of this person: the outbox and the announcements (docs/plan.md, Appendix D).
   useEffect(() => {
@@ -514,9 +591,9 @@ export function App() {
   const idleRef = useRef<() => 'touch' | 'speech' | 'awaiting' | 'care' | null>(() => null);
   idleRef.current = () => {
     if (Date.now() - lastActivity.current < 30_000) return 'touch';
-    if (uiRef.current.speech.speaking || player.playing || voiceView.state !== 'idle') return 'speech';
+    if (uiRef.current.speech.speaking || player.playing || voiceView.state !== 'idle' || liveRef.current?.state === 'open') return 'speech';
     if (careOpen) return 'care';
-    if (busy(page) || ceremony.active || page === 'newWords' || page === 'voiceIntro' || page === 'leak') return 'awaiting';
+    if (busy(page) || ceremony.active || page === 'newWords' || page === 'voiceIntro' || page === 'nameIntro' || page === 'leak') return 'awaiting';
     return null;
   };
   const configSync = useRef<ConfigSync | null>(null);
@@ -532,6 +609,7 @@ export function App() {
     announce: (change) => setPage({ configChanged: change }),
     lang: () => uiRef.current.lang,
     form: () => uiRef.current.form,
+    liveByTouch: () => !has('VoiceCapture') || !(meRef.current?.keyword || meRef.current?.assistantName),
   });
   useEffect(() => {
     if (!session) return;
@@ -613,13 +691,14 @@ export function App() {
         const keyword = meRef.current?.keyword || meRef.current?.assistantName;
         if (i === 'liveOn' && !keyword) return u.say(u.tr('live.needName'), 'system');
         updateConfig({ ...configRef.current, live: { ...liveOf(configRef.current), enabled: i === 'liveOn' } });
-        u.say(i === 'liveOn' ? u.tr('live.on', { keyword: keyword ?? '' }) : u.tr('live.off'), 'system');
+        u.say(i === 'liveOn' ? u.tr(has('VoiceCapture') ? 'live.on' : 'live.on.touch', { keyword: keyword ?? '' }) : u.tr('live.off'), 'system');
         return;
       }
       case 'pause':
       case 'resume':
         if (!liveOf(configRef.current).enabled) return u.say(u.tr('live.notOn'), 'system');
-        livePaused.current = i === 'pause';
+        if (i === 'pause') liveRef.current?.pause();
+        else liveRef.current?.resume();
         u.say(u.tr(i === 'pause' ? 'live.paused' : 'live.resumed'), 'system');
         return;
       case 'undo':
@@ -813,7 +892,19 @@ export function App() {
       <VoiceIntro
         session={session}
         config={config}
-        onDone={() => setPage('areas')}
+        onDone={() => setPage('nameIntro')}
+      />
+    );
+  // After the voices, once: the assistant's name (docs/plan-m2.md), the keyword of LIVE mode.
+  else if (page === 'nameIntro')
+    content = (
+      <NameIntro
+        session={session}
+        config={config}
+        onDone={() => {
+          refreshMe();
+          setPage('areas');
+        }}
       />
     );
   else if (page === 'aiAdmin' && me?.isAdmin) content = <AiAdmin session={session} onClose={() => setPage('settings')} />;
@@ -1007,7 +1098,7 @@ export function App() {
 
   return (
     <UiProvider value={ui}>
-      <VoiceContext.Provider value={{ voice: session ? voiceRef.current : null, state: voiceView.state, heard: voiceView.heard }}>
+      <VoiceContext.Provider value={{ voice: session ? voiceRef.current : null, state: voiceView.state, heard: voiceView.heard, live: liveState, keyword: has('VoiceCapture') ? liveKeyword : null }}>
         <ErrorBoundary key={pageKey(page)} text={{ title: ui.tr('app.failed'), restart: ui.tr('app.restart') }}>
           {content}
         </ErrorBoundary>

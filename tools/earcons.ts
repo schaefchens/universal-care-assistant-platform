@@ -11,6 +11,8 @@
  * - The care states (care-press … care-failed) say what happened before any voice does, and still work when no voice
  *   does. confirm precedes every confirmation question: LLM output can never play it.
  * - message: a new message arrived (announced by who sent it).
+ * - live-open, live-close: LIVE mode's gate (docs/plan-m2.md): listening to the conversation now, and waiting for the
+ *   name again; softer and longer than push-to-talk's listen-start and listen-stop, so they are told apart.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 
@@ -49,6 +51,9 @@ export const EARCONS: Record<string, Note[]> = {
   error: [tone('triangle', 220, 140, 0, 0.5, 200)],
   // A new message (S10): two soft rising notes, unlike any care sound.
   message: [tone('sine', 587, 70, 0, 0.4), tone('sine', 880, 110, 80, 0.4)],
+  // LIVE mode's gate: three notes rising (open), the same falling (closed), quieter than push-to-talk's.
+  'live-open': [440, 554, 659].map((f, i) => tone('sine', f, 70, i * 60, 0.35)),
+  'live-close': [659, 554, 440].map((f, i) => tone('sine', f, 70, i * 60, 0.3)),
 };
 
 function render(notes: Note[]): Int16Array {

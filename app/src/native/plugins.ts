@@ -189,6 +189,25 @@ export interface RemindersPlugin {
   addListener(event: 'opened', fn: (e: { occurrenceId: string }) => void): Promise<PluginListenerHandle>;
 }
 
+/** LIVE mode's microphone (VoiceCapturePlugin.java, docs/plan-m2.md): a foreground service with the keyword gate. */
+export interface VoiceCapturePlugin {
+  /** Whether keyword model `id` is unpacked with this digest. */
+  modelReady(o: { id: string; sha256: string }): Promise<{ ready: boolean }>;
+  /** Downloads model `id` from the UCAP server, checks its digest, unpacks it; `path`: for `start`. */
+  prepare(o: { id: string; url: string; sha256: string; token: string; dir: string }): Promise<{ path: string }>;
+  /** Asks for the microphone (and the notification) where needed, then starts listening, the gate closed. */
+  start(o: { keywords: string[]; grammar: string[]; model: string | null; threshold: number; title: string; text: string }): Promise<void>;
+  stop(): Promise<void>;
+  setGate(o: { open: boolean }): Promise<void>;
+  /** Debug builds: plays files/bench/<path> into the running capture instead of the microphone. */
+  inject(o: { path: string }): Promise<{ ms: number }>;
+  addListener(event: 'listening' | 'speech', fn: () => void): Promise<PluginListenerHandle>;
+  addListener(event: 'keyword', fn: (e: { word: string; wav?: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'utterance', fn: (e: { wav: string; ms: number }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'stopped', fn: (e: { reason: 'unavailable' | 'ended' | 'background' }) => void): Promise<PluginListenerHandle>;
+  addListener(event: 'model', fn: (e: { bytes: number; total: number }) => void): Promise<PluginListenerHandle>;
+}
+
 export const Earcons = registerPlugin<EarconsPlugin>('Earcons');
 export const DeviceTts = registerPlugin<DeviceTtsPlugin>('DeviceTts');
 export const A11y = registerPlugin<A11yPlugin>('A11y');
@@ -197,3 +216,4 @@ export const DeviceKey = registerPlugin<DeviceKeyPlugin>('DeviceKey');
 export const Alerts = registerPlugin<AlertsPlugin>('Alerts');
 export const Keys = registerPlugin<KeysPlugin>('Keys');
 export const Reminders = registerPlugin<RemindersPlugin>('Reminders');
+export const VoiceCapture = registerPlugin<VoiceCapturePlugin>('VoiceCapture');

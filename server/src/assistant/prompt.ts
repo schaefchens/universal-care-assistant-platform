@@ -15,7 +15,21 @@ function toolLines(tools: Tool[]): string {
   return tools.map((t) => `- ${t.name} (${t.kind === 'read' ? 'read' : 'act'}): ${t.description}`).join('\n');
 }
 
-export function systemPrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean }): string {
+/**
+ * LIVE mode (docs/plan-m2.md): the microphone stays open for a while after a conversation, and hears the room too.
+ * What it heard without the assistant's name is judged first: said to it, or to someone else, or by the television.
+ */
+function liveLines(lang: Lang, name: string): string {
+  if (lang === 'en')
+    return `\nLIVE mode: UCAP's microphone is open while you talk with ${name}, and it hears the whole room. This was heard without your name. First decide "addressed": true only when ${name} clearly says it to you (it follows your conversation, or asks or tells you something UCAP can do). Talk with other people, the television, radio or music, and anything unclear: false, and leave "calls" and "say" empty and "help" false. When in doubt: false.`;
+  return `\nLIVE-Modus: Das Mikrofon von UCAP bleibt offen, während du mit ${name} sprichst, und hört den ganzen Raum. Das hier wurde ohne deinen Namen gehört. Entscheide zuerst "addressed": true nur, wenn ${name} es eindeutig zu dir sagt (es schließt an euer Gespräch an, oder es fragt oder bittet um etwas, das UCAP tun kann). Gespräche mit anderen Menschen, Fernsehen, Radio oder Musik und alles Unklare: false, dann "calls" und "say" leer und "help" false. Im Zweifel: false.`;
+}
+
+export function systemPrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean; live?: boolean }): string {
+  return basePrompt(o) + (o.live ? liveLines(o.lang, o.name) : '');
+}
+
+function basePrompt(o: { lang: Lang; form: AddressForm; name: string; at: Date; timezone: string; focus: Focus; tools: Tool[]; messaging?: boolean }): string {
   const focus = [
     o.focus.note && `note "${o.focus.note.title}" (note:${o.focus.note.id})`,
     o.focus.reminder && `reminder "${o.focus.reminder.title}" (reminder:${o.focus.reminder.id})`,

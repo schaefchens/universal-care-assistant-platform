@@ -17,6 +17,8 @@ export interface Config {
   /** The addresses apps use to reach this server; a signed statement must name one of them (its `org`). */
   publicOrigins: string[];
   filesDir: string;
+  /** LIVE mode's keyword models for the devices (tools/live/models.ts puts them there). */
+  modelsDir: string;
   ntfyPublicUrl: string | null;
   ntfyInternalUrl: string | null;
   ollamaUrl: string | null;
@@ -55,6 +57,7 @@ export function loadConfig(role: Role, env: NodeJS.ProcessEnv = process.env): Co
     publicUrl,
     allowedOrigins: [...origins],
     filesDir: env.UCAP_FILES_DIR ?? '/data/files',
+    modelsDir: env.UCAP_MODELS_DIR ?? '/data/models',
     ntfyPublicUrl: env.NTFY_PUBLIC_URL ?? null,
     ntfyInternalUrl: env.NTFY_INTERNAL_URL ?? null,
     ollamaUrl: env.OLLAMA_URL ?? null,

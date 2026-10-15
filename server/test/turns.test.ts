@@ -56,12 +56,12 @@ describe('voice turns', () => {
     return Response.json({ text: heard.text, segments: heard.segments ?? [{ no_speech_prob: 0.01, avg_logprob: -0.2, compression_ratio: 0.8 }], engine_ms: 350 });
   };
 
-  const turn = async (a: Account, o: { said?: string; text?: string; context?: string; audio?: Uint8Array }) => {
+  const turn = async (a: Account, o: { said?: string; text?: string; context?: string; audio?: Uint8Array; live?: 'keyword' | 'open' }) => {
     if (o.said !== undefined) heard = { text: o.said };
     const id = crypto.randomUUID();
     const r = await assistant.app.inject({
       method: 'POST',
-      url: `/api/v1/assistant/turns?id=${id}&context=${o.context ?? 'global'}&lang=de`,
+      url: `/api/v1/assistant/turns?id=${id}&context=${o.context ?? 'global'}&lang=de${o.live ? `&mode=live&via=${o.live}` : ''}`,
       payload: o.text !== undefined ? { text: o.text } : Buffer.from(o.audio ?? wav(900)),
       headers: { authorization: `Bearer ${a.token}`, 'content-type': o.text !== undefined ? 'application/json' : 'audio/wav' },
     });
@@ -101,7 +101,7 @@ describe('voice turns', () => {
     expect(calls.filter((c) => c.url.endsWith('/v1/audio/transcriptions')).map((c) => [c.url, c.language])).toEqual([['http://stt-mlx:8813/v1/audio/transcriptions', 'de']]);
     const row = (await sql<Record<string, unknown>>`select * from assistant_turns where id = ${r.id}`.execute(db)).rows[0]!;
     expect(row).toMatchObject({ outcome: 'command', detail: 'time', context: 'global', audio_ms: 900 });
-    expect(Object.keys(row).sort()).toEqual(['audio_ms', 'context', 'created_at', 'detail', 'device_id', 'id', 'outcome', 'stt_ms', 'stt_provider', 'total_ms', 'user_id']);
+    expect(Object.keys(row).sort()).toEqual(['audio_ms', 'context', 'created_at', 'detail', 'device_id', 'id', 'mode', 'outcome', 'stt_ms', 'stt_provider', 'total_ms', 'user_id']);
   });
 
   it('CR-17 through a turn: help sends, a help word or a near match asks, the context decides yes and done', async () => {
@@ -161,6 +161,12 @@ describe('voice turns', () => {
     calls.length = 0;
     await turn(anna, { said: 'Lauter' });
     expect(calls.map((c) => c.url)).toEqual(['https://api.openai.com/v1/audio/transcriptions']);
+    // What LIVE mode's open microphone hears is another consent (the room, others in it): the operator's own hears it.
+    calls.length = 0;
+    const live = await turn(anna, { said: 'Lauter', live: 'open' });
+    expect(calls.map((c) => c.url)).toEqual(['http://stt-mlx:8813/v1/audio/transcriptions']);
+    expect(live.events[2]).toEqual({ t: 'command', intent: 'louder' });
+    expect((await sql<{ mode: string }>`select mode from assistant_turns where id = ${live.id}`.execute(db)).rows[0]!.mode).toBe('live');
     // Consent taken back: the operator's own again.
     await assistant.app.inject({ method: 'DELETE', url: `/api/v1/speech/consents/${ext.id}`, headers: { authorization: `Bearer ${anna.token}` } });
     calls.length = 0;

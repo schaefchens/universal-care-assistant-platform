@@ -11,7 +11,11 @@ import { type AddressForm, type Lang, t } from './i18n.ts';
 const VISUAL_LOOK = ['font', 'weight', 'letterSpacing', 'borderPx', 'focusPx', 'gapPx', 'reducedMotion'] as const;
 const TOUCH_TIMING = ['dwellMs', 'doubleTapMs', 'holdMs', 'ignoreRepeatMs', 'doubleTapAnywhere'] as const;
 
-export function describeChange(o: { lang: Lang; form: AddressForm; author: string; before: DeviceConfig; after: DeviceConfig; max?: number }): string[] {
+/**
+ * `liveByTouch`: this device opens LIVE mode's gate by touch alone (a browser, or no name to wait for), so switched on
+ * it does not listen until touched, and says so.
+ */
+export function describeChange(o: { lang: Lang; form: AddressForm; author: string; before: DeviceConfig; after: DeviceConfig; max?: number; liveByTouch?: boolean }): string[] {
   const { lang, form, before, after } = o;
   const tr = (key: string, params: Record<string, string | number> = {}) => t(lang, key, { name: o.author, ...params }, form);
   const label = (a: AreaDef) => a.label ?? (a.labelKey ? t(lang, a.labelKey, {}, form) : a.id);
@@ -26,7 +30,7 @@ export function describeChange(o: { lang: Lang; form: AddressForm; author: strin
   // LIVE mode first: whether the microphone stays open is said before anything about the look (docs/plan-m2.md).
   const lb = liveOf(before);
   const la = liveOf(after);
-  if (lb.enabled !== la.enabled) first.push(tr(la.enabled ? 'config.change.liveOn' : 'config.change.liveOff'));
+  if (lb.enabled !== la.enabled) first.push(tr(la.enabled ? (o.liveByTouch ? 'config.change.liveOnTouch' : 'config.change.liveOn') : 'config.change.liveOff'));
   if (la.enabled && lb.quietS !== la.quietS) rest.push(tr('config.change.liveQuiet', { n: Math.max(1, Math.round(la.quietS / 60)) }));
   if (la.enabled && JSON.stringify(lb.quietTimes) !== JSON.stringify(la.quietTimes)) rest.push(tr('config.change.liveQuietTimes'));
   if (la.enabled && JSON.stringify(lb.say) !== JSON.stringify(la.say)) rest.push(tr('config.change.liveSay'));

@@ -17,6 +17,8 @@ export interface Reply {
   say: { kind: string; text: string; ref: string | null }[];
   calls: Record<string, unknown>[];
   help: boolean;
+  /** LIVE mode: whether what was heard without the name was said to the assistant (docs/plan-m2.md). */
+  addressed?: boolean;
 }
 
 export const reply = (text: string): Reply => ({ say: [{ kind: 'reply', text, ref: null }], calls: [], help: false });

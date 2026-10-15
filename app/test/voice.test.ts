@@ -2,7 +2,7 @@
  * The audio of a voice turn: finding the utterance by its loudness against the room's noise, resampling, WAV.
  */
 import { describe, expect, it } from 'vitest';
-import { Endpointer, encodeWav, RATE, resample } from '../src/voice/audio.ts';
+import { Endpointer, encodeWav, RATE, resample, Segmenter } from '../src/voice/audio.ts';
 
 /** `ms` of a quiet room, or of a voice (a loud tone stands in for it). */
 function noise(ms: number, level = 0.002): Float32Array {
@@ -74,6 +74,33 @@ describe('finding the utterance', () => {
     feed(f, noise(300), voice(500));
     expect(f.stop()).toBe('stopped');
     expect(f.utterance().length).toBeGreaterThan(0);
+  });
+});
+
+describe('LIVE mode: utterance after utterance from an open microphone', () => {
+  const segment = (...parts: Float32Array[]) => {
+    const got: number[] = [];
+    let speech = 0;
+    const s = new Segmenter({ utterance: (u) => got.push(Math.round(u.length / 16)), speech: () => speech++ });
+    for (const p of parts) for (let i = 0; i < p.length; i += 2048) s.push(p.slice(i, i + 2048));
+    return { got, speech };
+  };
+
+  it('each utterance on its own, with a little before and after its voice', () => {
+    const { got, speech } = segment(noise(400), voice(800), noise(1500), voice(500), noise(1500));
+    expect(speech).toBe(2);
+    expect(got).toHaveLength(2);
+    // About 300 ms before (less at the very start), the voice, 400 ms after.
+    for (const [ms, v] of [[got[0]!, 800], [got[1]!, 500]] as const) {
+      expect(ms).toBeGreaterThanOrEqual(v + 300);
+      expect(ms).toBeLessThanOrEqual(v + 800);
+    }
+  });
+
+  it('a click is no utterance; a long voice is cut at the longest one', () => {
+    expect(segment(noise(400), voice(80), noise(1500)).got).toEqual([]);
+    const long = segment(noise(400), voice(20_000), noise(1000)).got;
+    expect(long[0]).toBeLessThanOrEqual(15_000);
   });
 });
 

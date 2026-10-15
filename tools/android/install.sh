@@ -9,7 +9,9 @@ npx vite build >/dev/null
 npx cap sync android >/dev/null
 (cd android && ./gradlew assembleDebug --console=plain -q ${GRADLE_OFFLINE:+--offline})
 # No -g: permissions are asked for in the app, as a person will see them.
-"$ADB" install -r android/app/build/outputs/apk/debug/app-debug.apk | tail -1
+# The install's own last line; a failure (a full device) stops here instead of starting the old app.
+out=$("$ADB" install -r android/app/build/outputs/apk/debug/app-debug.apk 2>&1) || { echo "$out" | grep -v '^\s*at ' >&2; exit 1; }
+echo "$out" | tail -1
 "$ADB" reverse tcp:8810 tcp:8810 >/dev/null
 "$ADB" reverse tcp:8811 tcp:8811 >/dev/null
 "$ADB" shell am force-stop de.schaefchens.ucap

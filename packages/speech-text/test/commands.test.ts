@@ -34,6 +34,19 @@ describe('CR-17: the voice help matrix', () => {
     for (const t of ['Hello', 'Stop by the bakery later', 'Back from the doctor at noon', 'Yes, but later']) expect(act(t, 'en')).toEqual({ kind: 'none' });
   });
 
+  it('in LIVE mode an exact help phrase asks too: a television says "Hilfe" as well (docs/plan-m2.md)', () => {
+    for (const ctx of ['global', 'confirm', 'reminder'] as const) {
+      for (const t of ['Hilfe', 'Hilfe!', 'Ich brauche Hilfe.', 'Hilferuf', 'Ich brauche noch Hilfe']) expect(match(t, 'de', ctx, 'live')).toEqual({ kind: 'ask', reason: 'help_word' });
+      for (const t of ['Help!', 'I need help', 'Call for help']) expect(match(t, 'en', ctx, 'live')).toEqual({ kind: 'ask', reason: 'help_word' });
+    }
+    // Words and near matches ask as by push-to-talk; other commands act; "Hilfe holen" on a reminder's question is
+    // the person's answer to it, and asks in LIVE too.
+    expect(match('Kann mir jemand helfen?', 'de', 'global', 'live')).toEqual({ kind: 'ask', reason: 'help_word' });
+    expect(match('Hilde', 'de', 'global', 'live')).toEqual({ kind: 'ask', reason: 'help_near' });
+    expect(match('Wie spät ist es?', 'de', 'global', 'live')).toEqual({ kind: 'command', intent: 'time' });
+    expect(match('Hilfe holen', 'de', 'reminder', 'live')).toEqual({ kind: 'ask', reason: 'help_word' });
+  });
+
   it('no command but help holds a help word ("Was kann ich hier tun?")', () => {
     for (const lang of ['de', 'en'] as const)
       for (const ctx of ['global', 'confirm', 'reminder'] as const)

@@ -7,7 +7,9 @@
  *   is its recording), or a voice message's automatic transcript (`transcript`, with `ref`, announced as one);
  * - `calls`: tools to use, each with its own arguments (a read tool's results come back for another round; an
  *   action is prepared, and confirmed where its policy says);
- * - `help`: a person is needed; UCAP then asks whether to send a help request (A17), and never sends on its own.
+ * - `help`: a person is needed; UCAP then asks whether to send a help request (A17), and never sends on its own;
+ * - `addressed` (LIVE mode only, docs/plan-m2.md): whether what the open microphone heard was said to the assistant at
+ *   all, and not to someone else in the room or by the television; when not, nothing is said or done.
  *
  * The schema keeps to what Ollama, OpenAI's strict mode and Anthropic's structured outputs all take: every object
  * closed and fully required, no length or number limits (the server checks those).
@@ -31,20 +33,26 @@ export interface Reply {
   say: SayItem[];
   calls: Call[];
   help: boolean;
+  /** False only when LIVE mode asked and the model judged it was not said to it. */
+  addressed: boolean;
 }
 
 export type JsonSchema = Record<string, unknown>;
 
-/** The reply schema for these tools (each with its own closed argument object). */
-export function replySchema(tools: { name: string; args: Record<string, JsonSchema> }[]): JsonSchema {
+/**
+ * The reply schema for these tools (each with its own closed argument object); `live`: what LIVE mode's open
+ * microphone heard without the assistant's name, so first whether it was said to it at all.
+ */
+export function replySchema(tools: { name: string; args: Record<string, JsonSchema> }[], o: { live?: boolean } = {}): JsonSchema {
   const nullable = (s: JsonSchema): JsonSchema => ({ anyOf: [s, { type: 'null' }] });
   // Calls and help first: the words are written last, knowing what happens, and can be spoken as they come only when
   // nothing does.
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['calls', 'help', 'say'],
+    required: [...(o.live ? ['addressed'] : []), 'calls', 'help', 'say'],
     properties: {
+      ...(o.live ? { addressed: { type: 'boolean' } } : {}),
       calls: {
         type: 'array',
         items: {
@@ -70,11 +78,15 @@ export function replySchema(tools: { name: string; args: Record<string, JsonSche
   };
 }
 
-/** Whether a reply still being written has already said it uses no tool and asks for no help: then its words can go. */
-export function nothingHappens(partial: string): boolean {
+/**
+ * Whether a reply still being written has already said it uses no tool and asks for no help (and, in LIVE mode, that
+ * it was said to it): then its words can go.
+ */
+export function nothingHappens(partial: string, o: { live?: boolean } = {}): boolean {
   const say = partial.search(/"say"\s*:/);
   if (say < 0) return false;
   const before = partial.slice(0, say);
+  if (o.live && !/"addressed"\s*:\s*true/.test(before)) return false;
   return /"calls"\s*:\s*\[\s*\]/.test(before) && /"help"\s*:\s*false/.test(before);
 }
 
@@ -102,7 +114,7 @@ export function parseReply(text: string): Reply | null {
     if (!c || typeof c !== 'object' || typeof (c as Call).tool !== 'string') return null;
     cs.push(c as Call);
   }
-  return { say: items, calls: cs, help: o.help === true };
+  return { say: items, calls: cs, help: o.help === true, addressed: o.addressed !== false };
 }
 
 /**

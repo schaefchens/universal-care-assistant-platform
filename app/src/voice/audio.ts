@@ -169,3 +169,93 @@ export class Endpointer {
     return out;
   }
 }
+
+/**
+ * LIVE mode's continuous capture (docs/plan-m2.md), where no keyword spotter runs (a browser): utterance after
+ * utterance from an open microphone, the room's noise followed between them as the Endpointer does. An utterance
+ * starts with three loud frames, keeps 300 ms before them and 400 ms after its last loud frame, ends after a pause
+ * (700 ms) or at the longest utterance, and is passed on only with 120 ms of loud sound. `speech` is told once as each
+ * utterance starts (barge-in).
+ */
+export class Segmenter {
+  private readonly on: { utterance(samples: Float32Array): void; speech(): void };
+  private readonly endSilenceMs: number;
+  private readonly maxMs: number;
+  private pending = new Float32Array(0);
+  private readonly before: Float32Array[] = [];
+  private frames: Float32Array[] | null = null;
+  private floor = -1;
+  private seen = 0;
+  private loudRun = 0;
+  private voiced = 0;
+  private lastVoiced = 0;
+
+  constructor(on: { utterance(samples: Float32Array): void; speech(): void }, o: { endSilenceMs?: number; maxMs?: number } = {}) {
+    this.on = on;
+    this.endSilenceMs = o.endSilenceMs ?? 700;
+    this.maxMs = o.maxMs ?? 15_000;
+  }
+
+  push(samples: Float32Array): void {
+    const all = new Float32Array(this.pending.length + samples.length);
+    all.set(this.pending);
+    all.set(samples, this.pending.length);
+    let i = 0;
+    for (; i + FRAME <= all.length; i += FRAME) this.frame(all.slice(i, i + FRAME));
+    this.pending = all.slice(i);
+  }
+
+  private frame(f: Float32Array) {
+    const level = rms(f);
+    if (this.seen < 10) {
+      // The first 200 ms: the room's own noise.
+      this.floor = this.floor < 0 ? level : (this.floor * this.seen + level) / (this.seen + 1);
+      this.seen++;
+      this.keep(f);
+      return;
+    }
+    const loud = level > Math.max(this.floor * 3, 0.012);
+    const quiet = level <= Math.max(this.floor * 2, 0.008);
+    if (!this.frames) {
+      this.keep(f);
+      if (loud) this.loudRun++;
+      else {
+        this.loudRun = 0;
+        // Nobody speaking: the noise may change (a fan, a television); quieter at once, louder slowly.
+        if (level < this.floor) this.floor = this.floor * 0.9 + level * 0.1;
+        else if (level < this.floor * 1.5) this.floor = this.floor * 0.95 + level * 0.05;
+      }
+      if (this.loudRun >= 3) {
+        this.frames = [...this.before];
+        this.voiced = this.loudRun;
+        this.lastVoiced = this.frames.length - 1;
+        this.loudRun = 0;
+        this.on.speech();
+      }
+      return;
+    }
+    const n = this.frames.push(f) - 1;
+    if (loud) {
+      this.voiced++;
+      this.lastVoiced = n;
+    } else if (!quiet) this.lastVoiced = n;
+    if ((n - this.lastVoiced) * 20 >= this.endSilenceMs || this.frames.length * 20 >= this.maxMs) this.end();
+  }
+
+  /** The last 300 ms, the start of an utterance's first word. */
+  private keep(f: Float32Array) {
+    this.before.push(f);
+    if (this.before.length > 15) this.before.shift();
+  }
+
+  private end() {
+    const frames = this.frames!;
+    this.frames = null;
+    this.before.length = 0;
+    if (this.voiced < MIN_VOICED_FRAMES) return;
+    const to = Math.min(frames.length, this.lastVoiced + 21);
+    const out = new Float32Array(to * FRAME);
+    for (let i = 0; i < to; i++) out.set(frames[i]!, i * FRAME);
+    this.on.utterance(out);
+  }
+}

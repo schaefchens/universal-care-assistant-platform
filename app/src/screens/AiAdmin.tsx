@@ -295,7 +295,7 @@ export function AiAdmin(p: { session: Session; onClose: () => void }) {
           </RadioGroup>
           <CheckboxGroup className="choice" value={form.classes} onChange={(classes) => set({ classes })}>
             <Label className="choice-label">{tr('admin.field.classes')}</Label>
-            {(form.fn === 'stt' ? ['voice_audio'] : ['personal', 'communication', 'health']).map((c) => (
+            {(form.fn === 'stt' ? ['voice_audio', 'live_audio'] : ['personal', 'communication', 'health']).map((c) => (
               <Checkbox key={c} value={c} className="choice-option checkbox">
                 {tr(`admin.class.${c}`)}
               </Checkbox>

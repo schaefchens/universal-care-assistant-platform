@@ -16,7 +16,10 @@ describe('the reply', () => {
       say: [{ kind: 'reply', text: 'Hallo', ref: null }],
       calls: [{ tool: 'notes.search', query: 'Arzt' }],
       help: false,
+      addressed: true,
     });
+    // LIVE mode's judgement: only an explicit false means it was not said to the assistant.
+    expect(parseReply('{"addressed":false,"say":[],"calls":[],"help":false}')?.addressed).toBe(false);
     expect(parseReply('{"say":[{"kind":"shout","text":"x"}],"calls":[],"help":false}')).toBeNull();
     expect(parseReply('not json')).toBeNull();
   });
@@ -26,6 +29,12 @@ describe('the reply', () => {
     expect(nothingHappens('{"calls": [{"tool": "notes.create"')).toBe(false);
     expect(nothingHappens('{"calls": [], "help": true, "say": [')).toBe(false);
     expect(nothingHappens('{"calls": [], "help": false')).toBe(false);
+    // In LIVE mode the words wait for the judgement that they were said to it.
+    expect(nothingHappens('{"addressed": true, "calls": [], "help": false, "say": [', { live: true })).toBe(true);
+    expect(nothingHappens('{"addressed": false, "calls": [], "help": false, "say": [', { live: true })).toBe(false);
+    expect(nothingHappens('{"calls": [], "help": false, "say": [', { live: true })).toBe(false);
+    const live = replySchema([], { live: true }) as { required: string[] };
+    expect(live.required).toEqual(['addressed', 'calls', 'help', 'say']);
   });
 
   it('the first sentences can be spoken while the rest is still written', () => {

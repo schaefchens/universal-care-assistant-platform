@@ -43,6 +43,8 @@ export interface SyncHost {
   announce(c: Change): void;
   lang(): Lang;
   form(): AddressForm;
+  /** LIVE mode opens by touch alone here (a browser, or no name): its announcement says so. */
+  liveByTouch?(): boolean;
 }
 
 const META = 'ucap.device-config.meta.v1';
@@ -166,7 +168,7 @@ export class ConfigSync {
     if (!say) return;
     const s = this.h.session();
     const mine = c.author?.id === s?.ref.userId && c.kind === 'device';
-    const lines = mine ? [] : describeChange({ lang: this.h.lang(), form: this.h.form(), author: c.author?.name ?? '', before, after: config });
+    const lines = mine ? [] : describeChange({ lang: this.h.lang(), form: this.h.form(), author: c.author?.name ?? '', before, after: config, liveByTouch: this.h.liveByTouch?.() });
     if (repaired.length) lines.push(t(this.h.lang(), 'config.repaired', {}, this.h.form()));
     if (lines.length) this.h.announce({ configId: c.id, version: c.version, previous, lines });
   }

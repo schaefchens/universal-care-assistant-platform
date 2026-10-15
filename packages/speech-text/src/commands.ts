@@ -112,11 +112,18 @@ for (const lang of ['de', 'en'] as const) {
 /** The help phrases short enough for a tolerance of one edit, and the longer ones (two). */
 const NEAR = new Map((['de', 'en'] as const).map((lang) => [lang, HELP_PHRASES[lang].map((p) => normalise(p, lang))]));
 
+/**
+ * How the utterance came: by push-to-talk, or heard in LIVE mode (docs/plan-m2.md), where the microphone is always
+ * open and a television can say "Hilfe": there an exact help phrase asks too, and silence never sends.
+ */
+export type MatchMode = 'push' | 'live';
+
 /** What an utterance asks for in this context: a command, the help question, or nothing (then the assistant, S9). */
-export function match(transcript: string, lang: CommandLang, context: CommandContext = 'global'): Match {
+export function match(transcript: string, lang: CommandLang, context: CommandContext = 'global', mode: MatchMode = 'push'): Match {
   const n = normalise(transcript, lang);
   if (!n) return { kind: 'none' };
   const intent = SETS.get(`${lang}:${context === 'dictation' || context === 'reply' ? 'global' : context}`)!.get(n);
+  if (intent === 'help' && mode === 'live') return { kind: 'ask', reason: 'help_word' };
   if (intent) return { kind: 'command', intent };
   if (n.split(' ').some((w) => HELP_WORDS[lang].test(w))) return { kind: 'ask', reason: 'help_word' };
   if (NEAR.get(lang)!.some((p) => distance(n, p) <= (p.length <= 5 ? 1 : 2))) return { kind: 'ask', reason: 'help_near' };

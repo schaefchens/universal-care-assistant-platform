@@ -109,6 +109,8 @@ services:
       - ./:/app
       - node-modules:/app/node_modules
       - ucap-files:/data/files
+      # LIVE mode's keyword model for the devices, read only (tools/live/models.ts downloads it there).
+      - ${UCAP_MODELS_HOST_DIR:-${HOME}/.cache/ucap-models}:/data/models:ro
     environment:
       PORT: "8821"
       DATABASE_URL: postgres://ucap:ucap@db:5432/ucap

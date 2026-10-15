@@ -81,12 +81,26 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
      * model. Resolves when the turn's part is done; `emit` gets each step as it happens.
      */
     async run(
-      o: { userId: string; deviceId: string; turnId: string; text: string; lang?: Lang; suspicious?: boolean; signal: AbortSignal },
+      o: {
+        userId: string;
+        deviceId: string;
+        turnId: string;
+        text: string;
+        lang?: Lang;
+        suspicious?: boolean;
+        /**
+         * LIVE mode heard it without the assistant's name (docs/plan-m2.md): the model first judges whether it was said
+         * to it; `onAddressed` once it was, before anything is said.
+         */
+        live?: { onAddressed: () => void };
+        signal: AbortSignal;
+      },
       emit: (e: AssistantEvent) => void,
-    ): Promise<'answered' | 'unavailable' | 'failed' | 'aborted'> {
+    ): Promise<'answered' | 'unavailable' | 'failed' | 'aborted' | 'ignored'> {
       const pick = await d.llm.pick(o.userId);
       if (!pick.ok || (o.suspicious && pick.provider.location === 'external')) {
-        emit({ t: 'error', code: 'assistant_unavailable' });
+        // What LIVE mode heard without the name may not have been said to it at all: then it says nothing.
+        if (!o.live) emit({ t: 'error', code: 'assistant_unavailable' });
         return 'unavailable';
       }
       // The language the person spoke in this turn (the device's), whatever the account says.
@@ -99,7 +113,17 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       const messaging = d.messaging && (await d.messaging.connection(o.userId)) ? d.messaging : undefined;
       const tools = toolsFor({ messaging: messaging !== undefined });
       const offered = new Map(tools.map((x) => [x.name, x]));
-      const schema = replySchema(tools.map((x) => ({ name: x.name, args: x.args })));
+      const schema = replySchema(
+        tools.map((x) => ({ name: x.name, args: x.args })),
+        { live: o.live !== undefined },
+      );
+      // In LIVE mode nothing is said before the model judged it was said to it, and that is told once.
+      let judged = o.live === undefined;
+      const addressedNow = () => {
+        if (judged) return;
+        judged = true;
+        o.live!.onAddressed();
+      };
       const ctx = (): ToolContext => ({ userId: o.userId, deviceId: o.deviceId, lang: who.lang, form: who.form, timezone: who.timezone, now: new Date(d.clock()), notes: d.notes, reminders: d.reminders, db: d.db, messaging });
       const messages: LlmMessage[] = [];
       for (const h of s.history) messages.push({ role: 'user', content: h.u }, { role: 'assistant', content: JSON.stringify({ say: [{ kind: 'reply', text: h.a, ref: null }], calls: [], help: false }) });
@@ -167,20 +191,27 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
           // The first sentences go out while the rest is written, when the reply uses no tool and asks for no help; an
           // original waits for the whole reply (its source is looked up), and so does everything after it.
           const onText = (soFar: string) => {
-            if (!nothingHappens(soFar)) return;
+            if (!nothingHappens(soFar, { live: !judged })) return;
+            addressedNow();
             const items = finishedSay(soFar);
             while (streamed < items.length && items[streamed]!.kind !== 'original') {
               const item = items[streamed++]!;
               streaming = streaming.then(() => speak(item));
             }
           };
-          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: messaging !== undefined });
+          const system = systemPrompt({ lang: who.lang, form: who.form, name: who.name, at: new Date(d.clock()), timezone: who.timezone, focus, tools, messaging: messaging !== undefined, live: o.live !== undefined });
           const r = await d.llm.complete(o.userId, pick.provider, pick.adapter, { system, messages, schema, signal: o.signal, onText });
           await streaming;
           const reply = parseReply(r.text);
           if (!reply) {
+            // Not understood in LIVE mode, before it was judged: nothing said, as for what was not said to it.
+            if (!judged) return 'ignored';
             if (!said.length) emit({ t: 'error', code: 'assistant_failed' });
             return 'failed';
+          }
+          if (!judged) {
+            if (!reply.addressed) return 'ignored';
+            addressedNow();
           }
           const unknown = reply.calls.filter((c) => !offered.has(c.tool)).map((c) => c.tool);
           const reads = reply.calls.filter((c) => offered.get(c.tool)?.kind === 'read');
@@ -255,7 +286,7 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       } catch (e) {
         if (o.signal.aborted) return 'aborted';
         d.log(`assistant turn failed: ${(e as Error).name}`);
-        if (!said.length) emit({ t: 'error', code: 'assistant_unavailable' });
+        if (!said.length && judged) emit({ t: 'error', code: 'assistant_unavailable' });
         return 'failed';
       }
       // Never silence: rounds that ended without words, a question or an action are said to have failed.

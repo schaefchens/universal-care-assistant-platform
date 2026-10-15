@@ -5,7 +5,11 @@
  * provider over its monthly cap is refused. Nothing falls back silently: the caller learns why, and says it.
  */
 
-export const DATA_CLASSES = ['communication', 'care', 'health', 'personal', 'voice_audio', 'ui_config', 'public'] as const;
+/**
+ * `live_audio`: what LIVE mode's open microphone hears (docs/plan-m2.md), the room and other people in it too; an
+ * external recognition needs its own consent for it, beside `voice_audio` for push-to-talk.
+ */
+export const DATA_CLASSES = ['communication', 'care', 'health', 'personal', 'voice_audio', 'live_audio', 'ui_config', 'public'] as const;
 export type DataClass = (typeof DATA_CLASSES)[number];
 
 /** What speech of each purpose may hold. */

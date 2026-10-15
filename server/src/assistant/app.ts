@@ -33,6 +33,7 @@ import { createActions } from './actions.ts';
 import { createAssistant } from './loop.ts';
 import { registerAiAdminRoutes } from './routes/ai-admin.ts';
 import { registerAssistantRoutes } from './routes/assistant.ts';
+import { registerModelRoutes } from './routes/models.ts';
 import { registerSpeechRoutes } from './routes/speech.ts';
 import { registerTurnRoutes } from './routes/turns.ts';
 import { createTurns } from './turns.ts';
@@ -128,6 +129,7 @@ export async function buildAssistant(o: {
   const turns = createTurns({ db: o.db, clock: o.clock, stt, assistant, actions, contextFor });
   registerSpeechRoutes(app, { speech, providers, stt });
   registerTurnRoutes(app, { turns, stt, llm });
+  registerModelRoutes(app, { modelsDir: o.config.modelsDir, log });
   registerAssistantRoutes(app, { actions, llm, contextFor });
   registerMessagingRoutes(app, { messaging, identity, actions, contextFor });
   registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, stt, llm, herde, publicUrl: o.config.publicUrl });

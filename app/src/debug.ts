@@ -10,7 +10,7 @@ export interface DebugRecord {
   earcons: { t: number; name: string }[];
   activations: { t: number; area: string; how: string }[];
   /** Push-to-talk: states, recordings (length, why they ended), and the turns' events (never what was said). */
-  voice: { t: number; state?: string; recorded?: number; reason?: string; speech?: boolean }[];
+  voice: { t: number; state?: string; recorded?: number; reason?: string; speech?: boolean; live?: string; via?: string; meant?: boolean }[];
   turn: { t: number; [k: string]: unknown }[];
   /** What the security policy refused (csp.ts): the directive and where it was going, without path or query. */
   refused: { t: number; directive: string; blocked: string }[];

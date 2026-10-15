@@ -8,7 +8,7 @@ import { Earcons, has } from '../native/plugins.ts';
 export const EARCON_NAMES = [
   'area-1', 'area-2', 'area-3', 'area-4', 'area-5', 'area-6', 'help', 'activate', 'screen', 'confirm',
   'listen-start', 'listen-stop', 'care-press', 'care-received', 'care-delivered', 'care-accepted', 'care-cancelled',
-  'care-failed', 'error', 'message',
+  'care-failed', 'error', 'message', 'live-open', 'live-close',
 ] as const;
 export type EarconName = (typeof EARCON_NAMES)[number];
 

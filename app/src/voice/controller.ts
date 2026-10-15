@@ -40,6 +40,11 @@ export interface VoiceHost {
   speakAs(text: string, purpose: 'reply' | 'reading'): Promise<boolean>;
   /** Plays a recording (a voice message's original); true when it played to its end. */
   playRecording(url: string): Promise<boolean>;
+  /**
+   * LIVE mode, when it listens: a talk press opens its gate instead of push-to-talk's microphone (one capture at a
+   * time; docs/plan-m2.md).
+   */
+  live?(): { touch(next?: { context?: 'dictation' | 'reply'; conversation?: string }): void } | null;
 }
 
 const MIC_ASKED = 'ucap.mic.v1';
@@ -61,6 +66,8 @@ export class VoiceController {
   /** Each turn's answer is said in order; a new turn, or a part cut off, drops the rest. */
   private gen = 0;
   private parts: Promise<void> = Promise.resolve();
+  /** LIVE mode: when voice input being down was last said (not again for every overheard utterance). */
+  private liveToldDown = 0;
   /** "Einen Moment" when the answer is slow (the dialogue model loading: 6–18 s cold, S0 spike C). */
   private moment: ReturnType<typeof setTimeout> | null = null;
   private warmedAt = 0;
@@ -75,6 +82,11 @@ export class VoiceController {
 
   /** The talk button or area: start, end the utterance, or abandon an answer and listen again. */
   talk(o: { context?: CommandContext; conversation?: string } = {}): void {
+    const live = this.h.live?.();
+    if (live) {
+      live.touch(o.context === 'dictation' || o.context === 'reply' ? { context: o.context, conversation: o.conversation } : undefined);
+      return;
+    }
     if (this.starting) return;
     if (this.state === 'listening') return this.recorder?.finish();
     if (this.state === 'working') {
@@ -84,6 +96,51 @@ export class VoiceController {
     this.nextContext = o.context ?? null;
     this.nextConversation = o.conversation ?? null;
     void this.listen();
+  }
+
+  /**
+   * LIVE mode (docs/plan-m2.md): what the open microphone heard, as a turn of mode `live`, answered as a push-to-talk
+   * turn once the server took it as meant for the assistant. What it dropped (the television, someone else in the
+   * room) says nothing, nor do silence and the name alone; voice input being down is said once in five minutes.
+   * Resolves with whether it was meant.
+   */
+  async liveTurn(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'touch' | 'open', next?: { context?: 'dictation' | 'reply'; conversation?: string }): Promise<boolean> {
+    const session = this.h.session();
+    if (!session || ceremony.active) return false;
+    if (this.down && Date.now() - this.down < 30_000) return false;
+    const ui = this.h.ui();
+    let meant = false;
+    const turn = new AbortController();
+    try {
+      // A note's words or a reply only when a touch asked for them; otherwise the screen's own context.
+      const screen = currentVoice().context;
+      const context = via === 'touch' && next?.context ? next.context : screen === 'dictation' || screen === 'reply' ? 'global' : screen;
+      await postTurn(session, { wav, context, lang: ui.lang, live: via, conversation: context === 'reply' ? next?.conversation : undefined, signal: turn.signal }, (e) => {
+        if (e.t === 'done') meant = e.addressed !== false;
+        if (e.t === 'heard') return;
+        if (e.t === 'error' && e.code === 'stt_unavailable') {
+          this.down = Date.now();
+          if (Date.now() - this.liveToldDown < 300_000) return;
+          this.liveToldDown = Date.now();
+        }
+        // Meant for the assistant: what the last answer still had to say is dropped, as when talk is pressed.
+        if (e.t === 'transcript') this.gen++;
+        this.event(e);
+      });
+    } catch {
+      if (Date.now() - this.liveToldDown >= 300_000) {
+        this.liveToldDown = Date.now();
+        this.unavailable();
+      }
+      return false;
+    }
+    if (meant) this.down = 0;
+    return meant;
+  }
+
+  /** Resolves once what the last answer had to say was said (or dropped). */
+  spoken(): Promise<void> {
+    return this.parts;
   }
 
   /** The talk button turned out to be held: from now on only its release ends the utterance. */

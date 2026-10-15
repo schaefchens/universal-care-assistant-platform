@@ -10,6 +10,11 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Native code (Vosk) for phones, tablets and Apple Silicon emulators (arm64); an Intel emulator builds with
+        // -Pucap.abis=arm64-v8a,x86_64.
+        ndk {
+            abiFilters(*((project.findProperty('ucap.abis') ?: 'arm64-v8a').toString().split(',')))
+        }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -39,6 +44,10 @@ dependencies {
     // UnifiedPush, with ntfy as the distributor (lookup/findings/android.md: 6 of 6 alarms in deep Doze). The
     // connector decrypts RFC 8291 payloads itself (Tink).
     implementation 'org.unifiedpush.android:connector:3.3.5'
+    // LIVE mode (docs/plan-m2.md): the keyword gate on the device (Vosk; its small German model, Apache 2.0, comes from
+    // the UCAP server). Voice activity is the app's energy rule: Silero (ONNX Runtime, 33 MB) measured no better
+    // for what it is used for (docs/spikes/m2.md).
+    implementation 'com.alphacephei:vosk-android:0.3.75'
     testImplementation "junit:junit:$junitVersion"
     // The JVM's tests have no Android framework: org.json from Maven Central for reading the shared fixtures.
     testImplementation 'org.json:json:20250517'

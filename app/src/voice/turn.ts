@@ -9,7 +9,8 @@ import type { Session } from '../identity/account.ts';
 export type TurnEvent =
   | { t: 'turn'; id: string }
   | { t: 'transcript'; text: string }
-  | { t: 'heard'; what: 'nothing' }
+  /** Nothing was said, or (LIVE mode) only the assistant's name. */
+  | { t: 'heard'; what: 'nothing' | 'name' }
   | { t: 'leak' }
   | { t: 'command'; intent: Intent }
   | { t: 'ask'; kind: 'help_confirm'; reason: 'help_word' | 'help_near' }
@@ -24,16 +25,26 @@ export type TurnEvent =
   /** An action waiting for the person's yes on this device. */
   | { t: 'action'; id: string; contentHash: string; prompt: string; expiresAt: string }
   | { t: 'ask'; kind: 'help_confirm'; reason: 'assistant' }
-  | { t: 'done'; ms: { stt: number | null; total: number }; audioMs: number | null };
+  /** `addressed`: meant for the assistant (false: LIVE mode heard something else, and the server dropped it). */
+  | { t: 'done'; ms: { stt: number | null; total: number }; audioMs: number | null; addressed?: boolean };
 
 /** Rejects with `unreachable` when the assistant cannot be reached (it is optional: help never needs it). */
 export async function postTurn(
   session: Session,
-  o: { wav?: Uint8Array<ArrayBuffer>; text?: string; context: CommandContext; lang: 'de' | 'en'; conversation?: string; signal: AbortSignal },
+  o: {
+    wav?: Uint8Array<ArrayBuffer>;
+    text?: string;
+    context: CommandContext;
+    lang: 'de' | 'en';
+    conversation?: string;
+    /** LIVE mode (docs/plan-m2.md): heard after the name or a touch, or in the open conversation. */
+    live?: 'keyword' | 'touch' | 'open';
+    signal: AbortSignal;
+  },
   onEvent: (e: TurnEvent) => void,
 ): Promise<void> {
   const id = uuidv7(Date.now());
-  const url = `${session.ref.serverUrl}/api/v1/assistant/turns?id=${id}&context=${o.context}&lang=${o.lang}${o.conversation ? `&conversation=${o.conversation}` : ''}`;
+  const url = `${session.ref.serverUrl}/api/v1/assistant/turns?id=${id}&context=${o.context}&lang=${o.lang}${o.conversation ? `&conversation=${o.conversation}` : ''}${o.live ? `&mode=live&via=${o.live}` : ''}`;
   const send = async () =>
     fetch(url, {
       method: 'POST',

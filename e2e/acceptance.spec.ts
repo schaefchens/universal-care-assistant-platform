@@ -145,11 +145,13 @@ test('2 · the person creates an identity: twelve words, three checked, a reply 
       await page.getByRole('button', { name: 'Alloy (Teststimmen)', exact: true }).click();
       await expect(page.getByText('Alloy (Teststimmen): Diese Stimme nehmen?')).toBeVisible();
       await page.getByRole('button', { name: 'Diese Stimme nehmen', exact: true }).click();
-    }),
+    }, 'Konrad'),
   );
   // The sample came from the voice service; the choice was said.
   expect(engines.seen.speech.length).toBeGreaterThan(sampled);
   await said(clara, /Alloy \(Teststimmen\) spricht jetzt/);
+  // The assistant's name, chosen after the voices (docs/plan-m2.md).
+  await said(clara, /^Ich heiße jetzt Konrad\. /);
   const areas = await clara.locator('.area-grid button').allInnerTexts();
   expect(areas.length, areas.join(' | ')).toBe(4);
   expect(areas[0]).toContain('Hilfe');
@@ -273,9 +275,10 @@ test('6 · a reminder: Maria sets "Trinken" for 15:00; at 15:00 it asks; "Noch n
   await editor.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(maria.getByText(/^Erinnerung „Trinken“ gespeichert/).first()).toBeVisible();
 
-  // Half a minute before three in the afternoon, then three.
+  // Half a minute before three in the afternoon, then three: a three o'clock past step 5's reopen window (30 minutes
+  // after its request was resolved), or "Ja" would reopen that request instead of sending a new one.
   await home(clara);
-  const due = nextBerlin(await clocks.now(), 15, 0);
+  const due = nextBerlin((await clocks.now()) + 31 * 60_000, 15, 0);
   await clocks.moveTo(due - 30_000);
   const from = await mark(clara);
   await clocks.moveTo(due + 1_000);
@@ -397,6 +400,54 @@ test('9 · without the language model and speech recognition: voice says A19; he
   await clara.getByRole('button', { name: 'Ja, abbrechen' }).click();
   await said(clara, /^Hilferuf abgebrochen\. Ich sage deinen Helfern Bescheid\.$/, from);
   engines.sttDown = false;
+  engines.model = () => reply('In Ordnung.');
+});
+
+test('L · LIVE mode in a browser (docs/plan-m2.md): Maria switches it on for Clara; a touch opens it, the name is taken off, the next question needs no touch, what was not said to it says nothing, "Pause" closes it', async () => {
+  await home(clara);
+  await home(maria);
+  await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await maria.getByRole('button', { name: 'Helfer', exact: true }).click();
+  await maria.getByRole('button', { name: 'Gerät einrichten' }).click();
+  await expect(heading(maria)).toHaveText('Gerät von Clara');
+  const live = maria.locator('section').filter({ has: maria.getByRole('heading', { name: 'LIVE-Modus', exact: true }) });
+  await setChoice(live.getByRole('switch', { name: 'LIVE-Modus an' }), true);
+  let from = await mark(clara);
+  await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
+  // Applied once nobody uses the device, and said first; a browser cannot wait for the name, and says so.
+  await expect(heading(clara)).toHaveText('Neue Einstellungen', { timeout: 60_000 });
+  expect(await said(clara, /^Neue Einstellungen\. /, from)).toMatch(/^Neue Einstellungen\. Maria hat den LIVE-Modus eingeschaltet\. Berühre „Sprechen“, dann höre ich zu, bis eine Weile niemand mit mir spricht\./);
+  await clara.getByRole('button', { name: 'Behalten', exact: true }).click();
+  await expect(clara.locator('.voice-status').first()).toHaveText('LIVE: Berühre „Sprechen“');
+  // A touch opens it: the name is taken off what was said, and the command answered.
+  engines.heard.push('Konrad, wie spät ist es?');
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Sprechen', exact: true }).click();
+  await said(clara, /^Es ist \d{1,2}(:\d\d)? Uhr/, from);
+  await expect(clara.locator('.voice-status').first()).toHaveText(/^(LIVE: Ich höre zu|Gehört: .*)$/);
+  // The next question without a touch or the name: the model judges it was said to it, and answers.
+  engines.model = (req) => (req.system.includes('LIVE-Modus: Das Mikrofon') && /welcher Tag/.test(engines.last(req)) ? { ...reply('Heute ist Donnerstag.'), addressed: true } : { say: [], calls: [], help: false, addressed: false });
+  engines.heard.push('Und welcher Tag ist heute?');
+  await said(clara, /^Heute ist Donnerstag\.$/, from);
+  // Something else in the room, not said to it: nothing is said, nothing shown.
+  const quiet = await mark(clara);
+  engines.heard.push('Und jetzt das Wetter für morgen: Sonne im Süden.');
+  await expect.poll(() => engines.heard.length, { timeout: 15_000 }).toBe(0);
+  await new Promise((r) => setTimeout(r, 4_000));
+  expect((await spoken(clara)).slice(quiet)).toEqual([]);
+  await expect(clara.getByText(/Wetter für morgen/)).toHaveCount(0);
+  // "Pause": the gate closes, and nothing is sent until a touch.
+  engines.heard.push('Pause');
+  await said(clara, /^Pause\. Ich sage nichts von selbst, bis du „Weiter“ sagst\.$/, quiet);
+  await expect(clara.locator('.voice-status').first()).toHaveText('LIVE: Pause');
+  const transcribed = engines.seen.transcribed.length;
+  await new Promise((r) => setTimeout(r, 5_000));
+  expect(engines.seen.transcribed.length, 'nothing was sent while paused').toBe(transcribed);
+  // A touch, and "LIVE aus" by voice: off, and said.
+  engines.heard.push('LIVE aus');
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Sprechen', exact: true }).click();
+  await said(clara, /^LIVE-Modus ist aus\. Ich höre nur noch zu, wenn du „Sprechen“ wählst\.$/, from);
   engines.model = () => reply('In Ordnung.');
 });
 

@@ -16,7 +16,13 @@ export function LiveSettings(p: {
   config: DeviceConfig;
   onConfig: (c: DeviceConfig) => void;
   /** The person's own page: the assistant's name and keyword (a setting of the person, on all their devices). */
-  assistant?: { name: string | null; keyword: string | null; save: (o: { assistantName?: string; keyword?: string | null }) => Promise<boolean> };
+  assistant?: {
+    name: string | null;
+    keyword: string | null;
+    save: (o: { assistantName?: string; keyword?: string | null }) => Promise<boolean>;
+    /** The app waits for the name; a browser opens the gate by touch alone. */
+    spotsKeyword: boolean;
+  };
 }) {
   const { tr, say } = useUi();
   const live = liveOf(p.config);
@@ -50,7 +56,7 @@ export function LiveSettings(p: {
     const keyword = p.assistant.keyword || p.assistant.name;
     if (enabled && !keyword) return tell(tr('live.needName'));
     set({ enabled });
-    tell(enabled ? tr('live.on', { keyword: keyword ?? '' }) : tr('live.off'));
+    tell(enabled ? tr(p.assistant.spotsKeyword ? 'live.on' : 'live.on.touch', { keyword: keyword ?? '' }) : tr('live.off'));
   }
 
   const quietMin = Math.max(1, Math.round(live.quietS / 60));

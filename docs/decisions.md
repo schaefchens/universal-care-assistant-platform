@@ -751,3 +751,48 @@ The plan: [plan-m2.md](plan-m2.md).
    ("person names the assistant and potentially a own selected keyword").
 3. **Helpers switch LIVE on directly**: helpers with `device.configure` switch it on and off as other device settings.
    As every remote change in M1, it is announced on the device and kept in the person's history.
+
+### To confirm
+
+1. **"Pause" closes the gate and silences what UCAP says by itself, but the name still opens it.** plan-m2.md:
+   "Pause: nothing is said until 'Weiter' or a touch"; CONCEPT §19: "its live until disabled/paused". Built: paused,
+   the microphone hears only the keyword spotter, as with the gate closed, so "Lisa, weiter" (or a touch) ends the
+   pause. The other choice: the microphone off during a pause, ended by a touch alone.
+2. **What was said before the name in the same breath stays on the device.** The decision says "until the keyword is
+   said, nothing leaves the device". Built: an utterance that holds the name is sent from 0.2 s before the name, so
+   "Sag mal, Lisa, was steht heute an?" reaches the server as "Lisa, was steht heute an?". The other choice: the whole
+   utterance, its start included.
+3. **A question opens the gate for 30 seconds** (a reminder's, the help question, a confirmation), and an answer turns
+   it into a conversation with the person's quiet while. A "Ja" from a television in those 30 seconds would answer it;
+   help asks back in LIVE mode and silence sends nothing, but a confirmation of a message would be taken. The other
+   choice: confirmations by touch or after the name only, in LIVE mode.
+
+### Decided (within the plan)
+
+- **The keyword spotter's grammar: the keyword and 400 ordinary words** (the most frequent of UCAP's own texts),
+  measured in L0 (docs/spikes/m2.md): the keyword alone in the grammar wakes 250–900 times an hour of speech (the
+  decoder forces every word onto it); the model's whole vocabulary hears the names hardly at all (Hanna 0 of 45, Lisa
+  5 of 45), so no second stage can confirm them; the keyword with ordinary words heard 49–87 % of the names and woke
+  0–5 times an hour. The spotter hears every sample while the gate is closed (its real-time factor is 0.04), not only
+  what a voice detector passes: a quiet voice over the television is not lost.
+- **Voice activity is the app's energy rule, not Silero**: both called the synthetic music and noise silence and
+  every speech speech, and the open gate's utterances need no more; ONNX Runtime (33 MB of native code per ABI) is
+  gone, the app is 17 MB instead of 50.
+- **What LIVE mode hears is a data class of its own, `live_audio`**: the room and others in it, not only the person.
+  An external recognition the person consented to for push-to-talk (`voice_audio`) does not hear LIVE mode; the
+  operator's own does (plan-m2.md: "a recognition on the operator's own machines unless the person consented to an
+  external one for LIVE").
+- **What the open microphone heard without the name is judged before anything is said**: a command or a help word is
+  meant; otherwise the dialogue model decides first whether it was said to UCAP (`addressed` in the reply's schema,
+  LIVE only); what was not is dropped without a word, kept nowhere (the turn's record says `ignored`), and is not part
+  of the conversation's history. Its transcript reaches the app only once it was meant.
+- **Barge-in only with the gate open**: with it closed the television would cut every announcement short; then the
+  name stops UCAP (it opens the gate). Speech counts once 120 ms of it were heard, never a click.
+- **A note's words and a reply are dictated by a press**: in LIVE mode a touch on "Neue Notiz" or "Antworten" opens
+  the gate for them; what the open microphone merely heard never becomes one.
+- **In a browser LIVE mode opens by touch**: no keyword spotter there, so the microphone is open only with the gate;
+  a touch opens both, and the conversation goes on without touching until the quiet while has passed; said when it is
+  switched on.
+- **The keyword model is served by the assistant process** (`/api/v1/assistant/keyword-models`), from the models
+  directory with its pinned SHA-256 (`tools/live/models.ts` downloads it); the app checks the digest again before it
+  unpacks it into its own storage.
