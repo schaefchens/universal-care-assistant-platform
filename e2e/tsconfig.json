@@ -1,4 +1,4 @@
 {
   "extends": "../tsconfig.base.json",
-  "include": [".", "../playwright.config.ts"]
+  "include": [".", "../playwright.config.ts", "../server/test/http_ece.d.ts"]
 }

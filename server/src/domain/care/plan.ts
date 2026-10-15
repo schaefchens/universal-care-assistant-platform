@@ -4,6 +4,7 @@
  * lost care.respond drop out of a stored plan without editing it: the plan names people, the grants decide.
  */
 import { sql } from 'kysely';
+import { audit } from '../../lib/audit.ts';
 import type { Clock } from '../../lib/clock.ts';
 import type { Db, Exec } from '../../lib/db.ts';
 import { AppError } from '../../lib/errors.ts';
@@ -46,6 +47,22 @@ export async function responders(exec: Exec, personId: string): Promise<{ id: st
     where r.person_id = ${personId} and r.state = 'active' and g.scope = 'care.respond' and g.revoked_at is null and h.deleted_at is null
     order by r.approved_at, h.display_name`.execute(exec);
   return r.rows.map((x) => ({ id: x.id, displayName: x.display_name }));
+}
+
+/**
+ * The responders by name, and whether one of their devices can be reached (a device never checked counts: a browser
+ * without push is not unreachable), for the plan's editor (Appendix D: "The plan editor warns about helpers without
+ * a reachable device").
+ */
+export async function planHelpers(exec: Exec, personId: string): Promise<{ id: string; displayName: string; reachable: boolean }[]> {
+  const who = await responders(exec, personId);
+  if (!who.length) return [];
+  const r = await sql<{ user_id: string; ok: boolean }>`
+    select dv.user_id, bool_or(coalesce(dh.readiness, 'unknown') not in ('degraded', 'unreachable')) as ok
+    from devices dv left join device_health dh on dh.device_id = dv.id
+    where dv.user_id = any(${who.map((h) => h.id)}::uuid[]) and dv.revoked_at is null group by dv.user_id`.execute(exec);
+  const ok = new Map(r.rows.map((x) => [x.user_id, x.ok]));
+  return who.map((h) => ({ ...h, reachable: ok.get(h.id) ?? false }));
 }
 
 /** The plan in force: the stored tiers limited to current responders, plus any responder the plan does not name
@@ -104,6 +121,15 @@ export async function savePlan(
       on conflict (person_id) do update set version = excluded.version, tiers = excluded.tiers, realert_s = excluded.realert_s,
         sos_number = excluded.sos_number, phone_fallback = excluded.phone_fallback, unconfirmed_policy = excluded.unconfirmed_policy,
         updated_at = excluded.updated_at, updated_by = excluded.updated_by`.execute(trx);
+    // In the person's history, whoever changed it (a helper with care.configure, or the person): counts, no numbers.
+    await audit(trx, clock, {
+      actorUser: by,
+      subjectUser: personId,
+      action: 'care.plan.saved',
+      targetType: 'escalation_plan',
+      targetId: personId,
+      detail: { version: version + 1, tiers: input.tiers.length, phoneFallback: !!input.phoneFallback, unconfirmedPolicy: input.unconfirmedPolicy ?? 'send' },
+    });
     return { version: version + 1 };
   });
 }

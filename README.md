@@ -11,10 +11,11 @@ Milestone 1, steps S0 to S12 built: identity and devices, people and permissions
 browsers and the Android app's alarm, interactive reminders, speech providers and each person's voices, push-to-talk
 with commands and the help question, the assistant (notes, reminders, confirmed actions, help it proposes), Telegram
 (reading, voice messages, replies confirmed by the person and by Telegram), remote configuration, and the hardening
-(retention, limits, backups with a tested restore, administration, the security policy, accessibility audits).
+(retention, limits, backups with a tested restore, administration, the security policy, accessibility audits). The
+acceptance script runs in browsers on every `npm run test:e2e`.
 
 What remains of the milestone's acceptance needs the owner: real phones (Doze, the lock screen, TalkBack with real
-fingers, the 48-hour push soak), the ntfy app, joining herde, and Telegram's API credentials.
+fingers, the 48-hour push soak), the ntfy app, joining herde, and a Telegram login with a real account.
 [docs/acceptance.md](docs/acceptance.md) says where each check stands; departures from the plan are in
 [docs/decisions.md](docs/decisions.md). Running a server: [docs/operator.md](docs/operator.md); for helpers:
 [docs/helper-onboarding.md](docs/helper-onboarding.md).
@@ -30,7 +31,7 @@ docker compose up -d --wait   # Postgres, ntfy, Caddy, and the core, assistant a
 curl -s localhost:8810/healthz
 npm test
 npm run test:docker           # the same tests inside the image
-npm run test:e2e              # a person and a helper in two browsers (Playwright), against the running stack
+npm run test:e2e              # the acceptance script in browsers (Playwright) on a stack of its own, made afresh
 npm run evals                 # the assistant against the dialogue model on Ollama (60 German utterances)
 npm run backup -- <dir>       # the database and the files (add --with-secrets for a backup that opens everything)
 npm run backup:check          # a backup restored into a scratch database and compared, table by table

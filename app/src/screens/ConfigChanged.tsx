@@ -34,10 +34,15 @@ export function ConfigChanged(p: { config: DeviceConfig; change: Change; onKeep:
     p.onKeep();
   };
 
+  // Said once per version, also where an effect runs twice (React's development checks).
+  const announced = useRef<number | null>(null);
   useEffect(() => {
     over.current = false;
-    ui.earcons.play('screen');
-    say(`${tr('config.change.title')}. ${p.change.lines.join(' ')} ${tr('config.change.undo')}`, 'system');
+    if (announced.current !== p.change.version) {
+      announced.current = p.change.version;
+      ui.earcons.play('screen');
+      say(`${tr('config.change.title')}. ${p.change.lines.join(' ')} ${tr('config.change.undo')}`, 'system');
+    }
     const timer = setTimeout(() => keep(true), KEEP_AFTER_MS);
     return () => clearTimeout(timer);
   }, [p.change.version]); // eslint-disable-line react-hooks/exhaustive-deps

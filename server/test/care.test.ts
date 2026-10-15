@@ -441,4 +441,33 @@ describe('help requests', () => {
     const stored = JSON.stringify((await sql`select * from push_endpoints`.execute(db)).rows);
     expect(stored).not.toContain(mariaBrowser.sub.keys.auth);
   });
+
+  it('the plan names its helpers and who cannot be reached; a helper allowed to may change it; the person sees who did', async () => {
+    const ben = await c.create((await core.identity.createInvite(db, { kind: 'account', createdBy: null })).code, 'Ben');
+    await relate(anna, ben, ['care.configure']);
+    type View = { version: number; tiers: { waitS: number; helpers: string[] }[]; helpers: { id: string; displayName: string; reachable: boolean }[] };
+    const view = async (a: Account) => (await get(a, `/api/v1/people/${anna.userId}/escalation-plan`)).json() as View;
+    // Responders only (Lena may manage reminders, Ben may configure: neither answers help requests).
+    expect((await view(anna)).helpers.map((h) => h.displayName).sort()).toEqual(['Maria', 'Tom']);
+    expect((await view(anna)).helpers.every((h) => h.reachable)).toBe(true);
+    // Every device of Tom's failed its check: named as unreachable.
+    await sql`insert into device_health (device_id, readiness, updated_at) values (${tom.deviceId}, 'unreachable', now()) on conflict (device_id) do update set readiness = 'unreachable'`.execute(db);
+    expect((await view(anna)).helpers.find((h) => h.displayName === 'Tom')?.reachable).toBe(false);
+    // Lena may not see it; Ben may, and change it.
+    expect((await get(lena, `/api/v1/people/${anna.userId}/escalation-plan`)).statusCode).toBe(404);
+    const v = await view(ben);
+    const r = await core.app.inject({
+      method: 'PUT',
+      url: `/api/v1/people/${anna.userId}/escalation-plan`,
+      payload: { version: v.version, tiers: [{ waitS: 120, helpers: [maria.userId] }, { waitS: 120, helpers: [tom.userId] }] },
+      headers: { authorization: `Bearer ${ben.token}` },
+    });
+    expect(r.statusCode).toBe(200);
+    expect((await view(anna)).tiers.map((t) => t.helpers)).toEqual([[maria.userId], [tom.userId]]);
+    // In Anna's history: who changed it, without the plan's contents.
+    const events = ((await get(anna, '/api/v1/audit')).json() as { events: { action: string; actor: { displayName: string } | null; detail?: unknown }[] }).events;
+    const saved = events.find((e) => e.action === 'care.plan.saved');
+    expect(saved?.actor?.displayName).toBe('Ben');
+    await sql`delete from device_health where device_id = ${tom.deviceId}`.execute(db);
+  });
 });

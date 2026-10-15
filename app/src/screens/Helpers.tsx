@@ -2,7 +2,7 @@
  * Helpers and the people one helps (docs/plan.md, S3), on one page that works with touch, keyboard and screen
  * readers:
  * - as a person: invite a helper (a code to read out, a link to pass on), approve who accepted, change what each
- *   helper may do, end a connection, hear who may do what;
+ *   helper may do, end a connection, hear who may do what, choose whom help requests reach first;
  * - as a helper: accept an invitation, see the people one helps and what one may do for them, end a connection;
  * - the history of changes to this account (the audit log, without content).
  */
@@ -10,6 +10,7 @@ import { DEFAULT_HELPER_SCOPES, hasMessage, M1_SCOPES, type Scope } from '@ucap/
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
+import { EscalationSetting } from '../care/EscalationSetting.tsx';
 import { PhoneFallbackSetting } from '../care/PhoneFallbackSetting.tsx';
 import { UnconfirmedSetting } from '../care/UnconfirmedSetting.tsx';
 import { ApiError } from '../net/api.ts';
@@ -17,6 +18,9 @@ import { type AuditEvent, type Invitation, type InvitePreview, people, previewIn
 import { overviewSummary, scopeLabel } from '../people/summary.ts';
 import type { ServerRef } from '../state/store.ts';
 import { useUi } from '../ui.tsx';
+
+/** Changes whenever a list of relationships does: who, in which state, with which scopes. */
+const relKey = (rels: Relationship[]) => rels.map((r) => `${r.id}:${r.state}:${r.scopes.join('+')}`).join(',');
 
 /** Digits for a voice: "3 2 6, 5 1 3, 2 2 0 7". */
 const spokenDigits = (code: string) => [code.slice(0, 3), code.slice(3, 6), code.slice(6)].map((g) => g.split('').join(' ')).join(', ');
@@ -80,6 +84,8 @@ export function Helpers(p: {
   const [invitation, setInvitation] = useState<Invitation | null>(null);
   const [editing, setEditing] = useState<{ id: string; scopes: Scope[] } | null>(null);
   const [ending, setEnding] = useState<Relationship | null>(null);
+  /** The person whose help-request order this helper has open (care.configure). */
+  const [planFor, setPlanFor] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [preview, setPreview] = useState<InvitePreview | null>(null);
 
@@ -241,6 +247,7 @@ export function Helpers(p: {
         </Button>
       </section>
 
+      <EscalationSetting session={p.session} personId={p.session.ref.userId} refresh={relKey(mine)} />
       <PhoneFallbackSetting session={p.session} />
       <UnconfirmedSetting session={p.session} />
 
@@ -322,6 +329,11 @@ export function Helpers(p: {
                 <Confirm question={tr('people.end.confirm.helper', { name: r.person.displayName })} yes={tr('people.end.yes')} onYes={() => void end(r)} onNo={() => setEnding(null)} />
               ) : (
                 <div className="row">
+                  {r.state === 'active' && r.scopes.includes('care.configure') && (
+                    <Button className="button" onPress={() => setPlanFor(planFor === r.person.id ? null : r.person.id)}>
+                      {scopeLabel('care.configure', tr)}
+                    </Button>
+                  )}
                   {r.state === 'active' && r.scopes.includes('device.configure') && (
                     <Button className="button" onPress={() => p.onConfigure?.(r.person)}>
                       {tr('config.editor.open')}
@@ -337,6 +349,7 @@ export function Helpers(p: {
                   </Button>
                 </div>
               )}
+              {planFor === r.person.id && r.state === 'active' && r.scopes.includes('care.configure') && <EscalationSetting session={p.session} personId={r.person.id} personName={r.person.displayName} refresh={relKey(helping)} />}
             </li>
           ))}
         </ul>

@@ -13,6 +13,8 @@
  *   /incoming {chat: "anna"|"familie"|"maria", text}   a new message
  *   /voice {chat, ogg: <base64>, seconds}             a new voice message (Ogg/Opus)
  *   /delete {chat, id}                                a message deleted for everyone
+ *   /hold {on}                                         sends stay pending until on is false again (tests)
+ *   /clock {at}                                        Telegram's time from now on (tests that move the server's)
  * They act for the account that connected last, or the one named by `connection` (its connection id).
  */
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -59,13 +61,18 @@ interface Account {
 }
 
 const accounts = new Map<string, Account>();
+/** Sends Telegram has not confirmed yet, while held (/hold). */
+let holding = false;
+const held: (() => void)[] = [];
 /** The control endpoints act for the account that connected last (or the one named by `connection`). */
 let lastReady: string | null = null;
 let ws: WebSocket | null = null;
 const emit = (e: FromConnectors) => {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(e));
 };
-const now = () => Math.floor(Date.now() / 1000);
+/** Telegram's time; the end-to-end tests move it with the server's (/clock), as both agree in real life. */
+let skewMs = 0;
+const now = () => Math.floor((Date.now() + skewMs) / 1000);
 const stateFile = (id: string) => join(STATE_DIR, `fake-${id}.json`);
 
 function message(a: Account, chat: ChatKey, o: Partial<WireMessage> & { text: string }): WireMessage {
@@ -145,15 +152,13 @@ async function handle(cmd: ToConnectors) {
         setTimeout(() => emit({ t: 'send.result', id: a.id, requestId: cmd.requestId, state: 'failed', tempId, error: 'tg_403' }), 1500);
         return;
       }
-      setTimeout(
-        () => {
-          const m = message(a, chat, { text: cmd.text, outgoing: true });
-          emit({ t: 'send.result', id: a.id, requestId: cmd.requestId, state: 'sent', externalId: m.externalId, tempId });
-          emit({ t: 'msg.upsert', id: a.id, msg: m });
-          if (chat === 'anna') setTimeout(() => emit({ t: 'msg.upsert', id: a.id, msg: message(a, 'anna', { text: 'Schön, bis dann!' }), live: true }), 4000);
-        },
-        cmd.text.includes('#slow') ? 20_000 : 1500,
-      );
+      const confirm = () => {
+        const m = message(a, chat, { text: cmd.text, outgoing: true });
+        emit({ t: 'send.result', id: a.id, requestId: cmd.requestId, state: 'sent', externalId: m.externalId, tempId });
+        emit({ t: 'msg.upsert', id: a.id, msg: m });
+        if (chat === 'anna') setTimeout(() => emit({ t: 'msg.upsert', id: a.id, msg: message(a, 'anna', { text: 'Schön, bis dann!' }), live: true }), 4000);
+      };
+      setTimeout(() => (holding ? held.push(confirm) : confirm()), cmd.text.includes('#slow') ? 20_000 : 1500);
       return;
     }
     case 'download': {
@@ -207,6 +212,15 @@ createServer(async (req, res) => {
     res.writeHead(code, { 'content-type': 'application/json' });
     res.end(JSON.stringify(v));
   };
+  if (req.url === '/clock') {
+    skewMs = typeof b.at === 'number' ? b.at - Date.now() : 0;
+    return done(200, { now: now() });
+  }
+  if (req.url === '/hold') {
+    holding = b.on === true;
+    if (!holding) for (const f of held.splice(0)) f();
+    return done(200, { holding });
+  }
   if (!a) return done(409, { error: 'no ready connection' });
   if (req.url === '/incoming') {
     const m = message(a, chat, { text: String(b.text ?? 'Hallo'), ...(chat === 'familie' ? { fromId: 'user:43' } : {}) });

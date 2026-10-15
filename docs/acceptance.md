@@ -5,9 +5,9 @@ automated test, by a run on the Android emulator or in Chrome (recorded in [deci
 or here), or not yet, and what it waits for. State of 2026-10-15.
 
 ```sh
-npm run typecheck && npm test        # 384 tests; the Telegram test-DC suite is opt-in (UCAP_TG_TEST=1)
+npm run typecheck && npm test        # 392 tests; the Telegram test-DC suite is opt-in (UCAP_TG_TEST=1)
 npm run test:docker                  # the same suite inside the image
-npm run test:e2e                     # a person and a helper in two browsers against the dev stack (Playwright)
+npm run test:e2e                     # the acceptance script in browsers, on a stack of its own (e2e/acceptance.spec.ts)
 npm run evals                        # the assistant against the dialogue model (60 German utterances)
 npm run backup:check                 # backup, restore into a scratch database, compare every table
 npm run android:check                # on the emulator: AN-12, UI-08, UI-01, Help first, AN-08, the DND matrix (AN-02)
@@ -15,20 +15,27 @@ node tools/android/axe.ts            # accessibility audit of the screen the emu
 node tools/android/a11y-tree.ts --dom   # its accessibility tree and DOM, to compare TalkBack on and off (UI-02)
 ```
 
-**Legend:** *test* = automated (file named); *emulator* / *Chrome* = run by hand, with the step it is recorded under;
+**Legend:** *test* = automated (file named); *e2e* = in the browser walk of the acceptance script
+(`e2e/acceptance.spec.ts`, its step named); *emulator* / *Chrome* = run by hand, with the step it is recorded under;
 *open* = not yet, with the reason.
+
+**The browser walk** (`npm run test:e2e`, about two minutes): a stack of its own (compose profile `e2e`, a fresh
+database `ucap_e2e` for every run, entry http://localhost:8815), the servers' clock moved forward where the script
+waits (test mode, never in production), the AI engines replaced by stand-ins that speak their APIs (`e2e/engines.ts`),
+Telegram by `tools/dev/fake-telegram.ts`, Tom's phone simulated (`e2e/phone.ts`: UnifiedPush through ntfy, receipts
+and "Annehmen" signed by its key). Maria and Clara use the app in browsers of their own, with a fake microphone.
 
 ## Identity
 
 | Id | Check | Where | State |
 |---|---|---|---|
 | ID-01 | account from an invitation; one entropy, the same key from German and English words | `server/test/identity.test.ts`, `packages/identity/test/phrase.test.ts` (BIP39 vectors) | test |
-| ID-02 | the phrase canary: no phrase, in either rendering, in any table or in anything the server logged | `server/test/identity.test.ts` | test |
+| ID-02 | the phrase canary: no phrase, in either rendering, in any table or in anything the server logged | `server/test/identity.test.ts`; in the browser walk, nothing the stand-ins received and nothing the e2e servers logged holds three words in a row of any account's phrase | test, e2e |
 | ID-03 | the ceremony is isolated | `app/test/words.test.ts` (no list word in the debug record; no server voice while the words are open, added in S12); the microphone refuses during it (`app/src/voice/controller.ts`); FLAG_SECURE (AN-11) | test, emulator (S2) |
 | ID-04 | verification quiz, checksum errors | `packages/identity/test/phrase.test.ts` (checksum, what is wrong and where); the quiz on the emulator | test, emulator (S2) |
-| ID-05 | recovery, address variants, the other devices told | `server/test/identity.test.ts`; recovered with the English card on the emulator (S2, and twice on 2026-10-15) | test, emulator |
+| ID-05 | recovery, address variants, the other devices told | `server/test/identity.test.ts`; recovered with the English card on the emulator (S2, and twice on 2026-10-15); with the English rendering typed in a new browser, the tablet told (e2e step 10) | test, emulator, e2e |
 | ID-06 | challenge replay, expiry, wrong origin | `server/test/identity.test.ts` | test |
-| ID-08 | revocation: 401, socket closed within a second, endpoints removed, local wipe | `server/test/identity.test.ts`, `server/test/realtime-client.test.ts` | test |
+| ID-08 | revocation: 401, socket closed within a second, endpoints removed, local wipe | `server/test/identity.test.ts`, `server/test/realtime-client.test.ts`; signed out from the new device, the old one shows its not-set-up screen within 3 s (e2e step 10) | test, e2e |
 | ID-09 | token renewal; no bearer secret in storage | `server/test/identity.test.ts` | test |
 | ID-10/11 | bootstrap and invitation brute force | `server/test/identity.test.ts`; limits on proofs and challenges in `server/test/hardening.test.ts` | test |
 | ID-12 | words said to the assistant never reach the model | `packages/identity/test/leak.test.ts`, `server/test/turns.test.ts` | test |
@@ -38,19 +45,19 @@ node tools/android/a11y-tree.ts --dom   # its accessibility tree and DOM, to com
 
 | Id | Check | Where | State |
 |---|---|---|---|
-| CR-01 | a press reaches the helpers; A1, A2, A4, A6 | `server/test/care.test.ts`; emulator and Chrome (S4, S5; again under the security policy, S12) | test, emulator |
+| CR-01 | a press reaches the helpers; A1, A2, A4, A6 | `server/test/care.test.ts`; emulator and Chrome (S4, S5; again under the security policy, S12); e2e step 4 | test, emulator, e2e |
 | CR-02 | exploring, sliding in, dwell and lift, two fingers, cancel: no request | `packages/touch/test/properties.test.ts` (P1–P9), `engine.test.ts` | test |
 | CR-03 | keyboard and virtual clicks send | emulator, 2026-10-15: Enter and Space on the focused help area; TalkBack's tap then double tap (real touches through the emulator console) sent and cancelled a request | emulator (S12) |
-| CR-04 | model and speech recognition down: help unaffected, A19 | `tools/test/import-graph.test.ts` (core imports nothing optional), the care suite runs on core alone, `server/test/turns.test.ts` (A19), `server/test/assistant.test.ts` (model down); whisper stopped on the emulator (S8) | test, emulator |
+| CR-04 | model and speech recognition down: help unaffected, A19 | `tools/test/import-graph.test.ts` (core imports nothing optional), the care suite runs on core alone, `server/test/turns.test.ts` (A19), `server/test/assistant.test.ts` (model down); whisper stopped on the emulator (S8); both stand-ins down in e2e step 9 | test, emulator, e2e |
 | CR-05 | offline: A3, never A2, one request; A22 with a wrong clock | `app/test/care-outbox.test.ts`; `server/test/care.test.ts` (the wait measured on the device's own clock, S12); A22 and one request after a kill on the emulator (S5) | test, emulator |
 | CR-06/07 | coalescing; twenty at once make one | `server/test/care.test.ts` | test |
-| CR-08/09/10 | escalation, exhausted, nobody reachable within 10 s | `server/test/care.test.ts` | test |
+| CR-08/09/10 | escalation, exhausted, nobody reachable within 10 s | `server/test/care.test.ts`; the escalation to Tom after two minutes, the receipt of Tom's phone (A4) and the accept, in e2e step 5 | test, e2e |
 | CR-11 | accept race; the other alarm stops | `server/test/care.test.ts`; alarm updated in place on the emulator (S5) | test, emulator |
-| CR-12 | cancel | `server/test/care.test.ts`; emulator (S5, S12) | test, emulator |
+| CR-12 | cancel | `server/test/care.test.ts`; emulator (S5, S12); e2e step 9 (A13, A14) | test, emulator, e2e |
 | CR-13 | core killed mid-escalation: each alert once | `server/test/care.test.ts` | test |
 | CR-14 | silenced receipt | `server/test/care.test.ts`; total silence on the emulator (S5) | test, emulator |
 | CR-15 | resolve and reopen | `server/test/care.test.ts` | test |
-| CR-16 | quick replies quoted; the lint | `server/test/care.test.ts`, `app/test/care.test.ts`, `packages/shared/test/i18n.test.ts` | test |
+| CR-16 | quick replies quoted; the lint | `server/test/care.test.ts`, `app/test/care.test.ts`, `packages/shared/test/i18n.test.ts`; A7 and nothing else saying anyone is coming, in e2e step 4 | test, e2e |
 | CR-17 | the voice help matrix | `packages/speech-text/test/commands.test.ts`, `server/test/turns.test.ts`; emulator (S8) | test, emulator |
 | CR-18 | an injected message makes the model propose help: A17, silence, nothing sent | `server/test/assistant.test.ts`, `server/test/messaging.test.ts` | test |
 | CR-19/20 | forged, replayed, duplicate receipts; ntfy's access control; undecryptable pushes | `server/test/care.test.ts`, `server/test/unifiedpush.test.ts`; AN-14 on the emulator | test, emulator |
@@ -60,10 +67,10 @@ node tools/android/a11y-tree.ts --dom   # its accessibility tree and DOM, to com
 
 | Id | Check | Where | State |
 |---|---|---|---|
-| AS-01 | the send flow; C3 only after Telegram confirms | `server/test/messaging.test.ts`; emulator with the stand-in (S10) | test, emulator |
+| AS-01 | the send flow; C3 only after Telegram confirms | `server/test/messaging.test.ts`; emulator with the stand-in (S10); e2e step 7, with the stand-in holding Telegram's confirmation | test, emulator, e2e |
 | AS-02/03/04 | stale hash; "ja" with nothing waiting or on another device; expiry | `server/test/assistant.test.ts` | test |
 | AS-05 | the adversarial model | `server/test/assistant.test.ts` | test |
-| AS-06 | originals byte for byte, framed | `server/test/assistant.test.ts` | test |
+| AS-06 | originals byte for byte, framed | `server/test/assistant.test.ts`; e2e step 7 (the model's text is replaced by the message's) | test, e2e |
 | AS-07 | a crash while attempting: C6, no resend | `server/test/assistant.test.ts`, `server/test/messaging.test.ts` | test |
 | AS-08 | delete with undo | `server/test/assistant.test.ts` | test |
 | AS-09 | reminder readback | `server/test/assistant.test.ts` | test |
@@ -80,7 +87,7 @@ Mac's memory pressure.
 | UI-02 | real buttons in every mode; the same DOM with TalkBack on and off | `tools/android/a11y-tree.ts`: the home screen's tree and DOM identical with TalkBack off and on (2026-10-15) | emulator (S12) |
 | UI-03 | focus and announcements on a screen change; "Wo bin ich?" | every screen change says its name and what it holds ("Notizen. 3 Notizen. …"), with TalkBack through the live region; "Wo bin ich?" by voice: "Du bist auf: Notizen. Zur Startseite kommst du mit Zurück."; "Was kann ich hier tun?" names the areas by their place | emulator (S8, S12) |
 | UI-04 | invariants: 422, and the device repairs | `packages/shared/test/config.test.ts`, `server/test/configs.test.ts`, `app/test/config-sync.test.ts` | test |
-| UI-05 | idle apply, announcement, undo | `app/test/config-sync.test.ts`; emulator and Chrome (S11) | test, emulator |
+| UI-05 | idle apply, announcement, undo | `app/test/config-sync.test.ts`; emulator and Chrome (S11); e2e step 8 | test, emulator, e2e |
 | UI-06 | the recommended timeout is used | with Android's "time to take action" at one minute, the help question waited 62 s before asking again (2026-10-15, after a fix: the first window ignored it) | emulator (S12) |
 | UI-07 | care announcements survive exploring | `app/test/speech.test.ts` | test |
 | UI-08 | security policy; inert rendering | `app/test/security.test.ts`; the built app on the emulator and in Chrome with no refusal (S12) | test, emulator, Chrome |
@@ -129,13 +136,13 @@ slowest 3.7 s. Test: `server/test/care.test.ts`.
 
 | Step | What | State |
 |---|---|---|
-| 1 | Operator setup | done on the dev stack (setup, compose, the CLI bootstrap; Ollama, stt-mlx, OpenAI and ElevenLabs keys). **Owner:** joining herde; Telegram's api_id and api_hash on the admin page |
-| 2 | First identity on the tablet | emulator (S2, S7): invitation link, words spoken and shown, the quiz, the card, a voice chosen by listening, four areas; the same onboarding in a browser makes the e2e accounts |
-| 3 | Inviting a helper by the spoken code | emulator and Chrome (S3); with the link's code in the e2e setup; Maria on a phone: owner's devices |
-| 4 | Help request | emulator and Chrome (S4, S5): exploring sends nothing, A1, A2, A4, A6, A7, A12; in two browsers on every `npm run test:e2e` (`e2e/help.spec.ts`: A1, A2, A6, A12). **Owner's phone:** ringing in Doze, the unlock for "Annehmen" |
-| 5 | Escalation to Tom | `server/test/care.test.ts`; the alarm updated in place on the emulator (S5). Two real phones: owner |
-| 6 | Reminder "Trinken" | emulator (S6, S9): rings with the app closed and the server stopped; "Kann mir jemand Wasser bringen?" → A17 → "Ja" → a linked request |
-| 7 | Telegram | emulator with the stand-in (S10): summary labelled as one, the original framed, a voice message played and transcribed, C1 → "Ja" → C2 → C3. Telegram's test servers refuse their documented test code (2026-10-15, decisions.md S10). **Owner:** a login with a real account (the api_id and api_hash are in hand) |
-| 8 | Remote change | emulator and Chrome (S11) |
-| 9 | No language model | the tests above (CR-04); whisper stopped on the emulator gave A19 (S8). Ollama is the Mac's shared app and was not stopped |
-| 10 | Recovery on another device | emulator (S2, S12) with the English words; the other devices told and a revoked device cut off within a second: `server/test/identity.test.ts` |
+| 1 | Operator setup | done on the dev stack (setup, compose, the CLI bootstrap; Ollama, stt-mlx, OpenAI and ElevenLabs keys); e2e step 1 (the CLI bootstrap, a voice service and Telegram's credentials on the admin page). **Owner:** joining herde; Telegram's api_id and api_hash on the dev stack's admin page |
+| 2 | First identity on the tablet | emulator (S2, S7): invitation link, words spoken and shown, the quiz, the card, a voice chosen by listening, four areas; e2e step 2 |
+| 3 | Inviting a helper by the spoken code | emulator and Chrome (S3); e2e step 3 (the 10-digit code, the scopes shown to Maria, the summary said on approval; the order of helpers set) and 3b (a helper allowed to set the order). Maria on a phone: owner's devices |
+| 4 | Help request | emulator and Chrome (S4, S5): exploring sends nothing, A1, A2, A4, A6, A7, A12; e2e step 4 (A1, A2, A4, A6, A7, A12). **Owner's phone:** ringing in Doze, the unlock for "Annehmen" |
+| 5 | Escalation to Tom | `server/test/care.test.ts`; the alarm updated in place on the emulator (S5); e2e step 5 (A9 after two minutes, Tom's phone alerted through ntfy, its receipt and accept; Maria told who took over). Two real phones: owner |
+| 6 | Reminder "Trinken" | emulator (S6, S9): rings with the app closed and the server stopped; "Kann mir jemand Wasser bringen?" → A17 → "Ja" → a linked request; e2e step 6 (set by Maria for 15:00, the clock moved there) |
+| 7 | Telegram | emulator with the stand-in (S10): summary labelled as one, the original framed, a voice message played and transcribed, C1 → "Ja" → C2 → C3; e2e step 7 (without the voice message). Telegram's test servers refuse their documented test code (2026-10-15, decisions.md S10). **Owner:** a login with a real account (the api_id and api_hash are in hand) |
+| 8 | Remote change | emulator and Chrome (S11); e2e step 8 |
+| 9 | No language model | the tests above (CR-04); whisper stopped on the emulator gave A19 (S8); e2e step 9 with both stand-ins down. Ollama is the Mac's shared app and was not stopped |
+| 10 | Recovery on another device | emulator (S2, S12) with the English words; the other devices told and a revoked device cut off within a second: `server/test/identity.test.ts`; e2e step 10 |

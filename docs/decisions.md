@@ -588,8 +588,11 @@ then they stay as built, and nothing here is frozen.
 3. **The end-to-end tests run on the dev stack with its real clock and no fakes.** The plan's Verification: "Playwright
    with person and helper contexts, the fake providers and the fake clock." The help path they cover uses no
    provider; the fakes come when the e2e covers the assistant and timed escalation.
-   **The owner chose the plan's version, 2026-10-15:** a stack of its own, a clock the tests move, stand-ins for the
-   providers, and browser tests along the acceptance script (in progress).
+   **The owner chose the plan's version, 2026-10-15; built** (see "The browser walk" below).
+4. **A helper added after the order was set is notified last**, after the order's steps, until someone places them
+   (the server's rule since S4: a responder the stored plan does not name goes into a last tier, two minutes on, so
+   nobody who answers help requests is ever left out). The order screen now shows it. The other choice: notify them at
+   once.
 
 ### Decided (within the plan)
 
@@ -630,13 +633,43 @@ then they stay as built, and nothing here is frozen.
   48 hours as a job that survives restarts, and `push:soak-report` gives sent, confirmed, lost and the receipt times.
   The rounds are ordinary heartbeats, so they keep the device's readiness too; an older heartbeat that went
   unanswered no longer marks a device degraded when it answered a later one.
-- **`npm run test:e2e`** (Playwright 1.63, its Chromium from the cache): "E2E Person" and "E2E Helfer", each in a
-  browser profile of their own that keeps the device key, so their accounts are made once through the app's own
-  onboarding (an invitation from the new `account-invite` CLI command, the twelve words and their check) and the
-  helper is invited and approved through the app; then a help request from one browser is accepted and resolved in
-  the other, and the person hears A1, A2 (or, within the reopen window, that the helpers are asked again), A6 and
-  A12. It runs on the dev stack with its real clock: the plan's fake clock and fake providers are not built, since
-  the help path uses no provider; they come when the e2e covers the assistant.
+- **The browser walk, `npm run test:e2e`** (the plan's Verification: "Playwright with person and helper contexts, the
+  fake providers and the fake clock"): the acceptance script, steps 1 to 10, in `e2e/acceptance.spec.ts`, and the
+  phrase canary (ID-02), in about two minutes.
+  - **A stack of its own** (compose profile `e2e`, entry http://localhost:8815, as Appendix G's port table has it):
+    core, assistant, the Telegram stand-in and Caddy, with a database `ucap_e2e` dropped and made again for every run
+    and files of their own; Postgres and ntfy are the dev stack's. The app comes from Vite on the host through that
+    entry (a development build: the security policy is checked on the emulator and in Chrome, UI-08).
+  - **The fake clock is test mode** (`server/src/lib/test-mode.ts`): with `UCAP_TEST_MODE=1`, and never with
+    `NODE_ENV=production`, core and the assistant take a clock the tests move forward through `/__test/clock` and
+    `/__test/assistant/clock`; everywhere else those paths answer 404, and Caddy's production routes have none.
+  - **The fake providers are outside the product**: the plan put them behind `/__test/*`; they are HTTP servers in
+    the test process (`e2e/engines.ts`, port 8824) speaking Ollama's chat API, the transcription API UCAP's whisper
+    server speaks, and OpenAI's speech API, so the assistant's own adapters run against them. Only the clock needed a
+    hook in the product.
+  - **Telegram** is `tools/dev/fake-telegram.ts` (control on 8825), which can now hold a send unconfirmed and keeps
+    the moved clock's time (a message stamped with the real time looked hours old and was not announced). **Tom's
+    phone** is simulated (`e2e/phone.ts`): an account made as the app makes one, UnifiedPush through the stack's
+    ntfy, each alert decrypted and confirmed with a signed receipt, "Annehmen" signed by the device.
+  - **What the person heard** is the app's debug record, kept by the test across reloads; it now holds speech in a
+    server voice too (before, only the device voice's). Recovery words are never in it (the record masks them, and
+    no server voice speaks while they are shown).
+  - Not in it: what needs the native app or a real phone (Doze, the lock screen, alarms with the app closed, TalkBack
+    by touch): the emulator and the owner's phones.
+- **The order of helpers for help requests** (Appendix D: "The plan editor warns about helpers without a reachable
+  device"; S4's escalation plans had no screen): on the Helfer page, for each helper who answers help requests, "sofort"
+  or after 1, 2, 5 or 10 minutes in which nobody accepted, saved as the plan's tiers and read back ("Gespeichert. Bei
+  einem Hilferuf benachrichtige ich sofort Maria. Hat nach 2 Minuten niemand angenommen, auch Tom."). An order in
+  which nobody is notified at once is refused (the first tier is always notified at the press). A helper none of whose
+  devices answered its last check is named; a device never checked (a browser without push) is not. With one helper
+  there is nothing to order.
+- **A helper allowed to set the order** (care.configure, "einstellen, wer bei deinen Hilferufen benachrichtigt wird",
+  a scope with no screen until now) opens it from the people they help. The plan now comes with its helpers' names and
+  whether each can be reached.
+- **Changes to the help-request settings are in the person's history** ("Maria hat die Einstellungen für Hilferufe
+  geändert"): the order, the phone fallback and what happens to an unanswered question had left no entry, also when a
+  helper made them. Counts and switches only, no names or numbers.
+- **The notice of a change by someone else is said once**: in development, React's double effects said it twice.
 - **`npm run android:check`** runs on the emulator what can be checked there by itself: backups off, the security
   policy, axe, Help first in focus order, earcon usage, and Do Not Disturb in each mode through real heartbeats (a
   heartbeat never rings, so the phone reports the mode rather than "silenced"). Doze stays with the ntfy app.
@@ -667,5 +700,13 @@ then they stay as built, and nothing here is frozen.
 - **Backup check:** 50 tables, 2314 rows, all equal after the restore; 14 migrations; 23 files.
 - **Push soak, six minutes on the emulator** (a heartbeat a minute, through ntfy and the push stand-in): each one sent
   while the stand-in forwarded was confirmed, median 0.9 s, the slowest 3.7 s.
+- **The browser walk** passed in full three times in a row, the last two through `npm run test:e2e` (2.2 and 2.1 min).
+  Found on the way: the two settings screens above; the change notice said twice; speech in a server voice missing
+  from the debug record.
+- **The order of helpers on the emulator** (a second helper made with the simulated phone on the dev stack, then ended
+  again): hidden with one helper; shown once the second was allowed; "sofort" for both saved as one tier and read
+  back; an order with nobody at once refused ("Mindestens ein Helfer muss sofort benachrichtigt werden."); the history
+  entries; axe found nothing serious on the page. Ending the second helper first left the section showing two; it now
+  follows the page's relationships.
 - **Still open:** the 48-hour push soak on a real phone, and the other checks on real phones (see acceptance.md); the
   ntfy app on the emulator (AN-01, AN-07).

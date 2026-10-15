@@ -5,6 +5,7 @@
  * is said once per session, never silently (Appendix I). With a screen reader, speech stays with the screen reader.
  * Care and system speech never come here: they are always the device's own voice.
  */
+import { record } from '../debug.ts';
 import type { Session } from '../identity/account.ts';
 import { ceremony } from '../identity/ceremony.ts';
 
@@ -96,5 +97,7 @@ export async function speakAs(o: { session: Session; text: string; purpose: 'rep
     return false;
   }
   if (!('segments' in r)) return false;
+  // Kept in the debug record as the device voice's speech is: what the person heard, in whichever voice.
+  record('spoken', { channel: o.purpose, text: o.text });
   return o.player.play(r.segments.map((s) => `${o.session.ref.serverUrl}${s.url}`));
 }

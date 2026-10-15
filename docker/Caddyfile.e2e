@@ -1,0 +1,39 @@
+# The end-to-end stack's single entry: http://localhost:8815 (compose profile e2e; npm run test:e2e). The same routes
+# as docker/Caddyfile, to the e2e processes, plus test mode's clock, and the app from Vite on the host.
+{
+	auto_https off
+}
+
+:8815 {
+	# Test mode only (UCAP_TEST_MODE=1): the clock of each process.
+	handle /__test/assistant/* {
+		reverse_proxy assistant-e2e:8821
+	}
+	handle /__test/* {
+		reverse_proxy core-e2e:8820
+	}
+
+	handle /api/worker/v2/* {
+		reverse_proxy assistant-e2e:8821
+	}
+
+	@assistant path /api/v1/assistant/* /api/v1/speech/* /api/v1/messaging/* /api/v1/ai-admin/*
+	handle @assistant {
+		reverse_proxy assistant-e2e:8821 {
+			flush_interval -1
+		}
+	}
+
+	handle /api/* {
+		reverse_proxy core-e2e:8820
+	}
+
+	handle /healthz {
+		reverse_proxy core-e2e:8820
+	}
+
+	# The app, served by Vite on the host (port 8812), on this origin.
+	handle {
+		reverse_proxy host.docker.internal:8812
+	}
+}

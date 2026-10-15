@@ -4,7 +4,7 @@ coverage/
 playwright-report/
 test-results/
 # End-to-end runs: the browser profiles of the test people (their device keys) and failure traces.
-e2e/.profiles/
+e2e/.media/
 e2e/.results/
 *.log
 .DS_Store

@@ -48,6 +48,14 @@ phone sleeps (measured): use the app.
   someone is coming; only your own words do.
 - When you are done, **mark it resolved**. The person can reopen it ("Ich brauche noch Hilfe") for half an hour.
 
+## Who is alerted when
+
+With "Benachrichtigung bei Hilferufen einstellen": Helfer → the person → **"Benachrichtigung bei Hilferufen
+einstellen"**. For each helper who answers help requests: at once, or after 1, 2, 5 or 10 minutes in which nobody
+accepted. At least one helper is alerted at once. A helper none of whose devices answered its last check is named, so
+you can ask them to fix it. The person sees in their history that you changed it, and can change it back on their
+Helfer page. A helper added later is alerted last until someone places them.
+
 ## Reminders
 
 With "Erinnerungen verwalten": Helfer → "Erinnerungen von …" (the person's name): what, when (once, daily on chosen days, every few

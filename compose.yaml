@@ -160,6 +160,92 @@ services:
       assistant:
         condition: service_healthy
 
+  # The end-to-end stack (npm run test:e2e; docs/plan.md, Appendix G), started only with its profile: its own
+  # database (ucap_e2e, made afresh for each run) and files, test mode (a clock the tests move forward), the AI
+  # engines replaced by stand-ins in the test process (e2e/engines.ts, on the host's 8824), Telegram by
+  # tools/dev/fake-telegram.ts, and the app from Vite on the host, all on one origin: http://localhost:8815.
+  # It shares Postgres and ntfy with the dev stack and never touches its data.
+  core-e2e:
+    <<: *node
+    profiles: [e2e]
+    command: node server/src/core/main.ts
+    secrets: [master_key, pepper, ntfy_token]
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+      - e2e-files:/data/files
+    environment:
+      PORT: "8820"
+      DATABASE_URL: postgres://ucap:ucap@db:5432/ucap_e2e
+      UCAP_TEST_MODE: "1"
+      UCAP_PUBLIC_URL: http://localhost:8815
+      UCAP_SERVER_NAME: UCAP E2E
+      NTFY_PUBLIC_URL: http://localhost:8811
+      NTFY_INTERNAL_URL: http://ntfy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8820/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  assistant-e2e:
+    <<: *node
+    profiles: [e2e]
+    command: node server/src/assistant/main.ts
+    secrets: [master_key, pepper, connectors_token]
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+      - e2e-files:/data/files
+    environment:
+      PORT: "8821"
+      DATABASE_URL: postgres://ucap:ucap@db:5432/ucap_e2e
+      UCAP_TEST_MODE: "1"
+      UCAP_PUBLIC_URL: http://localhost:8815
+      UCAP_SERVER_NAME: UCAP E2E
+      OLLAMA_URL: http://host.docker.internal:8824
+      OLLAMA_MODEL: fake
+      STT_URL: http://host.docker.internal:8824
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8821/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  connectors-e2e:
+    <<: *node
+    profiles: [e2e]
+    command: node tools/dev/fake-telegram.ts
+    secrets: [connectors_token]
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+      - e2e-files:/data/files
+    # The stand-in's sessions last as long as the container.
+    tmpfs:
+      - /data/tdlib
+    environment:
+      UCAP_ASSISTANT_WS: ws://assistant-e2e:8821/internal/connectors
+    ports:
+      - "127.0.0.1:8825:8823"
+
+  caddy-e2e:
+    image: caddy:2.11
+    profiles: [e2e]
+    ports:
+      - "127.0.0.1:8815:8815"
+    volumes:
+      - ./docker/Caddyfile.e2e:/etc/caddy/Caddyfile:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      core-e2e:
+        condition: service_healthy
+      assistant-e2e:
+        condition: service_healthy
+
 # Created once by `npm run setup`, outside the repository; the services refuse to start without them.
 secrets:
   master_key:
@@ -180,6 +266,7 @@ networks:
 volumes:
   pgdata:
   ucap-files:
+  e2e-files:
   ucap-tdlib:
   ntfy-cache:
   node-modules:

@@ -9,6 +9,7 @@ import { createDb } from '../lib/db.ts';
 import { enqueue } from '../lib/jobs.ts';
 import { migrate } from '../lib/migrate.ts';
 import { loadSecrets } from '../lib/secrets.ts';
+import { registerTestRoutes, shiftedClock, testModeOn } from '../lib/test-mode.ts';
 import { buildCore } from './app.ts';
 
 const config = loadConfig('core');
@@ -16,10 +17,14 @@ const secrets = loadSecrets({ connectors: false });
 const db = createDb(config.databaseUrl, { name: 'ucap-core', max: 10 });
 await migrate(db, (m) => console.log(`core: ${m}`));
 
-const core = await buildCore({ config, db, clock: systemClock, secrets });
-await enqueue(db, { queue: 'core', kind: 'events.prune', key: 'events.prune', runAt: Date.now() + 60_000, onConflict: 'keep' });
-await enqueue(db, { queue: 'core', kind: 'heartbeat.round', key: 'heartbeat.round', runAt: Date.now() + 120_000, onConflict: 'keep' });
-await enqueue(db, { queue: 'core', kind: 'reminders.materialise', key: 'reminders.materialise', runAt: Date.now() + 30_000, onConflict: 'keep' });
+// The end-to-end stack moves the clock forward (src/lib/test-mode.ts); everywhere else it is the system's.
+const shifted = testModeOn() ? shiftedClock() : null;
+const clock = shifted ?? systemClock;
+const core = await buildCore({ config, db, clock, secrets });
+if (shifted) registerTestRoutes(core.app, { prefix: '/__test', clock: shifted, wake: () => core.jobs.wake() });
+await enqueue(db, { queue: 'core', kind: 'events.prune', key: 'events.prune', runAt: clock() + 60_000, onConflict: 'keep' });
+await enqueue(db, { queue: 'core', kind: 'heartbeat.round', key: 'heartbeat.round', runAt: clock() + 120_000, onConflict: 'keep' });
+await enqueue(db, { queue: 'core', kind: 'reminders.materialise', key: 'reminders.materialise', runAt: clock() + 30_000, onConflict: 'keep' });
 await core.app.listen({ host: '0.0.0.0', port: config.port });
 await core.start();
 console.log(`core: listening on :${config.port}`);

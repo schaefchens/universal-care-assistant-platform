@@ -25,7 +25,7 @@ docker compose up -d --wait       # db :55440, ntfy :8811, caddy :8810, core :88
 npm test                          # vitest: herde-project, server, tools (needs the db service)
 npm run typecheck
 npm run test:docker               # the same suite inside the image
-npm run test:e2e                  # Playwright: a person and a helper in two browsers, against the stack (Vite on 8812)
+npm run test:e2e                  # the acceptance script in browsers, on the e2e stack (made afresh; UCAP_E2E_KEEP=1 keeps it)
 npm run android:install           # build and install the app on the emulator; npm run android:check checks it there
 npm run backup:check              # backup, restore into a scratch database, compare every table
 docker compose logs -f core       # core restarts on save (node --watch); connectors: docker compose restart connectors
@@ -41,7 +41,8 @@ services/stt-mlx/run.sh           # native whisper on 127.0.0.1:8813 (Docker can
 | 8812 | Vite |
 | 8813 | stt-mlx |
 | 8814 | Caddy TLS |
-| 8815 | e2e |
+| 8815 | e2e stack (its entry; compose profile `e2e`) |
+| 8824 / 8825 | e2e: the engines' stand-ins (in the test process) / the Telegram stand-in's control |
 | 8816 / 8817 | core / assistant (debug) |
 | 55440 | Postgres |
 
@@ -111,7 +112,10 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - A setting that arrives after a timer started (Android's recommended timeout) must restart the timer.
 - End-to-end tests: a link with only a new `#…` does not reload the app, so an invitation link is opened after
   `about:blank`; a new help alert takes the helper's whole screen; wait for a list to load before deciding from it.
-  The e2e people keep their device keys in `e2e/.profiles` (persistent browser profiles), so accounts are made once.
+  A reload empties the app's debug record: `listen(page)` keeps what was said in the test. A React Aria radio's label
+  takes the press (`check()` hits the hidden input): `setChoice`/`choose`. Moving the servers' clock moves Telegram's
+  stand-in too (a message stamped with the real time looks hours old and is not announced). Enter on the twelfth
+  recovery word submits the words. Speech in a server voice is in the debug record as the device voice's is.
 - TalkBack gestures on the emulator: `adb emu event mouse <x> <y> 0 1|0` is a real finger to TalkBack; `sendevent` is
   refused on this image.
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.

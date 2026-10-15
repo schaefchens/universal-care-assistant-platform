@@ -5,7 +5,7 @@
  */
 import Type from 'typebox';
 import { sql } from 'kysely';
-import { type Plan, effectivePlan, savePlan } from '../../domain/care/plan.ts';
+import { type Plan, effectivePlan, planHelpers, savePlan } from '../../domain/care/plan.ts';
 import type { Heartbeats } from '../../domain/care/heartbeat.ts';
 import type { Push } from '../../domain/care/push.ts';
 import type { CareService, QuickReply, Source } from '../../domain/care/service.ts';
@@ -119,10 +119,11 @@ export function registerCareRoutes(
 
   // The escalation plan: the person, or a helper with care.configure.
   const mayPlan = async (userId: string, personId: string) => userId === personId || (await people.can(userId, 'care.configure', personId));
-  app.get('/api/v1/people/:id/escalation-plan', { preHandler: requireAuth, schema: { params: ById } }, async (req): Promise<Plan> => {
+  // With the helpers it names, so an editor can say who is who and warn about anyone it cannot reach.
+  app.get('/api/v1/people/:id/escalation-plan', { preHandler: requireAuth, schema: { params: ById } }, async (req): Promise<Plan & { helpers: Awaited<ReturnType<typeof planHelpers>> }> => {
     const personId = (req.params as { id: string }).id;
     if (!(await mayPlan(auth(req).userId, personId))) throw new AppError('not_found');
-    return effectivePlan(o.db, personId);
+    return { ...(await effectivePlan(o.db, personId)), helpers: await planHelpers(o.db, personId) };
   });
   app.put(
     '/api/v1/people/:id/escalation-plan',
