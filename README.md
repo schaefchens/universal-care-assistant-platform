@@ -88,4 +88,5 @@ documented test code (`PHONE_CODE_INVALID`; docs/decisions.md, S10).
 
 ## Licence
 
-Not decided yet. `packages/herde-project` is Apache-2.0 (see [NOTICE](NOTICE)).
+GNU Affero General Public License, version 3 or later ([LICENSE](LICENSE)). `packages/herde-project` is Apache-2.0,
+and the app's font is under the SIL Open Font License (see [NOTICE](NOTICE)).

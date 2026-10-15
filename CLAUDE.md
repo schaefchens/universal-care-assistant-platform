@@ -15,6 +15,9 @@ UCAP is a self-hosted assistive and care platform for disabled people. **CONCEPT
 - **No content in logs:** no transcripts, message texts, recovery words, tokens or request bodies.
 - **The Capacitor app is first-class; web/PWA is best effort.** Verify client features on the Android emulator and a real device.
 - **Per-person settings over fixed defaults** for voices, themes, colours and gestures.
+- **Licence: AGPL-3.0-or-later** (LICENSE, NOTICE). A new dependency needs a compatible licence: MIT, BSD, ISC,
+  Apache-2.0, MPL-2.0, LGPL or GPL-3.0. Never GPL-2.0-only, non-commercial or proprietary code in the same program.
+  Name bundled third-party parts (fonts, data) in NOTICE.
 
 ## Commands
 

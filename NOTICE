@@ -1,6 +1,25 @@
 UCAP — Universal (AI) Care Assistant & Platform
+Copyright (C) 2026 Christoph Scharf
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License in LICENSE.
+
+Parts under other licences:
 
 packages/herde-project
   The project side of the herde worker protocol v2, ported from ARCHE (schaefchens) to TypeScript and Postgres.
   Licensed under the Apache License, Version 2.0. Vendored from lookup/code/herde-project on 2026-10-14;
   the only changes are noted in packages/herde-project/README.md.
+
+Atkinson Hyperlegible Next, the app's font (bundled through @fontsource-variable/atkinson-hyperlegible-next)
+  Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors
+  (https://github.com/googlefonts/atkinson-hyperlegible-next). Licensed under the SIL Open Font License, Version 1.1.
+
+packages/identity/wordlists, the German recovery words
+  Chosen by UCAP's rules (tools/wordlist) from candidate pools: the German lists proposed for BIP39 (bitcoin/bips
+  PR #721, Cryptocalc) and dys2p's wordlists-de (Unlicense, CC0 or BSD-3), each word checked against Wiktionary's
+  German nouns. The pools and their digests are listed in the list's own file.
+
+Every other dependency keeps its own licence, stated in its package.

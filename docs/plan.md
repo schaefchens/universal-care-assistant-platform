@@ -340,7 +340,7 @@ Commands, set up in S0:
   - switching Tailscale on;
   - joining herde to UCAP (you edit `~/.config/herde/config.toml`);
   - providing the real test devices.
-- **Repository licence:** to be decided.
+- **Repository licence:** AGPL-3.0-or-later (the owner, 2026-10-15; decisions.md, M3).
 
 ---
 

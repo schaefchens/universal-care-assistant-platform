@@ -850,3 +850,8 @@ The plan: [plan-m3.md](plan-m3.md).
    automated runs against it ("we might connect it, but not do automated testing on it"). Every automated test uses
    the stand-in.
 7. **The new third-party code is allowed** (plan-m3.md's list: "ok to new 3rd party code, we need those").
+8. **The repository's licence is AGPL-3.0-or-later**, settling plan.md's open point ("Repository licence: to be
+   decided").
+   - `packages/herde-project` stays Apache-2.0, as vendored.
+   - The font stays under the SIL Open Font License (NOTICE).
+   - It combines with Baileys' `libsignal` (GPL-3.0), so the WhatsApp connector needs no licence of its own.

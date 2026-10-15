@@ -2,6 +2,7 @@
   "name": "@ucap/shared",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "description": "Contracts shared by UCAP's server and app: schemas, scopes, states, message catalogs, ids.",
   "exports": {

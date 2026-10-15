@@ -136,7 +136,6 @@ behaviour changes.
 - **A connector process per service:** Telegram stays in `connectors`; WhatsApp and email get processes of their own.
   - Each dials the assistant with the connectors token and names its service. The hub keeps one per service: a crash
     or a restart of one never ends another.
-  - WhatsApp's GPL-3.0 code stays in a process and package of its own.
 - **Device connections** (SMS, previews) run on the person's phone. Native code forwards what came in with the
   device's key (as care commands are signed), through the native outbox, so it works with the app closed.
   - A send confirmed on any of the person's devices reaches the phone in the realtime channel, or as a push that
@@ -247,9 +246,8 @@ owner's own account. What needs a real phone with a SIM (MMS from a carrier, RCS
   - 7.0 is a release candidate, and v8 will change the key store (a migration).
   - When WhatsApp Web's version moves, connections fail with 405 errors until Baileys is updated.
   - So it is pinned exactly and runs in its own process and volume, and operator.md gets an update path.
-- **Licence.** Baileys is MIT, but its `libsignal` is GPL-3.0. Running it is fine; distributing images with it touches
-  the repository's licence, which is still open (plan.md). Its own process and package keep the boundary clear until
-  the owner decides.
+- **Licence:** settled. The repository is AGPL-3.0-or-later (the owner, 2026-10-15), which combines with Baileys' MIT
+  and its `libsignal`'s GPL-3.0; NOTICE names them once K2 adds them.
 - **The SMS role:**
   - RCS chats most likely stop while UCAP is the SMS app.
   - Play allows SMS permissions to the default SMS app, with a declaration and a video of the core use.
