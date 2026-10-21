@@ -1115,6 +1115,8 @@ function reasonKey(error: string | null, service: Service): string {
   if (error === 'signed_out') return 'signedOut';
   if (error === 'tg_403') return 'forbidden';
   if (error === 'tg_400') return 'refused';
+  // WhatsApp's 463: the account may not start conversations for now (an account restriction, docs/spikes/m3.md, A).
+  if (error === 'wa_463') return 'restricted';
   return 'service';
 }
 

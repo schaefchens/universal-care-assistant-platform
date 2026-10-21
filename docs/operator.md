@@ -10,6 +10,7 @@ For whoever runs UCAP for a person, a household or a care organisation. The plan
 | **core** | identity and devices, people and permissions, help requests and their alarms, reminders, notes, device configurations | Docker |
 | **assistant** | voice turns, language models, speech, the person's messages, AI administration, herde | Docker |
 | **connectors** | TDLib for Telegram; no database credentials, talks only to the assistant | Docker |
+| **whatsapp** | Baileys for WhatsApp, the same way: no database credentials; each person's keys sealed on its own volume `ucap-whatsapp` | Docker |
 | **db** | Postgres 17 | Docker, named volume `pgdata` |
 | **ntfy** | the push server Android devices listen to (UnifiedPush) | Docker |
 | **caddy** | the one address everything uses | Docker |
@@ -74,6 +75,26 @@ device (Settings → Telegram): phone number and code, or a QR code scanned with
 no access to anyone's messages. Restart the connectors process by hand after an update
 (`docker compose restart connectors`): TDLib holds its databases open.
 
+### WhatsApp
+
+WhatsApp allows no programs of others: UCAP links itself to a person's WhatsApp as a further device, the way WhatsApp
+Web does, through Baileys, and **Meta may block that person's number for it**, even when they write little (it
+happened to low-volume accounts in 2025). So it is off until an administrator allows it, under KI und Stimmen
+verwalten → WhatsApp, after reading the risk; each person hears the risk again and agrees before they link
+(Settings → Nachrichtendienste → WhatsApp). They give their number and type the 8 characters UCAP shows and says into
+WhatsApp on their phone (Linked devices → "Link with phone number instead"); a code lives about three and a half
+minutes. On the phone UCAP is listed as "Chrome (Mac OS)": with a name of its own WhatsApp refused the code.
+
+UCAP keeps WhatsApp at a person's pace: never shown online, no statuses, no link previews fetched, sends one at a
+time. "Gesendet" comes when WhatsApp's server acknowledged the message.
+
+- **Updates:** Baileys is pinned exactly (`connectors/package.json`). When WhatsApp moves on, connections fail (a 405,
+  or "Verbindung hat nicht geklappt" for everyone) until Baileys is updated: update it, run the tests, then
+  `docker compose restart whatsapp`. The process fetches WhatsApp Web's current version once a day by itself.
+- **Restarts** are by hand (`docker compose restart whatsapp`), never on every change: each one is a new connection.
+- **Disconnecting** (by the person) removes UCAP from their linked devices and deletes its keys and copies; a person
+  who unlinks it on the phone is shown "Neu verbinden".
+
 ### herde
 
 KI und Stimmen verwalten → herde → invitation: the page shows `herde join <address> <code>`. On the machine that runs
@@ -106,7 +127,8 @@ node tools/backup/backup.ts restore <dir> --into <new database> [--files]
 
 A restore goes into a new database, never over the live one; point `DATABASE_URL` at it once checked. Without the
 master key the sealed values cannot be opened after a restore; the secrets never change, so one safe copy is enough.
-Add `--with-tdlib` with the connectors stopped to keep the Telegram sessions.
+Add `--with-tdlib` with the connectors stopped to keep the Telegram sessions. WhatsApp's keys (the volume
+`ucap-whatsapp`) are not in a backup yet (docs/plan-m3.md, K9): restored without them, each person links WhatsApp again.
 
 ## What is kept, and for how long
 

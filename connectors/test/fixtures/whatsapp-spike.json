@@ -1,0 +1,3965 @@
+{
+ "recorded": "2026-10-21",
+ "baileys": "7.0.0-rc14",
+ "note": "Spike A (docs/spikes/m3.md): what Baileys reported for the owner's own account, stripped as it was recorded (connectors/spikes/whatsapp-check.ts): every text and name replaced by its length (‹text 12›), every number, LID, group and message id by a stand-in (the same everywhere), bytes by their size ({\"$bytes\": n}), URLs by ‹url›, times moved by whole days. 9999999999990 is the owner's number, 999999999999991@lid their LID.",
+ "link": {
+  "lid-mapping-update": [
+   {
+    "lid": "99999999999992@lid",
+    "pn": "999999999993@s.whatsapp.net"
+   }
+  ],
+  "contact-named": [
+   {
+    "id": "999999999993@s.whatsapp.net",
+    "name": "‹text 10›",
+    "lid": "99999999999992@lid",
+    "phoneNumber": "999999999993@s.whatsapp.net"
+   },
+   {
+    "id": "999999999994@s.whatsapp.net",
+    "name": "‹text 11›",
+    "lid": "99999999999995@lid",
+    "phoneNumber": "999999999994@s.whatsapp.net"
+   }
+  ],
+  "chat-pn": [
+   {
+    "participant": [],
+    "id": "999999999996@s.whatsapp.net",
+    "unreadCount": 0,
+    "readOnly": false,
+    "ephemeralExpiration": 0,
+    "ephemeralSettingTimestamp": 0,
+    "conversationTimestamp": 1700074705,
+    "notSpam": true,
+    "archived": false,
+    "disappearingMode": {
+     "initiator": 0,
+     "trigger": 1,
+     "initiatedByMe": false
+    },
+    "unreadMentionCount": 0,
+    "tcToken": {
+     "$bytes": 11
+    },
+    "tcTokenTimestamp": 1699284289,
+    "contactPrimaryIdentityKey": {
+     "$bytes": 32
+    },
+    "tcTokenSenderTimestamp": 1699281803,
+    "terminated": false,
+    "isDefaultSubgroup": false,
+    "shareOwnPn": false,
+    "locked": false,
+    "accountLid": "999999999999997@lid",
+    "limitSharing": false,
+    "limitSharingSettingTimestamp": 0,
+    "limitSharingTrigger": 0,
+    "limitSharingInitiatedByMe": false,
+    "lastMessageRecvTimestamp": 1700073577
+   },
+   {
+    "participant": [],
+    "id": "999999999998@s.whatsapp.net",
+    "unreadCount": 0,
+    "readOnly": false,
+    "ephemeralExpiration": 0,
+    "ephemeralSettingTimestamp": 0,
+    "conversationTimestamp": 1700072179,
+    "notSpam": true,
+    "archived": false,
+    "disappearingMode": {
+     "initiator": 0,
+     "trigger": 1,
+     "initiatedByMe": false
+    },
+    "unreadMentionCount": 0,
+    "tcToken": {
+     "$bytes": 11
+    },
+    "tcTokenTimestamp": 1699555070,
+    "contactPrimaryIdentityKey": {
+     "$bytes": 32
+    },
+    "tcTokenSenderTimestamp": 1699116861,
+    "terminated": false,
+    "isDefaultSubgroup": false,
+    "shareOwnPn": false,
+    "locked": false,
+    "accountLid": "999999999999999@lid",
+    "limitSharing": false,
+    "limitSharingSettingTimestamp": 0,
+    "limitSharingTrigger": 0,
+    "limitSharingInitiatedByMe": false,
+    "lastMessageRecvTimestamp": 1700072078
+   }
+  ],
+  "chat-lid": [
+   {
+    "participant": [],
+    "id": "999999999999910@lid",
+    "unreadCount": 0,
+    "readOnly": false,
+    "ephemeralExpiration": 0,
+    "ephemeralSettingTimestamp": 0,
+    "conversationTimestamp": 1700070286,
+    "notSpam": true,
+    "archived": false,
+    "disappearingMode": {
+     "initiator": 0,
+     "trigger": 1,
+     "initiatedByMe": false
+    },
+    "unreadMentionCount": 0,
+    "tcToken": {
+     "$bytes": 11
+    },
+    "tcTokenTimestamp": 1699808533,
+    "contactPrimaryIdentityKey": {
+     "$bytes": 32
+    },
+    "tcTokenSenderTimestamp": 1699808092,
+    "terminated": false,
+    "isDefaultSubgroup": false,
+    "displayName": "‹text 13›",
+    "shareOwnPn": false,
+    "locked": false,
+    "limitSharing": false,
+    "limitSharingSettingTimestamp": 0,
+    "limitSharingTrigger": 0,
+    "limitSharingInitiatedByMe": false,
+    "lastMessageRecvTimestamp": 1700069710,
+    "pinned": null
+   },
+   {
+    "participant": [],
+    "id": "999999999999913@lid",
+    "unreadCount": 0,
+    "readOnly": false,
+    "ephemeralExpiration": 0,
+    "ephemeralSettingTimestamp": 0,
+    "conversationTimestamp": 1700068796,
+    "notSpam": true,
+    "archived": false,
+    "disappearingMode": {
+     "initiator": 0,
+     "trigger": 1,
+     "initiatedByMe": false
+    },
+    "unreadMentionCount": 0,
+    "tcToken": {
+     "$bytes": 11
+    },
+    "tcTokenTimestamp": 1699504052,
+    "contactPrimaryIdentityKey": {
+     "$bytes": 32
+    },
+    "tcTokenSenderTimestamp": 1699117336,
+    "terminated": false,
+    "isDefaultSubgroup": false,
+    "shareOwnPn": false,
+    "locked": false,
+    "limitSharing": false,
+    "limitSharingSettingTimestamp": 0,
+    "limitSharingTrigger": 0,
+    "limitSharingInitiatedByMe": false,
+    "lastMessageRecvTimestamp": 1700068796
+   }
+  ],
+  "chat-group": [
+   {
+    "participant": [],
+    "id": "999999999999999914@g.us",
+    "unreadCount": 0,
+    "readOnly": false,
+    "ephemeralExpiration": 0,
+    "ephemeralSettingTimestamp": 0,
+    "conversationTimestamp": 1699988846,
+    "name": "‹text 19›",
+    "pHash": "‹str 8›",
+    "notSpam": true,
+    "archived": false,
+    "disappearingMode": {
+     "initiator": 0,
+     "trigger": 1,
+     "initiatedByMe": false
+    },
+    "unreadMentionCount": 0,
+    "suspended": false,
+    "terminated": false,
+    "createdAt": 1620589278,
+    "createdBy": "999999999999915@lid",
+    "description": "‹text 43›",
+    "support": false,
+    "isDefaultSubgroup": false,
+    "parentGroupId": "999999999999999916@g.us",
+    "locked": false,
+    "limitSharing": true,
+    "limitSharingSettingTimestamp": 1671613730833,
+    "limitSharingTrigger": 3,
+    "limitSharingInitiatedByMe": false,
+    "lastMessageRecvTimestamp": 1699988846
+   }
+  ],
+  "contact-unnamed": [
+   {
+    "id": "999999999996@s.whatsapp.net",
+    "lid": "999999999999997@lid"
+   },
+   {
+    "id": "999999999998@s.whatsapp.net",
+    "lid": "999999999999999@lid"
+   }
+  ],
+  "history-audioMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1700074705,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXXX1"
+    },
+    "message": {
+     "audioMessage": {
+      "url": "‹url›",
+      "mimetype": "audio/ogg; codecs=opus",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 11220,
+      "seconds": 5,
+      "ptt": true,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1700074691,
+      "streamingSidecar": {
+       "$bytes": 10
+      },
+      "waveform": {
+       "$bytes": 64
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1700074705,
+    "status": 3,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999997@lid",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXXX2"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1700074689111
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX3"
+    },
+    "message": {
+     "audioMessage": {
+      "url": "‹url›",
+      "mimetype": "audio/ogg; codecs=opus",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 134962,
+      "seconds": 62,
+      "ptt": true,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1700073516,
+      "streamingSidecar": {
+       "$bytes": 0
+      },
+      "waveform": {
+       "$bytes": 64
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1700073577,
+    "status": 5,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-conversation": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1699441432,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999997@lid",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX4"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1699442009230
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXXX5"
+    },
+    "message": {
+     "conversation": "‹text 74›",
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699441431,
+    "status": 3,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1699435481,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX10"
+    },
+    "message": {
+     "conversation": "‹text 25›",
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699435481,
+    "status": 3,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-extendedTextMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999997@lid",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXXX6"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1699448846172
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX7"
+    },
+    "message": {
+     "extendedTextMessage": {
+      "endCardTiles": [],
+      "text": "‹text 141›",
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "stanzaId": "XXXXXXXXXXXXXXXXXXX8",
+       "participant": "999999999999991@lid",
+       "quotedMessage": {
+        "conversation": "‹text 375›"
+       },
+       "quotedType": 0
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699436856,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX9"
+    },
+    "message": {
+     "extendedTextMessage": {
+      "endCardTiles": [],
+      "text": "‹text 2›",
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "stanzaId": "XXXXXXXXXXXXXXXXXX10",
+       "participant": "999999999999991@lid",
+       "quotedMessage": {
+        "conversation": "‹text 25›"
+       },
+       "quotedType": 0
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699436701,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-protocolMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1699433456,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX11"
+    },
+    "message": {
+     "protocolMessage": {
+      "key": {
+       "remoteJid": "999999999996@s.whatsapp.net",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXX12"
+      },
+      "type": 14,
+      "editedMessage": {
+       "extendedTextMessage": {
+        "endCardTiles": [],
+        "text": "‹text 506›",
+        "contextInfo": {
+         "mentionedJid": [],
+         "groupMentions": [],
+         "statusAttributions": [],
+         "stanzaId": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX13",
+         "participant": "999999999999997@lid",
+         "quotedMessage": {
+          "conversation": "‹text 842›"
+         },
+         "quotedType": 0
+        }
+       }
+      },
+      "timestampMs": 1699433455183
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699433163,
+    "status": 3,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1699433085,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX14"
+    },
+    "message": {
+     "protocolMessage": {
+      "key": {
+       "remoteJid": "999999999996@s.whatsapp.net",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXX15"
+      },
+      "type": 14,
+      "editedMessage": {
+       "conversation": "‹text 353›"
+      },
+      "timestampMs": 1699433084394
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699432998,
+    "status": 3,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-extendedTextMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX16",
+     "participant": "999999999999997@lid"
+    },
+    "message": {
+     "extendedTextMessage": {
+      "endCardTiles": [],
+      "text": "‹text 122›",
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "stanzaId": "XXXXXXXXXXXXXXXXXX17",
+       "participant": "999999999999991@lid",
+       "quotedMessage": {
+        "conversation": "‹text 97›"
+       },
+       "expiration": 9999917,
+       "disappearingMode": {
+        "initiator": 0,
+        "trigger": 3,
+        "initiatedByMe": false
+       },
+       "quotedType": 0
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": true
+      }
+     }
+    },
+    "messageTimestamp": 1700069357,
+    "participant": "999999999999997@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX18",
+     "participant": "999999999999918@lid"
+    },
+    "message": {
+     "extendedTextMessage": {
+      "endCardTiles": [],
+      "text": "‹text 51›",
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "expiration": 9999917,
+       "disappearingMode": {
+        "initiator": 0,
+        "trigger": 3,
+        "initiatedByMe": false
+       }
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": true
+      }
+     }
+    },
+    "messageTimestamp": 1700062557,
+    "participant": "999999999999918@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-protocolMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999991:5@lid",
+       "999999999999991:4@lid"
+      ],
+      "userJid": "999999999999991@lid",
+      "receiptTimestamp": 1699813140,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [
+       "999999999999912:0@lid"
+      ],
+      "deliveredDeviceJid": [],
+      "userJid": "999999999999912@lid",
+      "receiptTimestamp": 0,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999919:0@lid"
+      ],
+      "userJid": "999999999999919@lid",
+      "receiptTimestamp": 1699813841,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1699813140,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999918:0@lid"
+      ],
+      "userJid": "999999999999918@lid",
+      "receiptTimestamp": 1699813140,
+      "readTimestamp": 1699813184,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "99999999999920:0@lid"
+      ],
+      "userJid": "99999999999920@lid",
+      "receiptTimestamp": 1699813140,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX19"
+    },
+    "message": {
+     "protocolMessage": {
+      "key": {
+       "remoteJid": "999999999999999911@g.us",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXX20"
+      },
+      "type": 14,
+      "editedMessage": {
+       "extendedTextMessage": {
+        "endCardTiles": [],
+        "text": "‹text 104›",
+        "contextInfo": {
+         "mentionedJid": [],
+         "groupMentions": [],
+         "statusAttributions": [],
+         "expiration": 9999917,
+         "disappearingMode": {
+          "initiator": 0,
+          "trigger": 3,
+          "initiatedByMe": false
+         }
+        }
+       }
+      },
+      "timestampMs": 1699813138565
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": false
+      }
+     }
+    },
+    "messageTimestamp": 1699813126,
+    "status": 3,
+    "messageC2STimestamp": 1699813127,
+    "ephemeralStartTimestamp": 1699813127,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX21",
+     "participant": "999999999999919@lid"
+    },
+    "message": {
+     "protocolMessage": {
+      "key": {
+       "remoteJid": "999999999999999911@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX22",
+       "participant": "999999999999919@lid"
+      },
+      "type": 14,
+      "editedMessage": {
+       "extendedTextMessage": {
+        "endCardTiles": [],
+        "text": "‹text 63›",
+        "contextInfo": {
+         "mentionedJid": [],
+         "groupMentions": [],
+         "statusAttributions": [],
+         "stanzaId": "XXXXXXXXXXXXXXXXXX23",
+         "participant": "999999999999991@lid",
+         "quotedMessage": {
+          "extendedTextMessage": {
+           "endCardTiles": [],
+           "text": "‹text 85›",
+           "matchedText": "‹text 48›",
+           "description": "‹text 69›",
+           "title": "‹text 82›",
+           "textArgb": 0,
+           "backgroundArgb": 0,
+           "font": 0,
+           "previewType": 1,
+           "jpegThumbnail": {
+            "$bytes": 4319
+           },
+           "thumbnailDirectPath": "‹url›",
+           "thumbnailSha256": {
+            "$bytes": 32
+           },
+           "thumbnailEncSha256": {
+            "$bytes": 32
+           },
+           "mediaKey": {
+            "$bytes": 32
+           },
+           "mediaKeyTimestamp": 1699337937,
+           "thumbnailHeight": 576,
+           "thumbnailWidth": 1024,
+           "inviteLinkGroupTypeV2": 0,
+           "linkPreviewMetadata": {
+            "fbExperimentId": 0
+           }
+          }
+         },
+         "expiration": 9999917,
+         "disappearingMode": {
+          "initiator": 0,
+          "trigger": 3,
+          "initiatedByMe": false
+         },
+         "quotedType": 0
+        }
+       }
+      },
+      "timestampMs": 1699370925455
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": true
+      }
+     }
+    },
+    "messageTimestamp": 1699370906,
+    "participant": "999999999999919@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-imageMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999921:23@lid",
+       "999999999999921:0@lid"
+      ],
+      "userJid": "999999999999921@lid",
+      "receiptTimestamp": 1700061306,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999921@lid",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX24"
+    },
+    "message": {
+     "imageMessage": {
+      "interactiveAnnotations": [],
+      "scanLengths": [
+       13571,
+       91049,
+       39175,
+       58547
+      ],
+      "annotations": [],
+      "url": "‹url›",
+      "mimetype": "image/jpeg",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 202344,
+      "height": 1600,
+      "width": 1091,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1700061304,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "disappearingMode": {
+        "initiator": 0
+       },
+       "statusSourceType": 0
+      },
+      "firstScanSidecar": {
+       "$bytes": 10
+      },
+      "firstScanLength": 13571,
+      "scansSidecar": {
+       "$bytes": 40
+      },
+      "midQualityFileSha256": {
+       "$bytes": 32
+      },
+      "imageSourceType": 0
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1700061306,
+    "status": 3,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [
+       "999999999999922:15@lid",
+       "999999999999922:14@lid"
+      ],
+      "deliveredDeviceJid": [
+       "999999999999922:0@lid"
+      ],
+      "userJid": "999999999999922@lid",
+      "receiptTimestamp": 1699978045,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999991:5@lid",
+       "999999999999991:4@lid"
+      ],
+      "userJid": "999999999999991@lid",
+      "receiptTimestamp": 1699978045,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999922@lid",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX25"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "messageAssociation": {
+       "associationType": 10,
+       "parentMessageKey": {
+        "remoteJid": "999999999999922@lid",
+        "fromMe": true,
+        "id": "XXXXXXXXXXXXXXXXXX26"
+       }
+      }
+     },
+     "associatedChildMessage": {
+      "message": {
+       "imageMessage": {
+        "interactiveAnnotations": [],
+        "scanLengths": [
+         85828,
+         119886,
+         702119,
+         762233
+        ],
+        "annotations": [],
+        "url": "‹url›",
+        "mimetype": "image/jpeg",
+        "fileSha256": {
+         "$bytes": 32
+        },
+        "fileLength": 1670068,
+        "height": 2160,
+        "width": 3840,
+        "mediaKey": {
+         "$bytes": 32
+        },
+        "fileEncSha256": {
+         "$bytes": 32
+        },
+        "directPath": "‹url›",
+        "mediaKeyTimestamp": 1699978042,
+        "jpegThumbnail": {
+         "$bytes": 2036
+        },
+        "contextInfo": {
+         "mentionedJid": [],
+         "groupMentions": [],
+         "statusAttributions": [],
+         "pairedMediaType": 4,
+         "statusSourceType": 0
+        },
+        "firstScanSidecar": {
+         "$bytes": 10
+        },
+        "firstScanLength": 85828,
+        "scansSidecar": {
+         "$bytes": 40
+        },
+        "midQualityFileSha256": {
+         "$bytes": 32
+        },
+        "imageSourceType": 0
+       }
+      }
+     }
+    },
+    "messageTimestamp": 1699978042,
+    "status": 3,
+    "messageC2STimestamp": 1699978044,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-videoMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "9999999999923@lid",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXX27"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1698572719332
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "9999999999924@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX28"
+    },
+    "message": {
+     "videoMessage": {
+      "interactiveAnnotations": [],
+      "annotations": [],
+      "processedVideos": [],
+      "url": "‹url›",
+      "mimetype": "video/mp4",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 1154072,
+      "seconds": 5,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "height": 1024,
+      "width": 576,
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1698572618,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "expiration": 0,
+       "ephemeralSettingTimestamp": 1677432848,
+       "disappearingMode": {
+        "initiator": 0,
+        "trigger": 1,
+        "initiatedByMe": true
+       }
+      },
+      "streamingSidecar": {
+       "$bytes": 0
+      },
+      "accessibilityLabel": "",
+      "metadataUrl": "",
+      "videoSourceType": 0
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1698572627,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999991:5@lid",
+       "999999999999991:4@lid"
+      ],
+      "userJid": "999999999999991@lid",
+      "receiptTimestamp": 1699533554,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999919:0@lid"
+      ],
+      "userJid": "999999999999919@lid",
+      "receiptTimestamp": 1699533578,
+      "readTimestamp": 1699556816,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999919@lid",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX46"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1699556848207
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "9999999999933@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX47"
+    },
+    "message": {
+     "videoMessage": {
+      "interactiveAnnotations": [],
+      "annotations": [],
+      "processedVideos": [],
+      "url": "‹url›",
+      "mimetype": "video/mp4",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 2571249,
+      "seconds": 15,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "height": 576,
+      "width": 576,
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1699533071,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "forwardingScore": 1,
+       "isForwarded": true,
+       "pairedMediaType": 0
+      },
+      "streamingSidecar": {
+       "$bytes": 0
+      },
+      "accessibilityLabel": "",
+      "metadataUrl": "",
+      "videoSourceType": 0
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699533553,
+    "status": 4,
+    "messageC2STimestamp": 1699533554,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-stub": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999925@lid",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX29"
+    },
+    "messageTimestamp": 1699948629,
+    "messageStubType": 39,
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [],
+      "userJid": "999999999999991@lid",
+      "receiptTimestamp": 1684671277,
+      "readTimestamp": 1684671277,
+      "playedTimestamp": 1684671277
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "9999999999990@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX40"
+    },
+    "messageTimestamp": 1684671277,
+    "messageStubType": 39,
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-stub-group": [
+   {
+    "messageStubParameters": [
+     "999999999999999926@g.us",
+     "‹text 24›"
+    ],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999916@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX30",
+     "participant": "999999999999915@lid"
+    },
+    "messageTimestamp": 1693694092,
+    "participant": "999999999999915@lid",
+    "messageStubType": 136,
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [
+     "999999999999999927@g.us",
+     "‹text 31›"
+    ],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999916@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX31",
+     "participant": "999999999999915@lid"
+    },
+    "messageTimestamp": 1682979175,
+    "participant": "999999999999915@lid",
+    "messageStubType": 136,
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-conversation-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999928@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX32",
+       "participant": "999999999999999@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1699965631561,
+      "unread": true
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999928@g.us",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX33"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1699957320510
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999928@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX34",
+     "participant": "999999999999929@lid"
+    },
+    "message": {
+     "conversation": "‹text 222›",
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699954225,
+    "participant": "999999999999929@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999999:0@lid",
+       "999999999999999:1@lid"
+      ],
+      "userJid": "999999999999999@lid",
+      "receiptTimestamp": 1699945268,
+      "readTimestamp": 1699945426,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999929:11@lid",
+       "999999999999929:0@lid"
+      ],
+      "userJid": "999999999999929@lid",
+      "receiptTimestamp": 1699945270,
+      "readTimestamp": 1699954052,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999928@g.us",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX35"
+    },
+    "message": {
+     "conversation": "‹text 192›",
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699945268,
+    "status": 4,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-videoMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999928@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX36",
+       "participant": "999999999999999@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1699728106931
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999928@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX37",
+     "participant": "999999999999929@lid"
+    },
+    "message": {
+     "videoMessage": {
+      "interactiveAnnotations": [],
+      "annotations": [],
+      "processedVideos": [],
+      "url": "‹url›",
+      "mimetype": "video/mp4",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 1039480,
+      "seconds": 8,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "height": 1024,
+      "width": 576,
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1699727161,
+      "streamingSidecar": {
+       "$bytes": 0
+      },
+      "accessibilityLabel": "",
+      "metadataUrl": "",
+      "videoSourceType": 0
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699727163,
+    "participant": "999999999999929@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999928@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX38",
+       "participant": "999999999999999@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1699638882740
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999928@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX39",
+     "participant": "999999999999929@lid"
+    },
+    "message": {
+     "videoMessage": {
+      "interactiveAnnotations": [],
+      "annotations": [],
+      "processedVideos": [],
+      "url": "‹url›",
+      "mimetype": "video/mp4",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 10595284,
+      "seconds": 90,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "height": 1024,
+      "width": 576,
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1699638694,
+      "streamingSidecar": {
+       "$bytes": 0
+      },
+      "accessibilityLabel": "",
+      "metadataUrl": "",
+      "videoSourceType": 0
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699638698,
+    "participant": "999999999999929@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-imageMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999930@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXX41",
+     "participant": "999999999999931@lid"
+    },
+    "message": {
+     "imageMessage": {
+      "interactiveAnnotations": [],
+      "scanLengths": [],
+      "annotations": [],
+      "url": "‹url›",
+      "mimetype": "image/jpeg",
+      "caption": "‹text 801›",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 235437,
+      "height": 1350,
+      "width": 1080,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1699603933,
+      "imageSourceType": 0
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699603936,
+    "participant": "999999999999931@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999930@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX42",
+     "participant": "999999999999915@lid"
+    },
+    "message": {
+     "imageMessage": {
+      "interactiveAnnotations": [],
+      "scanLengths": [],
+      "annotations": [],
+      "url": "‹url›",
+      "mimetype": "image/jpeg",
+      "caption": "‹text 624›",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 193857,
+      "height": 1350,
+      "width": 1080,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1698593001,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "statusSourceType": 0
+      },
+      "imageSourceType": 0
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1663233025103,
+       "initiatedByMe": false
+      }
+     }
+    },
+    "messageTimestamp": 1698593012,
+    "participant": "999999999999915@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-commentMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999930@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX43",
+     "participant": "999999999999932@lid"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 3,
+       "limitSharingSettingTimestamp": 1683053753735,
+       "initiatedByMe": true
+      }
+     },
+     "commentMessage": {
+      "message": {
+       "conversation": "‹text 9›"
+      },
+      "targetMessageKey": {
+       "remoteJid": "999999999999999930@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXX44",
+       "participant": "999999999999931@lid"
+      }
+     }
+    },
+    "messageTimestamp": 1699880981,
+    "participant": "999999999999932@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "commentMetadata": {
+     "commentParentKey": {
+      "remoteJid": "999999999999999930@g.us",
+      "fromMe": false,
+      "id": "XXXXXXXXXXXXXXXXXXXX44",
+      "participant": "999999999999931@lid"
+     }
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999930@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX45",
+     "participant": "999999999999915@lid"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1663233025103,
+       "initiatedByMe": false
+      }
+     },
+     "commentMessage": {
+      "message": {
+       "conversation": "‹text 28›"
+      },
+      "targetMessageKey": {
+       "remoteJid": "999999999999999930@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXX44",
+       "participant": "999999999999931@lid"
+      }
+     }
+    },
+    "messageTimestamp": 1699880825,
+    "participant": "999999999999915@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "commentMetadata": {
+     "commentParentKey": {
+      "remoteJid": "999999999999999930@g.us",
+      "fromMe": false,
+      "id": "XXXXXXXXXXXXXXXXXXXX44",
+      "participant": "999999999999931@lid"
+     }
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-stickerMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999929@lid",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX48"
+    },
+    "message": {
+     "stickerMessage": {
+      "url": "‹url›",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "mimetype": "image/webp",
+      "directPath": "‹url›",
+      "fileLength": 535252,
+      "mediaKeyTimestamp": 1698916271,
+      "firstFrameLength": 534838,
+      "firstFrameSidecar": {
+       "$bytes": 10
+      },
+      "isAnimated": true,
+      "stickerSentTs": 1698916271210,
+      "isAvatar": false,
+      "isAiSticker": false,
+      "isLottie": false,
+      "accessibilityLabel": ""
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1698916272,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:4@lid",
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1692467734,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999996@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX77"
+    },
+    "message": {
+     "stickerMessage": {
+      "url": "‹url›",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "mimetype": "image/webp",
+      "directPath": "‹url›",
+      "fileLength": 16392,
+      "mediaKeyTimestamp": 1692467732,
+      "isAnimated": false,
+      "stickerSentTs": 1692467732056,
+      "isAvatar": false,
+      "isAiSticker": false,
+      "isLottie": false,
+      "accessibilityLabel": ""
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1692467733,
+    "status": 3,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-interactiveMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "0@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXX49"
+    },
+    "message": {
+     "interactiveMessage": {
+      "header": {
+       "hasMediaAttachment": true,
+       "videoMessage": {
+        "interactiveAnnotations": [],
+        "annotations": [],
+        "processedVideos": [],
+        "mimetype": "video/mp4",
+        "fileSha256": {
+         "$bytes": 32
+        },
+        "fileLength": 3815304,
+        "seconds": 17,
+        "mediaKey": {
+         "$bytes": 32
+        },
+        "fileEncSha256": {
+         "$bytes": 32
+        },
+        "jpegThumbnail": {
+         "$bytes": 2915
+        },
+        "staticUrl": "‹url›"
+       }
+      },
+      "body": {
+       "text": "‹text 226›"
+      },
+      "nativeFlowMessage": {
+       "buttons": [
+        {
+         "name": "‹text 7›",
+         "buttonParamsJson": "‹str 139›"
+        }
+       ]
+      }
+     }
+    },
+    "messageTimestamp": 1698480161,
+    "status": 3,
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "0@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXX50"
+    },
+    "message": {
+     "interactiveMessage": {
+      "header": {
+       "hasMediaAttachment": true,
+       "videoMessage": {
+        "interactiveAnnotations": [],
+        "annotations": [],
+        "processedVideos": [],
+        "mimetype": "video/mp4",
+        "fileSha256": {
+         "$bytes": 32
+        },
+        "fileLength": 3616597,
+        "seconds": 19,
+        "mediaKey": {
+         "$bytes": 32
+        },
+        "fileEncSha256": {
+         "$bytes": 32
+        },
+        "jpegThumbnail": {
+         "$bytes": 13556
+        },
+        "staticUrl": "‹url›"
+       }
+      },
+      "body": {
+       "text": "‹text 251›"
+      },
+      "nativeFlowMessage": {
+       "buttons": [
+        {
+         "name": "‹text 7›",
+         "buttonParamsJson": "‹str 137›"
+        }
+       ]
+      }
+     }
+    },
+    "messageTimestamp": 1697287247,
+    "status": 3,
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-documentMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999934:0@lid",
+       "999999999999934:18@lid"
+      ],
+      "userJid": "999999999999934@lid",
+      "receiptTimestamp": 1697822367,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999935@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX51"
+    },
+    "message": {
+     "documentMessage": {
+      "url": "‹url›",
+      "mimetype": "audio/mpeg",
+      "title": "‹text 88›",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 522796,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileName": "‹text 92›",
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1697822365,
+      "contactVcard": false,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "pairedMediaType": 0
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1697822366,
+    "status": 3,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999998@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX81"
+    },
+    "message": {
+     "documentMessage": {
+      "url": "‹url›",
+      "mimetype": "application/pdf",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 638303,
+      "pageCount": 2,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileName": "‹text 52›",
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1699040265,
+      "contactVcard": false
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1699040269,
+    "multicast": true,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-documentMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX52",
+       "participant": "999999999999937@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694433131856
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX53",
+       "participant": "99999999999938@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694432743971
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX54",
+       "participant": "99999999999939@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1694434814951
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX55",
+       "participant": "99999999999940@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1694436647672
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX56",
+       "participant": "999999999999941@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1694437737727
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX57",
+       "participant": "999999999999942@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694432752002
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX58",
+       "participant": "99999999999943@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694436585541
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX59",
+       "participant": "999999999999944@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694963072042
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX60",
+       "participant": "999999999999945@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694433495047
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX61",
+       "participant": "999999999999946@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1694434344545
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX62",
+       "participant": "999999999999947@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694629482207
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX63",
+       "participant": "999999999999948@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694441079138
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX64",
+       "participant": "999999999999949@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1694528560972
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX65",
+       "participant": "999999999999950@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694582985838
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX66",
+       "participant": "99999999999951@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694434477554
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX67",
+       "participant": "99999999999952@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694434539714
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX68",
+       "participant": "999999999999953@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1694436470858
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX69",
+       "participant": "99999999999954@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1694503404535
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX70",
+       "participant": "999999999999955@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1694507296340
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX71",
+       "participant": "999999999999956@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694432733239
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX72",
+       "participant": "999999999999957@lid"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1694434747646
+     },
+     {
+      "key": {
+       "remoteJid": "999999999999999936@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXX73",
+       "participant": "9999999999958@lid"
+      },
+      "senderTimestampMs": 1694433163917
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999936@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX74",
+     "participant": "999999999999937@lid"
+    },
+    "message": {
+     "documentMessage": {
+      "url": "‹url›",
+      "mimetype": "application/pdf",
+      "title": "‹text 20›",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 16118825,
+      "pageCount": 4,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileName": "‹text 24›",
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1694432581,
+      "contactVcard": false,
+      "caption": "‹text 396›"
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1662675258770,
+       "initiatedByMe": true
+      }
+     }
+    },
+    "messageTimestamp": 1694432642,
+    "participant": "999999999999937@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999911@g.us",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXX89"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1696176500750
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX90",
+     "participant": "999999999999919@lid"
+    },
+    "message": {
+     "documentMessage": {
+      "url": "‹url›",
+      "mimetype": "image/jpeg",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 115842,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileName": "‹text 44›",
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1696176344,
+      "contactVcard": false,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "expiration": 9999917,
+       "disappearingMode": {
+        "initiator": 0,
+        "trigger": 3,
+        "initiatedByMe": false
+       }
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": true
+      }
+     }
+    },
+    "messageTimestamp": 1696176346,
+    "participant": "999999999999919@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-templateMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999959@lid",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXX75"
+    },
+    "message": {
+     "templateMessage": {
+      "hydratedFourRowTemplate": {
+       "hydratedButtons": [
+        {
+         "urlButton": {
+          "displayText": "‹str 20›",
+          "url": "‹url›"
+         },
+         "index": 0
+        },
+        {
+         "quickReplyButton": {
+          "displayText": "‹str 21›",
+          "id": "XXXXXXXXXXXXXXXXXXX76"
+         },
+         "index": 1
+        }
+       ],
+       "hydratedTitleText": "",
+       "hydratedContentText": "‹str 280›",
+       "templateId": "9999999999999960"
+      },
+      "templateId": "9999999999999960"
+     }
+    },
+    "messageTimestamp": 1686730968,
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999959@lid",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXX75"
+    },
+    "message": {
+     "templateMessage": {
+      "hydratedFourRowTemplate": {
+       "hydratedButtons": [
+        {
+         "urlButton": {
+          "displayText": "‹str 20›",
+          "url": "‹url›"
+         },
+         "index": 0
+        },
+        {
+         "quickReplyButton": {
+          "displayText": "‹str 21›",
+          "id": "XXXXXXXXXXXXXXXXXXX76"
+         },
+         "index": 1
+        }
+       ],
+       "hydratedTitleText": "",
+       "hydratedContentText": "‹str 280›",
+       "templateId": "9999999999999960"
+      },
+      "templateId": "9999999999999960"
+     }
+    },
+    "messageTimestamp": 1686730968,
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-albumMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999@lid",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXX78"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1700056833749
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999998@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX79"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     },
+     "albumMessage": {
+      "expectedImageCount": 0,
+      "expectedVideoCount": 0
+     }
+    },
+    "messageTimestamp": 1700053442,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 16
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999998@s.whatsapp.net",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX80"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     },
+     "albumMessage": {
+      "expectedImageCount": 0,
+      "expectedVideoCount": 0
+     }
+    },
+    "messageTimestamp": 1700051987,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 16
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-pollCreationMessageV3": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [
+       "999999999999991:8@lid"
+      ],
+      "deliveredDeviceJid": [
+       "999999999999991:5@lid",
+       "999999999999991:4@lid"
+      ],
+      "userJid": "999999999999991@lid",
+      "receiptTimestamp": 1697703517,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999999:0@lid",
+       "999999999999999:1@lid"
+      ],
+      "userJid": "999999999999999@lid",
+      "receiptTimestamp": 1697703363,
+      "readTimestamp": 1697705765,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999998@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX82"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     },
+     "pollCreationMessageV3": {
+      "options": [
+       {
+        "optionName": "‹str 2›",
+        "optionHash": ""
+       },
+       {
+        "optionName": "‹str 3›",
+        "optionHash": ""
+       }
+      ],
+      "name": "‹text 18›",
+      "selectableOptionsCount": 1,
+      "pollContentType": 1,
+      "pollType": 0
+     }
+    },
+    "messageTimestamp": 1697703361,
+    "status": 4,
+    "messageC2STimestamp": 1697703361,
+    "pollAdditionalMetadata": {},
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-audioMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "99999999999920:0@lid"
+      ],
+      "userJid": "99999999999920@lid",
+      "receiptTimestamp": 1699349615,
+      "readTimestamp": 1699364018,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999991:5@lid",
+       "999999999999991:4@lid"
+      ],
+      "userJid": "999999999999991@lid",
+      "receiptTimestamp": 1699349612,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999919:0@lid"
+      ],
+      "userJid": "999999999999919@lid",
+      "receiptTimestamp": 1699349613,
+      "readTimestamp": 1699370826,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999918:0@lid"
+      ],
+      "userJid": "999999999999918@lid",
+      "receiptTimestamp": 1699349613,
+      "readTimestamp": 1699349705,
+      "playedTimestamp": 1699349788
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999912:0@lid"
+      ],
+      "userJid": "999999999999912@lid",
+      "receiptTimestamp": 1699349615,
+      "readTimestamp": 1699596534,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1699349614,
+      "readTimestamp": 1699350462,
+      "playedTimestamp": 1699350467
+     }
+    ],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999911@g.us",
+       "fromMe": false,
+       "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX83",
+       "participant": "999999999999997@lid"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1699350517133
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX84"
+    },
+    "message": {
+     "audioMessage": {
+      "url": "‹url›",
+      "mimetype": "audio/ogg; codecs=opus",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 62416,
+      "seconds": 26,
+      "ptt": true,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1699349584,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "expiration": 9999917,
+       "disappearingMode": {
+        "initiator": 0,
+        "trigger": 3,
+        "initiatedByMe": false
+       }
+      },
+      "streamingSidecar": {
+       "$bytes": 10
+      },
+      "waveform": {
+       "$bytes": 64
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": false
+      }
+     }
+    },
+    "messageTimestamp": 1699349611,
+    "status": 4,
+    "messageC2STimestamp": 1699349612,
+    "ephemeralStartTimestamp": 1699349612,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999912:0@lid"
+      ],
+      "userJid": "999999999999912@lid",
+      "receiptTimestamp": 1699337831,
+      "readTimestamp": 1699346665,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "99999999999920:0@lid"
+      ],
+      "userJid": "99999999999920@lid",
+      "receiptTimestamp": 1699337833,
+      "readTimestamp": 1699341881,
+      "playedTimestamp": 1699365105
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999991:5@lid",
+       "999999999999991:4@lid"
+      ],
+      "userJid": "999999999999991@lid",
+      "receiptTimestamp": 1699337831,
+      "readTimestamp": 0,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999919:0@lid"
+      ],
+      "userJid": "999999999999919@lid",
+      "receiptTimestamp": 1699337831,
+      "readTimestamp": 1699370826,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999918:0@lid"
+      ],
+      "userJid": "999999999999918@lid",
+      "receiptTimestamp": 1699337831,
+      "readTimestamp": 1699338005,
+      "playedTimestamp": 0
+     },
+     {
+      "pendingDeviceJid": [],
+      "deliveredDeviceJid": [
+       "999999999999997:0@lid"
+      ],
+      "userJid": "999999999999997@lid",
+      "receiptTimestamp": 1699339201,
+      "readTimestamp": 1699345530,
+      "playedTimestamp": 0
+     }
+    ],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXX85"
+    },
+    "message": {
+     "audioMessage": {
+      "url": "‹url›",
+      "mimetype": "audio/ogg; codecs=opus",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 9794,
+      "seconds": 4,
+      "ptt": true,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1699337825,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "expiration": 9999917,
+       "disappearingMode": {
+        "initiator": 0,
+        "trigger": 3,
+        "initiatedByMe": false
+       }
+      },
+      "streamingSidecar": {
+       "$bytes": 10
+      },
+      "waveform": {
+       "$bytes": 64
+      }
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": false
+      }
+     }
+    },
+    "messageTimestamp": 1699337829,
+    "status": 4,
+    "messageC2STimestamp": 1699337830,
+    "ephemeralStartTimestamp": 1699337830,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "originalSelfAuthorUserJidString": "999999999999991@lid",
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-albumMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX86",
+     "participant": "999999999999919@lid"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": true
+      }
+     },
+     "albumMessage": {
+      "expectedImageCount": 0,
+      "expectedVideoCount": 0,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "expiration": 9999917,
+       "disappearingMode": {
+        "initiator": 0,
+        "trigger": 3,
+        "initiatedByMe": false
+       }
+      }
+     }
+    },
+    "messageTimestamp": 1696176873,
+    "participant": "999999999999919@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999911@g.us",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXX87"
+      },
+      "text": "‹text 1›",
+      "senderTimestampMs": 1696176611059
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999911@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX88",
+     "participant": "999999999999919@lid"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      },
+      "limitSharingV2": {
+       "sharingLimited": true,
+       "trigger": 1,
+       "limitSharingSettingTimestamp": 1688483864110,
+       "initiatedByMe": true
+      }
+     },
+     "albumMessage": {
+      "expectedImageCount": 0,
+      "expectedVideoCount": 0,
+      "contextInfo": {
+       "mentionedJid": [],
+       "groupMentions": [],
+       "statusAttributions": [],
+       "expiration": 9999917,
+       "disappearingMode": {
+        "initiator": 0,
+        "trigger": 3,
+        "initiatedByMe": false
+       }
+      }
+     }
+    },
+    "messageTimestamp": 1696176587,
+    "participant": "999999999999919@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-stickerMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [
+     {
+      "key": {
+       "remoteJid": "999999999999999928@g.us",
+       "fromMe": true,
+       "id": "XXXXXXXXXXXXXXXXXX91"
+      },
+      "text": "‹text 2›",
+      "senderTimestampMs": 1697713905771
+     }
+    ],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999928@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX92",
+     "participant": "999999999999929@lid"
+    },
+    "message": {
+     "stickerMessage": {
+      "url": "‹url›",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "mimetype": "image/webp",
+      "directPath": "‹url›",
+      "fileLength": 93388,
+      "mediaKeyTimestamp": 1697571626,
+      "isAnimated": false,
+      "stickerSentTs": 1697713884612,
+      "isAvatar": false,
+      "isAiSticker": false,
+      "isLottie": false,
+      "accessibilityLabel": ""
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1697713885,
+    "participant": "999999999999929@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   },
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999928@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX93",
+     "participant": "999999999999929@lid"
+    },
+    "message": {
+     "stickerMessage": {
+      "url": "‹url›",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "mimetype": "image/webp",
+      "directPath": "‹url›",
+      "fileLength": 488898,
+      "mediaKeyTimestamp": 1695928249,
+      "firstFrameLength": 488512,
+      "firstFrameSidecar": {
+       "$bytes": 10
+      },
+      "isAnimated": true,
+      "stickerSentTs": 1695928249521,
+      "isAvatar": false,
+      "isAiSticker": false,
+      "isLottie": false,
+      "accessibilityLabel": ""
+     },
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1695928250,
+    "participant": "999999999999929@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-lottieStickerMessage-group": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999999928@g.us",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX94",
+     "participant": "999999999999929@lid"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     },
+     "lottieStickerMessage": {
+      "message": {
+       "stickerMessage": {
+        "url": "‹url›",
+        "fileSha256": {
+         "$bytes": 32
+        },
+        "fileEncSha256": {
+         "$bytes": 32
+        },
+        "mediaKey": {
+         "$bytes": 32
+        },
+        "mimetype": "application/was",
+        "directPath": "‹url›",
+        "fileLength": 12109,
+        "mediaKeyTimestamp": 1693330716,
+        "isAnimated": true,
+        "stickerSentTs": 1693330716077,
+        "isAvatar": false,
+        "isAiSticker": false,
+        "isLottie": true,
+        "accessibilityLabel": "‹str 60›"
+       }
+      }
+     }
+    },
+    "messageTimestamp": 1693330716,
+    "participant": "999999999999929@lid",
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ],
+  "history-lottieStickerMessage": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "999999999999929@lid",
+     "fromMe": false,
+     "id": "XXXXXXXXXXXXXXXXXX95"
+    },
+    "message": {
+     "messageContextInfo": {
+      "threadId": [],
+      "messageSecret": {
+       "$bytes": 32
+      }
+     },
+     "lottieStickerMessage": {
+      "message": {
+       "stickerMessage": {
+        "url": "‹url›",
+        "fileSha256": {
+         "$bytes": 32
+        },
+        "fileEncSha256": {
+         "$bytes": 32
+        },
+        "mediaKey": {
+         "$bytes": 32
+        },
+        "mimetype": "application/was",
+        "directPath": "‹url›",
+        "fileLength": 12109,
+        "mediaKeyTimestamp": 1697966818,
+        "isAnimated": true,
+        "stickerSentTs": 1697966818596,
+        "isAvatar": false,
+        "isAiSticker": false,
+        "isLottie": true,
+        "accessibilityLabel": "‹str 60›"
+       }
+      }
+     }
+    },
+    "messageTimestamp": 1697966819,
+    "messageSecret": {
+     "$bytes": 32
+    },
+    "reportingTokenInfo": {
+     "reportingTag": {
+      "$bytes": 20
+     }
+    },
+    "interactiveMessageAdditionalMetadata": {
+     "isGalaxyFlowCompleted": false
+    }
+   }
+  ]
+ },
+ "self": {
+  "sent-message": [
+   {
+    "messageStubParameters": [],
+    "labels": [],
+    "userReceipt": [],
+    "reactions": [],
+    "pollUpdates": [],
+    "eventResponses": [],
+    "statusMentions": [],
+    "messageAddOns": [],
+    "statusMentionSources": [],
+    "supportAiCitations": [],
+    "key": {
+     "remoteJid": "9999999999990@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXXXXX0"
+    },
+    "message": {
+     "extendedTextMessage": {
+      "text": "‹text 51›"
+     },
+     "messageContextInfo": {
+      "messageSecret": {
+       "$bytes": 32
+      }
+     }
+    },
+    "messageTimestamp": 1700075046,
+    "status": 1
+   }
+  ],
+  "frame-ack": [
+   {
+    "tag": "ack",
+    "attrs": {
+     "from": "9999999999990@s.whatsapp.net",
+     "class": "message",
+     "id": "XXXXXXXXXXXXXXXXXXXXX0",
+     "t": "1700075047"
+    }
+   }
+  ],
+  "frame-receipt-sender": [
+   {
+    "tag": "receipt",
+    "attrs": {
+     "from": "999999999999991:5@lid",
+     "type": "sender",
+     "id": "XXXXXXXXXXXXXXXXXXXXX0",
+     "recipient": "999999999999991@lid",
+     "t": "1700075047"
+    }
+   },
+   {
+    "tag": "receipt",
+    "attrs": {
+     "from": "999999999999991@lid",
+     "type": "sender",
+     "id": "XXXXXXXXXXXXXXXXXXXXX0",
+     "recipient": "999999999999991@lid",
+     "t": "1700075048"
+    }
+   }
+  ],
+  "messages-update": [
+   {
+    "key": {
+     "remoteJid": "999999999999991@lid",
+     "id": "XXXXXXXXXXXXXXXXXXXXX0",
+     "fromMe": true
+    },
+    "update": {
+     "status": 2,
+     "messageTimestamp": 1700075047
+    }
+   },
+   {
+    "key": {
+     "remoteJid": "999999999999991@lid",
+     "id": "XXXXXXXXXXXXXXXXXXXXX0",
+     "fromMe": true
+    },
+    "update": {
+     "status": 2,
+     "messageTimestamp": 1700075048
+    }
+   }
+  ]
+ },
+ "voice": {
+  "voice-message": [
+   {
+    "key": {
+     "remoteJid": "999999999999991@lid",
+     "remoteJidAlt": "9999999999990@s.whatsapp.net",
+     "fromMe": true,
+     "id": "XXXXXXXXXXXXXXXXXXX0",
+     "participant": "",
+     "addressingMode": "lid"
+    },
+    "messageTimestamp": 1700075193,
+    "pushName": "‹text 9›",
+    "broadcast": false,
+    "status": 2,
+    "message": {
+     "audioMessage": {
+      "url": "‹url›",
+      "mimetype": "audio/ogg; codecs=opus",
+      "fileSha256": {
+       "$bytes": 32
+      },
+      "fileLength": 9068,
+      "seconds": 3,
+      "ptt": true,
+      "mediaKey": {
+       "$bytes": 32
+      },
+      "fileEncSha256": {
+       "$bytes": 32
+      },
+      "directPath": "‹url›",
+      "mediaKeyTimestamp": 1700075188,
+      "streamingSidecar": {
+       "$bytes": 10
+      },
+      "waveform": {
+       "$bytes": 64
+      }
+     }
+    }
+   }
+  ]
+ }
+}

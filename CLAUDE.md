@@ -24,14 +24,14 @@ UCAP is a self-hosted assistive and care platform for disabled people. **CONCEPT
 ```sh
 npm run setup                     # once: secrets outside the repo (~/.config/ucap/dev-secrets), writes .env
 npm install                       # host node_modules (macOS) for tests, tsc and the editor
-docker compose up -d --wait       # db :55440, ntfy :8811, caddy :8810, core :8816, assistant :8817, connectors
+docker compose up -d --wait       # db :55440, ntfy :8811, caddy :8810, core :8816, assistant :8817, connectors, whatsapp
 npm test                          # vitest: herde-project, server, tools (needs the db service)
 npm run typecheck
 npm run test:docker               # the same suite inside the image
 npm run test:e2e                  # the acceptance script in browsers, on the e2e stack (made afresh; UCAP_E2E_KEEP=1 keeps it)
 npm run android:install           # build and install the app on the emulator; npm run android:check checks it there
 npm run backup:check              # backup, restore into a scratch database, compare every table
-docker compose logs -f core       # core restarts on save (node --watch); connectors: docker compose restart connectors
+docker compose logs -f core       # core restarts on save (node --watch); connectors, whatsapp: docker compose restart <it>
 services/stt-mlx/run.sh           # native whisper on 127.0.0.1:8813 (Docker cannot reach the Mac's GPU)
 npm --prefix app run dev          # Vite on 127.0.0.1:8812: the app in a browser, through the stack (its /api proxy)
 node tools/live/drive.ts state    # LIVE mode on the emulator: play recordings into its capture (docs/spikes/m2.md)
@@ -102,6 +102,25 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   the oldest one until there are enough (offset 0 repeats that message).
 - On SIGTERM the connectors close their TDLib clients, and TDLib reports each as closed: not passed on while stopping,
   or the assistant would leave every connection ended after a restart.
+
+**WhatsApp (Baileys; docs/spikes/m3.md, A)**
+- Nothing automated ever reaches the owner's WhatsApp, and Claude Code's auto mode refuses to start a command that
+  does: the owner runs such steps (the spike, hand checks) in a terminal of their own. Everything else uses the stand-in.
+- libsignal, under Baileys, prints session records with their private keys through `console.info` ("Closing
+  session: …"), past Baileys' logger: a process or script that loads Baileys replaces the console first.
+- WhatsApp refuses a pairing code for a device named by UCAP: keep Baileys' default (`Browsers.macOS('Chrome')`, listed
+  as "Chrome (Mac OS)"). It ends a connection nobody paired after about 210 s. A pairing never finished leaves
+  `creds.me` set, and Baileys then logs in instead of pairing: start over with new credentials.
+- Baileys raises no event when WhatsApp's server accepts a message: read the `ack` frame (`sock.ws`,
+  `CB:ack,class:message`); with an `error` it was refused (463, an account restriction: never send it again). Baileys'
+  "SERVER_ACK" comes from the person's other devices.
+- One person, two addresses: their number and their LID. A message sent to a number has its receipts under the LID;
+  live messages carry the other address (`remoteJidAlt`, `participantAlt`), history messages do not.
+- `markOnlineOnConnect` and `syncFullHistory` default to true: both off. Even so the history at linking reaches back
+  years (keep 30 days). `chats.update`'s `unreadCount` is +1 per new message, 0 read elsewhere, -1 marked unread.
+- Baileys names `sharp` a required peer: `packages/no-sharp` stands in for it (no native image code).
+- The `whatsapp` process and the stand-in both claim WhatsApp, and the one that connects last wins: to try the stand-in,
+  `docker compose stop whatsapp`.
 
 **Email (imapflow, nodemailer, mailparser; docs/spikes/m3.md)**
 - At their debug levels imapflow and nodemailer log commands, and LOGIN carries the password: always `logger: false`.

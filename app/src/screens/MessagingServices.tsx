@@ -2,7 +2,7 @@
  * The person's messaging services (docs/plan-m3.md, K1): each connection with its state and what it can do (docs/plan.md,
  * Appendix K: "capability descriptors per connection"), shown and said, so previews are never taken for a whole history
  * (CONCEPT §3: "Access to notification previews must not be presented as access to a complete conversation history").
- * Telegram opens its own page to sign in; WhatsApp, email, SMS and previews come with their own steps (K2–K5).
+ * Telegram and WhatsApp open their own pages to connect; email, SMS and previews come with their own steps (K3–K5).
  * Disconnecting asks first and deletes what UCAP kept; the service keeps its own. Helpers see none of it (CONCEPT §3).
  */
 import { useEffect, useRef, useState } from 'react';
@@ -31,7 +31,7 @@ interface Connection {
 const LOGIN = new Set(['wait_phone', 'wait_code', 'wait_password', 'wait_qr', 'wait_pairing']);
 const ON_PHONE = new Set(['sms', 'notifications']);
 
-export function MessagingServices(p: { session: Session; refresh: number; onTelegram: () => void; onClose: () => void }) {
+export function MessagingServices(p: { session: Session; refresh: number; onTelegram: () => void; onWhatsapp: () => void; onClose: () => void }) {
   const ui = useUi();
   const { tr, say } = ui;
   const [list, setList] = useState<Connection[] | null>(null);
@@ -100,6 +100,7 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
     }
   }
   const telegram = list?.find((c) => c.service === 'telegram');
+  const whatsapp = list?.find((c) => c.service === 'whatsapp');
 
   return (
     <main className="page messaging">
@@ -120,8 +121,8 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
             <li key={c.id} className="stack">
               <p>{line(c)}</p>
               <div className="row">
-                {c.service === 'telegram' && (
-                  <Button className="button" onPress={p.onTelegram}>
+                {(c.service === 'telegram' || c.service === 'whatsapp') && (
+                  <Button className="button" onPress={c.service === 'telegram' ? p.onTelegram : p.onWhatsapp}>
                     {tr('messaging.open', { name: c.name })}
                   </Button>
                 )}
@@ -157,6 +158,11 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
       {offered.telegram && !telegram && (
         <Button className="button primary" onPress={p.onTelegram}>
           {tr('messaging.connect.telegram')}
+        </Button>
+      )}
+      {offered.whatsapp && !whatsapp && (
+        <Button className="button primary" onPress={p.onWhatsapp}>
+          {tr('messaging.connect.whatsapp')}
         </Button>
       )}
     </main>

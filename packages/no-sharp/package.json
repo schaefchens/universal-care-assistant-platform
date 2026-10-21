@@ -1,0 +1,9 @@
+{
+  "name": "sharp",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "description": "Stands in for sharp, which Baileys names as a required peer but loads only to make thumbnails of images it sends: UCAP sends none, so npm installs no native image library (docs/plan-m3.md: sharp only if Baileys cannot run without it).",
+  "exports": "./index.js"
+}

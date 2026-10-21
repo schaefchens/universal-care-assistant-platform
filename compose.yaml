@@ -148,6 +148,27 @@ services:
       timeout: 3s
       retries: 30
 
+  # WhatsApp (docs/plan-m3.md, K2): Baileys in a process of its own, restarted by hand like TDLib (every restart is a
+  # new connection to WhatsApp, at a person's pace). No database credentials: it dials the assistant; each person's
+  # key store is sealed with a key only the assistant holds, on a volume of its own.
+  whatsapp:
+    <<: *node
+    command: node connectors/src/whatsapp/main.ts
+    secrets: [connectors_token]
+    stop_grace_period: 20s
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+      - ucap-files:/data/files
+      - ucap-whatsapp:/data/whatsapp
+    environment:
+      UCAP_ASSISTANT_WS: ws://assistant:8821/internal/connectors
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8822/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   caddy:
     image: caddy:2.11
     ports:
@@ -270,6 +291,7 @@ volumes:
   ucap-files:
   e2e-files:
   ucap-tdlib:
+  ucap-whatsapp:
   ntfy-cache:
   node-modules:
   caddy-data:

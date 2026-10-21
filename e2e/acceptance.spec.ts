@@ -372,19 +372,24 @@ test('7b · across services (docs/plan-m3.md, K1): WhatsApp linked and UCAP the 
   let from = await mark(clara);
   const ph = await smsPhone('Clara', words.get('Clara')!);
   await said(clara, /^Mit deinen Wiederherstellungswörtern wurde ein neues Gerät hinzugefügt: Telefon von Clara\.$/, from);
-  // WhatsApp, linked from it (its own page comes in K2): the number, then the pairing code typed in WhatsApp.
-  const wa = (await ph.call<{ connection: { id: string } }>('POST', '/api/v1/messaging/connections', { service: 'whatsapp', acceptedRisk: true })).connection.id;
-  const waState = async () => (await ph.call<{ connections: { id: string; state: string; detail: { pairing?: string } }[] }>('GET', '/api/v1/messaging/connections')).connections.find((c) => c.id === wa);
-  await expect.poll(async () => (await waState())?.state).toBe('wait_phone');
-  await ph.call('POST', `/api/v1/messaging/connections/${wa}/login`, { step: 'phone', value: '+49 170 1234567' });
-  await expect.poll(async () => (await waState())?.detail.pairing).toBe('UCAP2026');
+  // WhatsApp, on its own page (K2): the risk said first and agreed to, the number, then the pairing code, shown and said
+  // character by character, "typed on the phone" (the stand-in's /pair).
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Nachrichtendienste', exact: true }).click();
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'WhatsApp verbinden', exact: true }).click();
+  await said(clara, /^Bevor du verbindest: WhatsApp erlaubt keine fremden Programme\. .* Meta kann deine Nummer dafür sperren/, from);
+  await clara.getByRole('button', { name: 'Ich habe die Gefahr verstanden: WhatsApp verbinden', exact: true }).click();
+  await said(clara, /^Gib die Nummer deines WhatsApp ein, mit Ländervorwahl/, from);
+  await clara.getByLabel('Telefonnummer').fill('+49 170 1234567');
+  await clara.getByRole('button', { name: 'Weiter', exact: true }).click();
+  await said(clara, /^Der Code für WhatsApp: U, C, A, P, 2, 0, 2, 6\. Öffne WhatsApp auf deinem Telefon: Einstellungen, Verknüpfte Geräte, Gerät hinzufügen\./, from);
+  await expect(clara.getByText('UCAP-2026', { exact: true })).toBeVisible();
   expect((await fetch(`${MESSAGING}/pair`, { method: 'POST' })).ok).toBe(true);
-  await expect.poll(async () => (await waState())?.state).toBe('ready');
+  await said(clara, /^Verbunden als Clara Test\. UCAP hat deine Nachrichten der letzten 30 Tage und alle neuen\.$/, from);
 
   // The services page names all three, each with its state.
-  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
-  from = await mark(clara);
-  await clara.getByRole('button', { name: 'Nachrichtendienste', exact: true }).click();
+  await clara.getByRole('button', { name: 'Zurück', exact: true }).click();
   await said(clara, /^Nachrichtendienste\. Telegram: verbunden\. SMS: verbunden\. WhatsApp: verbunden\.$/, from);
   await home(clara);
 

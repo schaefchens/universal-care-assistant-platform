@@ -864,11 +864,27 @@ The plan: [plan-m3.md](plan-m3.md).
    Built: the screen with two services is covered by the store, tool and route tests and by the browser walk with the
    stand-ins; on the emulator it is checked in K3, with a Hetzner test mailbox, after asking the owner. The other
    choice: a second account on the emulator now, which signs the owner's account out of the app there.
+   **Confirmed by the owner, 2026-10-21:** "sure you can do the mailboxes i added to .secrets, thats what they are
+   there for".
 2. **A new message is announced with its service once the person has more than one**: "Neue Nachricht von Anna
    Beispiel auf WhatsApp.", "… per SMS.", "… per E-Mail.". Appendix E says "Neue Nachricht von {name}.", written for
    Telegram alone; plan-m3.md has LIVE name the service "when the person has more than one" (K8). With one service it
    stays as it was. The other choice: the announcement without the service, which is then said when the message is
    read.
+3. **On WhatsApp, people are named from the address book, else by their number, else "Unbekannt"; never by the name
+   they gave themselves.**
+   - plan-m3.md, K2: "Names come from the person's saved contacts, never push names". plan.md, Appendix E, names a
+     stranger by the service's name: "Achtung: {Telegram-Name} ist nicht in deinen Kontakten."
+   - Built: on WhatsApp the self-given name is never used. Someone calling themselves "Maria (Tochter)" is "+49 176 …,
+     nicht in deinen Kontakten".
+   - Where WhatsApp shows a person only by their LID (group members whose number it hides), they are "Unbekannt".
+     Spike A found 142 contacts with the owner's own name among 1,752.
+   - The other choice: the self-given name, always with "nicht in deinen Kontakten", as Telegram's.
+4. **WhatsApp's "delivered" is not kept yet; "read" is.**
+   - plan-m3.md, K2: "delivered and read states kept".
+   - Built: the other side's read receipts mark the person's messages read, as Telegram's do. "Delivered" has no place
+     in the store or the connector protocol yet, and nothing tells the person either state so far.
+   - It comes with K4, where SMS delivery reports need the same: one "delivered" for both.
 
 ### Decided (within the plan)
 
@@ -892,3 +908,31 @@ The plan: [plan-m3.md](plan-m3.md).
 - **The messaging stand-in plays every server service**: `tools/dev/fake-services.ts` (was `fake-telegram.ts`), with
   Telegram, WhatsApp (the pairing code UCAP2026) and email; `UCAP_FAKE_SERVICES` picks them. The browser walk's
   simulated phone (`e2e/phone.ts`) joins the person's account with their words and is UCAP the SMS app.
+- **Spike A was run by the owner, by hand** (2026-10-21): Claude Code's auto mode refused to start a step that reaches
+  the owner's account, so the owner ran each step in a terminal of their own. Measurements in docs/spikes/m3.md, A.
+- **UCAP is "Chrome (Mac OS)" in the person's linked devices**: WhatsApp refused the pairing code for a device named
+  by UCAP ("Chrome (UCAP)", spike A), and Baileys' README allows a name of one's own for QR codes only. The page says
+  how UCAP is listed there.
+- **The pairing code is shown large, in two halves ("ABCD-1234"), and said one character at a time** ("U, C, A, P, …"),
+  with where to type it: WhatsApp, Einstellungen, Verknüpfte Geräte, Gerät hinzufügen, "Stattdessen mit Telefonnummer
+  verknüpfen". WhatsApp waits about three and a half minutes for it (spike A: 210 s); then the page says so and offers
+  a new one.
+- **"Gesendet" comes at WhatsApp's `ack` frame**, which the connector reads itself (Baileys reports such frames only
+  when they carry an error). An error in it fails the send, never sent again by itself; 463 is said as an account
+  restriction ("WhatsApp lässt dein Konto gerade keine neuen Unterhaltungen beginnen").
+- **30 days of WhatsApp's history are kept**, of the years it sends at linking; chats with nothing in that time are left
+  out until they have news. Older messages are not fetched from the phone later (`history` does nothing).
+- **One id per person on WhatsApp**: their number when it comes first or together with their LID, else the LID; every
+  other address of theirs points to it. Two ids that turn out to be one person are counted, never merged.
+- **What WhatsApp itself sends (`0@s.whatsapp.net`) is a channel named "WhatsApp"**: kept, never announced, never
+  written to. Statuses, broadcast lists, WhatsApp channels and bots are no conversations and are skipped.
+- **A gap in the WhatsApp connection shorter than 30 seconds is no news**: it reconnects by itself, and a send in the
+  gap waits for it. Longer, the connection is "wird verbunden" until it is back.
+- **WhatsApp's read states are times**: its message ids have no order, so the store sorts them by time (K1), and
+  "read up to" is a time too.
+- **No native image library**: a private workspace package named `sharp` (`packages/no-sharp`) satisfies Baileys' peer
+  and throws when imported; Baileys makes no thumbnails then, and UCAP sends no pictures through it.
+- **The Telegram and WhatsApp processes share their frame** (`connectors/src/process.ts`: dialing the assistant, hello,
+  events kept while it is away, the health check, SIGTERM); Telegram's behaviour is unchanged.
+- **The WhatsApp process prints nothing through the console**: libsignal writes session records with private keys
+  there (spike A), so the console is replaced and its lines counted once an hour, by their wording.

@@ -22,4 +22,11 @@ packages/identity/wordlists, the German recovery words
   PR #721, Cryptocalc) and dys2p's wordlists-de (Unlicense, CC0 or BSD-3), each word checked against Wiktionary's
   German nouns. The pools and their digests are listed in the list's own file.
 
+WhatsApp, in the connectors' WhatsApp process (connectors/src/whatsapp), through these npm packages:
+  baileys (WhiskeySockets/Baileys), MIT License.
+  libsignal (WhiskeySockets/libsignal-node), GNU General Public License, version 3.
+  whatsapp-rust-bridge (jlucaso1/whatsapp-rust-bridge, WebAssembly built from Rust), MIT License.
+  lru-cache, one of their dependencies, Blue Oak Model License 1.0.0.
+packages/no-sharp stands in for sharp, which Baileys names as a peer; no part of sharp or libvips is included.
+
 Every other dependency keeps its own licence, stated in its package.

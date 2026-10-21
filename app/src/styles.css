@@ -466,6 +466,16 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* WhatsApp's pairing code (docs/plan-m3.md, K2): large, its characters apart, to be typed on another device. */
+.pairing-code {
+  font-size: calc(3rem * min(var(--text-scale), 1.8));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.15em;
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
 .prefix {
   letter-spacing: 0.2em;
   font-weight: 700;
