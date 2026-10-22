@@ -26,6 +26,20 @@ public class SmsEventsTest {
     }
 
     @Test
+    public void aGroupMmsIsEveryoneButThePerson() {
+        java.util.List<String> one = java.util.Arrays.asList("+15551234567");
+        java.util.List<String> two = java.util.Arrays.asList("+15551234567", "+15550002");
+        // The person's own number, written with or without the country code, is left out.
+        assertEquals(java.util.Collections.emptyList(), MmsStore.othersThan(one, "15551234567"));
+        assertEquals(java.util.Arrays.asList("+15550002"), MmsStore.othersThan(two, "5551234567"));
+        // Unknown: one recipient is the person; of several, none can be told apart.
+        assertEquals(java.util.Collections.emptyList(), MmsStore.othersThan(one, null));
+        assertEquals(two, MmsStore.othersThan(two, ""));
+        assertTrue(MmsStore.sameNumber("4915112345678", "015112345678".replaceAll("^0", "")));
+        assertFalse(MmsStore.sameNumber("4915112345678", "4915112345679"));
+    }
+
+    @Test
     public void aMessageAsTheServerChecksIt() throws Exception {
         JSONObject in = SmsEvents.message("7", "s12", "+4915112345678", false, 1_792_000_123_456L, "text", "Bis gleich", true);
         assertEquals("msg.upsert", in.getString("t"));

@@ -37,8 +37,10 @@ final class SmsSync {
                 db.clear();
                 db.setState("connection", connectionId);
                 db.setState("cursor", String.valueOf(SmsStore.idBefore(ctx, System.currentTimeMillis() - HISTORY_MS)));
+                db.setState("mmsCursor", String.valueOf(MmsStore.idBefore(ctx, System.currentTimeMillis() - HISTORY_MS)));
                 // What is in the store now is history; what comes after it is news.
                 db.setState("liveAfter", String.valueOf(SmsStore.maxId(ctx)));
+                db.setState("mmsLiveAfter", String.valueOf(MmsStore.maxId(ctx)));
             }
             db.setState("role", "held");
             db.queue(new JSONArray().put(SmsEvents.state("ready", null)));
@@ -70,6 +72,11 @@ final class SmsSync {
             } else if (held && "gone".equals(role)) {
                 db.setState("role", "held");
                 db.queue(new JSONArray().put(SmsEvents.state("ready", null)));
+            }
+            // A connection made before MMS were forwarded: their position set once, as at connecting.
+            if (held && db.state("mmsCursor") == null) {
+                db.setState("mmsCursor", String.valueOf(MmsStore.idBefore(ctx, System.currentTimeMillis() - HISTORY_MS)));
+                db.setState("mmsLiveAfter", String.valueOf(MmsStore.maxId(ctx)));
             }
             int left = drain(ctx, db, conn);
             if (left != 0) return left > 0;
@@ -116,39 +123,66 @@ final class SmsSync {
             long cursor = db.stateLong("cursor", SmsStore.maxId(ctx));
             long liveAfter = db.stateLong("liveAfter", 0);
             List<SmsStore.Row> rows = SmsStore.after(ctx, cursor, BATCH);
-            if (rows.isEmpty()) return false;
+            if (rows.isEmpty()) break;
             JSONArray events = new JSONArray();
             Set<Long> chats = new HashSet<>();
             Set<String> users = new HashSet<>();
             for (SmsStore.Row r : rows) {
                 // UCAP's own SMS on their way are reported by their sent report; what failed there is no message.
                 if (r.type == SmsStore.OUTBOX || r.type == SmsStore.FAILED || r.type == 6 /* queued */) continue;
-                for (JSONObject ev : describe(ctx, r, liveAfter, country, people, threads, chats, users)) events.put(ev);
+                boolean outgoing = r.type != SmsStore.INBOX;
+                for (JSONObject ev : describe(ctx, r.thread, SmsEvents.smsId(r.id), r.address, outgoing, r.date, "text", r.body, !outgoing && r.id > liveAfter, country, people, threads, chats, users)) events.put(ev);
             }
-            if (events.length() > 0) {
-                Api.Result res = Api.signed(ctx, "POST", PATH, SmsEvents.batch(conn, events), Api.idem(), TIMEOUT_MS);
-                if (res.retry() || res.status == -1) return true;
-                if (res.status == 404) {
-                    db.clear();
-                    return false;
-                }
-                if (!res.ok()) android.util.Log.w("UCAP", "sms: " + rows.size() + " messages refused (" + res.status + ")");
-            }
+            Boolean sent = post(ctx, db, conn, events, rows.size());
+            if (sent == null) return false;
+            if (!sent) return true;
             db.setState("cursor", String.valueOf(rows.get(rows.size() - 1).id));
+        }
+        // MMS, by their own ids: a picture is named as a photo with its text; a group MMS is its thread's group.
+        while (true) {
+            long cursor = db.stateLong("mmsCursor", MmsStore.maxId(ctx));
+            long liveAfter = db.stateLong("mmsLiveAfter", 0);
+            List<MmsStore.Row> rows = MmsStore.after(ctx, cursor, BATCH / 2);
+            if (rows.isEmpty()) return false;
+            JSONArray events = new JSONArray();
+            Set<Long> chats = new HashSet<>();
+            Set<String> users = new HashSet<>();
+            for (MmsStore.Row r : rows) {
+                if (r.text == null) continue; // a notification of an MMS not fetched: no message
+                String kind = r.picture ? "photo" : "text";
+                for (JSONObject ev : describe(ctx, r.thread, SmsEvents.mmsId(r.id), r.from, r.outgoing, r.dateMs, kind, r.text, !r.outgoing && r.id > liveAfter, country, people, threads, chats, users)) events.put(ev);
+            }
+            Boolean sent = post(ctx, db, conn, events, rows.size());
+            if (sent == null) return false;
+            if (!sent) return true;
+            db.setState("mmsCursor", String.valueOf(rows.get(rows.size() - 1).id));
         }
     }
 
-    /** One SMS as events: its conversation and people once per batch, then the message. */
-    static List<JSONObject> describe(Context ctx, SmsStore.Row r, long liveAfter, String country, Map<String, SmsStore.Person> people, Map<Long, List<String>> threads,
-            Set<Long> chats, Set<String> users) {
+    /** true: taken (or refused, and skipped); false: try again later; null: the connection is gone on the server. */
+    private static Boolean post(Context ctx, SmsDb db, String conn, JSONArray events, int messages) {
+        if (events.length() == 0) return true;
+        Api.Result res = Api.signed(ctx, "POST", PATH, SmsEvents.batch(conn, events), Api.idem(), TIMEOUT_MS);
+        if (res.retry() || res.status == -1) return false;
+        if (res.status == 404) {
+            db.clear();
+            return null;
+        }
+        if (!res.ok()) android.util.Log.w("UCAP", "sms: " + messages + " messages refused (" + res.status + ")");
+        return true;
+    }
+
+    /** One message as events: its conversation and people once per batch, then the message. */
+    static List<JSONObject> describe(Context ctx, long threadId, String externalId, String address, boolean outgoing, long dateMs, String kind, String text, boolean live,
+            String country, Map<String, SmsStore.Person> people, Map<Long, List<String>> threads, Set<Long> chats, Set<String> users) {
         List<JSONObject> out = new java.util.ArrayList<>();
-        String thread = String.valueOf(r.thread);
-        if (chats.add(r.thread)) {
-            List<String> rec = threads.get(r.thread);
+        String thread = String.valueOf(threadId);
+        if (chats.add(threadId)) {
+            List<String> rec = threads.get(threadId);
             if (rec == null) {
-                rec = SmsStore.recipients(ctx, r.thread);
-                if (rec.isEmpty() && r.address != null && !r.address.isEmpty()) rec = java.util.Collections.singletonList(r.address);
-                threads.put(r.thread, rec);
+                rec = SmsStore.recipients(ctx, threadId);
+                if (rec.isEmpty() && address != null && !address.isEmpty()) rec = java.util.Collections.singletonList(address);
+                threads.put(threadId, rec);
             }
             StringBuilder title = new StringBuilder();
             SmsStore.Person peer = null;
@@ -162,10 +196,9 @@ final class SmsSync {
             boolean group = rec.size() > 1;
             out.add(SmsEvents.chat(thread, title.length() > 0 ? title.toString() : thread, group, group || peer == null ? null : peer.id));
         }
-        boolean outgoing = r.type != SmsStore.INBOX;
-        SmsStore.Person from = outgoing ? null : person(ctx, r.address, country, people);
+        SmsStore.Person from = outgoing || address == null ? null : person(ctx, address, country, people);
         if (from != null && users.add(from.id)) out.add(SmsEvents.user(from.id, from.name, from.contact));
-        out.add(SmsEvents.message(thread, SmsEvents.smsId(r.id), from == null ? null : from.id, outgoing, r.date, "text", r.body, !outgoing && r.id > liveAfter));
+        out.add(SmsEvents.message(thread, externalId, from == null ? null : from.id, outgoing, dateMs, kind, text, live));
         return out;
     }
 

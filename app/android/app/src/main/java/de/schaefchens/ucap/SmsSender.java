@@ -97,7 +97,12 @@ final class SmsSender {
 
     /** The SIM Android uses for SMS (dual SIM: the one chosen there). */
     static SmsManager manager(Context ctx) {
-        int sub = SubscriptionManager.getDefaultSmsSubscriptionId();
+        return manager(ctx, SubscriptionManager.getDefaultSmsSubscriptionId());
+    }
+
+    /** The SIM a message came in on (an MMS is fetched through the network that announced it), else the default. */
+    static SmsManager manager(Context ctx, int sub) {
+        if (sub < 0) sub = SubscriptionManager.getDefaultSmsSubscriptionId();
         if (Build.VERSION.SDK_INT >= 31) {
             SmsManager base = ctx.getSystemService(SmsManager.class);
             return sub != SubscriptionManager.INVALID_SUBSCRIPTION_ID ? base.createForSubscriptionId(sub) : base;

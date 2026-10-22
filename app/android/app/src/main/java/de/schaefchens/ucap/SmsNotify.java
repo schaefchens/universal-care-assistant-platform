@@ -21,6 +21,11 @@ final class SmsNotify {
     static final String EXTRA_THREAD = "ucap.sms.thread";
 
     static void newSms(Context ctx, long thread, String name) {
+        newMessage(ctx, thread, name, "sms.new");
+    }
+
+    /** `titleKey`: "sms.new" or "mms.new". */
+    static void newMessage(Context ctx, long thread, String name, String titleKey) {
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         if (nm == null) return;
         if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
@@ -34,7 +39,7 @@ final class SmsNotify {
         PendingIntent pi = PendingIntent.getActivity(ctx, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(ctx, CHANNEL) : new Notification.Builder(ctx);
         b.setSmallIcon(android.R.drawable.sym_action_email)
-            .setContentTitle(Texts.format(ctx, "sms.new", name))
+            .setContentTitle(Texts.format(ctx, titleKey, name))
             .setCategory(Notification.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .setContentIntent(pi)

@@ -12,5 +12,19 @@
                 <action android:name="de.schaefchens.ucap.DEBUG_ENDPOINT" />
             </intent-filter>
         </receiver>
+        <!-- MMS on the emulator (tools/dev/mms-centre.ts): its console answers "sms pdu" with OK but delivers nothing
+             (emulator 37, its modem simulator), and its carrier configuration disables MMS, so its MMS service fetches
+             nothing. The notification and the fetched MMS come from adb, into the same code. -->
+        <receiver
+            android:name=".DebugMmsReceiver"
+            android:exported="true"
+            android:process=":sms"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="de.schaefchens.ucap.DEBUG_MMS_PUSH" />
+                <action android:name="de.schaefchens.ucap.DEBUG_MMS_FETCHED" />
+                <action android:name="de.schaefchens.ucap.DEBUG_SELF" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

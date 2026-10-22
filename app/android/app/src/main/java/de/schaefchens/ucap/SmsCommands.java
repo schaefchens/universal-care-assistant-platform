@@ -52,17 +52,28 @@ public class SmsCommands extends BroadcastReceiver {
                 if (!SmsSender.take(ctx)) SmsJob.retry(ctx);
                 break;
             case "read": {
-                // Only this phone's connection, and only SMS ids ("s12").
+                // Only this phone's connection, and only its SMS and MMS ids ("s12", "m3").
                 if (!String.valueOf(i.getStringExtra("connectionId")).equals(SmsSync.connection(ctx))) return;
-                List<Long> ids = new ArrayList<>();
+                List<Long> sms = new ArrayList<>();
+                List<Long> mms = new ArrayList<>();
                 String[] ext = i.getStringArrayExtra("externalIds");
-                if (ext != null) for (String e : ext) if (SmsEvents.smsOf(e) > 0) ids.add(SmsEvents.smsOf(e));
+                if (ext != null) {
+                    for (String e : ext) {
+                        if (SmsEvents.smsOf(e) > 0) sms.add(SmsEvents.smsOf(e));
+                        else if (SmsEvents.mmsOf(e) > 0) mms.add(SmsEvents.mmsOf(e));
+                    }
+                }
                 if (!SmsRole.held(ctx)) return;
-                SmsStore.markRead(ctx, ids);
+                SmsStore.markRead(ctx, sms);
+                MmsStore.markRead(ctx, mms);
                 // Heard: its notification goes too.
-                for (long id : ids) {
+                for (long id : sms) {
                     SmsStore.Row r = SmsStore.one(ctx, id);
                     if (r != null) SmsNotify.read(ctx, r.thread);
+                }
+                for (long id : mms) {
+                    long thread = MmsStore.threadOf(ctx, id);
+                    if (thread > 0) SmsNotify.read(ctx, thread);
                 }
                 return;
             }

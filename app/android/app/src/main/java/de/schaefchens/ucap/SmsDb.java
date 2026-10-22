@@ -11,7 +11,9 @@ import org.json.JSONArray;
  * The SMS connection's own small database, used in the SMS process only (docs/plan-m3.md, K4):
  * - `state`: which connection it reports to, and how far Android's SMS store has been forwarded;
  * - `outq`: what waits for the server, in order (results of sends, delivery reports, states, a sent message);
- * - `sends`: the parts of each SMS in flight, until the network reported on all of them.
+ * - `sends`: the parts of each SMS in flight, until the network reported on all of them;
+ * - `mms`: MMS a carrier announced, until they were fetched from its MMS centre (or expired); one fetched is kept until
+ *   it expires there, so the same MMS announced again is not stored twice.
  * The messages themselves stay in Android's store, where they belong to the person.
  */
 final class SmsDb extends SQLiteOpenHelper {
@@ -23,7 +25,7 @@ final class SmsDb extends SQLiteOpenHelper {
     }
 
     private SmsDb(Context ctx) {
-        super(ctx, "ucap-sms.db", null, 1);
+        super(ctx, "ucap-sms.db", null, 3);
     }
 
     @Override
@@ -32,10 +34,19 @@ final class SmsDb extends SQLiteOpenHelper {
         db.execSQL("create table outq (id integer primary key autoincrement, events text not null, idem text not null, created integer not null)");
         db.execSQL("create table sends (sms_id integer primary key, request_id text, thread text not null, parts integer not null, sent integer not null default 0, "
             + "failed integer not null default 0, error text, delivered integer not null default 0, created integer not null)");
+        mmsTable(db);
     }
 
     @Override
-    public void onUpgrade(SQLiteDatabase db, int from, int to) {}
+    public void onUpgrade(SQLiteDatabase db, int from, int to) {
+        if (from < 2) mmsTable(db);
+        else if (from < 3) db.execSQL("alter table mms add column fetched integer not null default 0");
+    }
+
+    private static void mmsTable(SQLiteDatabase db) {
+        db.execSQL("create table mms (tx text primary key, location text not null, sender text, expiry integer not null, sub integer not null, tries integer not null default 0, "
+            + "next_at integer not null, told integer not null default 0, created integer not null, fetched integer not null default 0)");
+    }
 
     String state(String k) {
         try (Cursor c = getReadableDatabase().rawQuery("select v from state where k = ?", new String[] {k})) {
@@ -170,6 +181,103 @@ final class SmsDb extends SQLiteOpenHelper {
 
     void dropSend(long smsId) {
         getWritableDatabase().delete("sends", "sms_id = ?", new String[] {String.valueOf(smsId)});
+    }
+
+    // —— MMS waiting to be fetched ——
+
+    static final class Mms {
+        final String tx;
+        final String location;
+        final String sender;
+        final long expiry;
+        final int sub;
+        final int tries;
+        final boolean told;
+        final boolean fetched;
+
+        Mms(Cursor c) {
+            tx = c.getString(0);
+            location = c.getString(1);
+            sender = c.isNull(2) ? null : c.getString(2);
+            expiry = c.getLong(3);
+            sub = c.getInt(4);
+            tries = c.getInt(5);
+            told = c.getInt(6) != 0;
+            fetched = c.getInt(7) != 0;
+        }
+    }
+
+    private static final String MMS_COLS = "tx, location, sender, expiry, sub, tries, told, fetched";
+
+    /**
+     * An MMS a carrier announced; false when it was announced before: carriers repeat notifications, some with a new
+     * transaction id for the same MMS (its address at the MMS centre).
+     */
+    boolean addMms(String tx, String location, String sender, long expiryS, int sub) {
+        SQLiteDatabase db = getWritableDatabase();
+        // Fetched ones that expired at the MMS centre are announced no more.
+        db.delete("mms", "fetched = 1 and expiry < ?", new String[] {String.valueOf(System.currentTimeMillis() / 1000)});
+        try (Cursor c = db.rawQuery("select 1 from mms where location = ? limit 1", new String[] {location})) {
+            if (c.moveToFirst()) return false;
+        }
+        ContentValues cv = new ContentValues();
+        cv.put("tx", tx);
+        cv.put("location", location);
+        cv.put("sender", sender);
+        cv.put("expiry", expiryS);
+        cv.put("sub", sub);
+        cv.put("next_at", System.currentTimeMillis());
+        cv.put("created", System.currentTimeMillis());
+        return db.insertWithOnConflict("mms", null, cv, SQLiteDatabase.CONFLICT_IGNORE) != -1;
+    }
+
+    Mms mms(String tx) {
+        try (Cursor c = getReadableDatabase().rawQuery("select " + MMS_COLS + " from mms where tx = ?", new String[] {tx})) {
+            return c.moveToFirst() ? new Mms(c) : null;
+        }
+    }
+
+    /** Those whose next try is due. */
+    java.util.List<Mms> dueMms() {
+        java.util.List<Mms> out = new java.util.ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery("select " + MMS_COLS + " from mms where fetched = 0 and next_at <= ?", new String[] {String.valueOf(System.currentTimeMillis())})) {
+            while (c.moveToNext()) out.add(new Mms(c));
+        }
+        return out;
+    }
+
+    /** The earliest next try, or -1 when nothing waits. */
+    long nextMmsAt() {
+        try (Cursor c = getReadableDatabase().rawQuery("select min(next_at) from mms where fetched = 0", null)) {
+            return c.moveToFirst() && !c.isNull(0) ? c.getLong(0) : -1;
+        }
+    }
+
+    /** A fetch that failed: the next try later (1, 5, 15 minutes, an hour, then every three hours). */
+    void mmsFailed(String tx) {
+        Mms m = mms(tx);
+        if (m == null) return;
+        long[] wait = {60_000, 5 * 60_000, 15 * 60_000, 3_600_000};
+        long next = System.currentTimeMillis() + (m.tries < wait.length ? wait[m.tries] : 3 * 3_600_000L);
+        getWritableDatabase().execSQL("update mms set tries = tries + 1, next_at = ? where tx = ?", new Object[] {next, tx});
+    }
+
+    /** A fetch on its way: not tried again before it reported (or ten minutes passed). */
+    void mmsStarted(String tx) {
+        getWritableDatabase().execSQL("update mms set next_at = ? where tx = ?", new Object[] {System.currentTimeMillis() + 10 * 60_000, tx});
+    }
+
+    void mmsTold(String tx) {
+        getWritableDatabase().execSQL("update mms set told = 1 where tx = ?", new Object[] {tx});
+    }
+
+    /** Fetched and stored: kept until it expires at the MMS centre, against the same MMS announced again. */
+    void mmsFetched(String tx) {
+        getWritableDatabase().execSQL("update mms set fetched = 1 where tx = ?", new Object[] {tx});
+    }
+
+    void dropMms(String tx) {
+        getWritableDatabase().delete("mms", "tx = ?", new String[] {tx});
     }
 
     /** Sends whose reports never all came (a week): forgotten, the server has long called them uncertain. */

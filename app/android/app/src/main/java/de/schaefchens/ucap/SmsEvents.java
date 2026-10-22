@@ -35,6 +35,12 @@ final class SmsEvents {
         return Long.parseLong(externalId.substring(1));
     }
 
+    /** The same for an MMS ("m3" → 3). */
+    static long mmsOf(String externalId) {
+        if (externalId == null || !externalId.matches("^m\\d{1,18}$")) return -1;
+        return Long.parseLong(externalId.substring(1));
+    }
+
     static JSONObject chat(String threadId, String title, boolean group, String peerId) {
         try {
             JSONObject c = new JSONObject()
@@ -93,6 +99,15 @@ final class SmsEvents {
             if (externalId != null) e.put("externalId", externalId);
             if (error != null) e.put("error", error);
             return e;
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** A message gone from the conversation (the notice that an MMS was not loaded yet, once it is). */
+    static JSONObject deleted(String threadId, String externalId) {
+        try {
+            return new JSONObject().put("t", "msg.delete").put("chatId", threadId).put("externalIds", new JSONArray().put(externalId));
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }

@@ -65,6 +65,9 @@ final class Texts {
         put("sms.channel.desc", "Neue SMS, solange UCAP deine SMS-App ist. Sie nennt, wer geschrieben hat; gelesen wird in UCAP.", "New text messages while UCAP is your SMS app. It says who wrote; you read them in UCAP.");
         DE.put("sms.channel.desc@Sie", "Neue SMS, solange UCAP Ihre SMS-App ist. Sie nennt, wer geschrieben hat; gelesen wird in UCAP.");
         put("sms.new", "Neue SMS von %s", "New text message from %s");
+        put("mms.new", "Neue MMS von %s", "New MMS from %s");
+        put("mms.pending", "Eine MMS von %s ist angekommen, konnte aber noch nicht geladen werden. UCAP versucht es weiter.", "An MMS from %s has arrived but could not be loaded yet. UCAP keeps trying.");
+        put("mms.expired", "Eine MMS von %s konnte nicht mehr geladen werden: Sie ist abgelaufen.", "An MMS from %s could not be loaded any more: it has expired.");
     }
 
     static String get(String lang, String key) {

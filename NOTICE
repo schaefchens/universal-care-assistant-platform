@@ -29,4 +29,11 @@ WhatsApp, in the connectors' WhatsApp process (connectors/src/whatsapp), through
   lru-cache, one of their dependencies, Blue Oak Model License 1.0.0.
 packages/no-sharp stands in for sharp, which Baileys names as a peer; no part of sharp or libvips is included.
 
+app/android/app/src/main/java/com/android/messaging/mmslib, the MMS PDU code (MMS in, as the SMS app)
+  From the Android Open Source Project's Messaging app (platform/packages/apps/Messaging, src/com/android/messaging/
+  mmslib, commit de315b762312dd1a5d2bbd16e62ef2bd123f61e5). Copyright The Android Open Source Project and Esmertec
+  AG. Licensed under the Apache License, Version 2.0. Vendored on 2026-10-22 without PduComposer and PduPersister;
+  the only changes, noted in each file, import UCAP's stand-ins for android.util.Log (it logs nothing) and
+  SparseArray. Log, SparseArray and SimpleArrayMap there, and com/android/messaging/util/ContentType, are UCAP's own.
+
 Every other dependency keeps its own licence, stated in its package.

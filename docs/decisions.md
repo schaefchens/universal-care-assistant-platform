@@ -1053,6 +1053,26 @@ The plan: [plan-m3.md](plan-m3.md).
   what waited for the phone is not sent and kept as a draft.
 - **The phone names the SMS app there is otherwise** ("Deine SMS-App ist gerade Messages."): Android shows it to an app
   that says it looks for SMS apps (`<queries>` for `smsto:`), and hides it otherwise (package visibility).
+- **MMS are read with AOSP's PDU code**, vendored from AOSP's Messaging app (plan-m3.md's dependency table: "AOSP's
+  MMS PDU code, vendored into the app"; Apache 2.0, in NOTICE). Its log lines carry addresses and subjects, so its
+  `Log` is a stand-in that logs nothing. UCAP writes an MMS to Android's store itself (the message, its parts, its
+  addresses, as AOSP's PduPersister would), so PduPersister and PduComposer are left out; the one PDU UCAP sends,
+  M-NotifyResp.ind, it writes itself.
+- **An MMS is fetched by Android's MMS service**, on the SIM it came in on, into a file of UCAP's. A fetch that fails
+  is tried again after 1, 5 and 15 minutes, an hour, then every three hours until the MMS expires at the MMS centre.
+  The person is told once that it came and is not loaded yet; that notice goes when it is, and an expired one is told.
+- **The MMS centre is told the MMS was retrieved** (M-NotifyResp.ind, "Retrieved"), as AOSP's Messaging does after a
+  fetch: otherwise a carrier may announce it again, or tell its sender it never arrived. A fetched MMS is remembered
+  until it expires there, so the same MMS announced again (the same transaction, or the same address at the MMS
+  centre) is stored once.
+- **A group MMS is a group conversation of everyone but the person.** The person's own number is the SIM's line
+  number, which the role's READ_SMS lets UCAP read. Android's other source, the subscription's number (Android 13+),
+  needs READ_PHONE_NUMBERS, which the SMS role does not grant (AOSP's roles.xml), and UCAP asks for nothing beyond the
+  role. Where the SIM carries no number, a group keeps all its members, the person's own number among them, as AOSP's
+  Messaging does (Google Messages then asks for the number in its settings). Open until a real phone shows how often
+  that happens.
+- **A picture in an MMS is said as on the other services**: a photo, with its text. The picture stays on the phone,
+  in Android's store.
 
 ### Measured
 
@@ -1149,3 +1169,31 @@ The plan: [plan-m3.md](plan-m3.md).
   - **Found and fixed:** an SMS's notification stayed after it was heard.
   - Opening the messages screen reads its first message; with the owner chatting on WhatsApp, the newest was a WhatsApp
     message once, read aloud for a moment until the screen was left (not heard to its end, nothing marked read).
+  - **MMS, through a stand-in MMS centre:**
+    - The emulator delivers none. `adb emu sms pdu` answers OK and delivers nothing (emulator 37.1.11's modem
+      simulator), and its carrier configuration disables MMS: Android's MMS service refuses with 12
+      (`MMS_ERROR_MMS_DISABLED_BY_CARRIER`). The image is not debuggable, so that cannot be changed (`cmd phone cc`:
+      permission denied).
+    - So `tools/dev/mms-centre.ts` builds the PDUs, and a debug receiver (debug builds only, guarded by DUMP) takes
+      the carrier's notification and, after the phone's own fetch failed, the MMS as Android's MMS service writes it.
+      Everything after those bytes is the app's own code.
+    - Seen: a text with a picture from 555-1234 in that person's conversation, with their SMS, reported as a photo
+      with its text. A group MMS to the phone and 555-0002: the conversation "555-1234, 555-0002". A fetch that
+      failed: "nicht geladen" told once, and the notice gone once the MMS was in. The same MMS announced again after
+      it was fetched: stored once. Telling the MMS centre: handed to Android's MMS service, which refused it here (12).
+    - With the role back, Google Messages showed them as UCAP wrote them: the subject "Grüße" (its bytes stored as
+      AOSP's PduPersister stores them, which is how AOSP's Messaging reads a subject back), the group without the
+      phone's own number, the picture as an attachment.
+    - The emulator's own number is its SIM's, +1 555-123-4567 (EF_MSISDN in the AVD's SIM profile), not the console
+      port's +1 555-521-5554. The first group test addressed the phone by the latter, and so had a stranger in it.
+    - Waiting for a real phone (plan-m3.md): an MMS from a carrier, and its MMS centre told.
+  - **Found and fixed: a phone too busy to sign in time deleted its own key.** The emulator was loaded (load 30; /data
+    95 % full; the Play Store updating), and the app took three minutes between asking for a challenge and sending
+    its signature. A challenge lives two minutes, and the server refuses an expired one with a plain 401. The realtime
+    channel took any 401 on the way to a token for a revocation, so the app forgot the device and its key, although
+    the server had not revoked it: Wanda Test's phone was signed out, and needs the account's recovery words to come
+    back. The help request's own sending had the same rule. Now only the server's `device_revoked` ends a session
+    (plan.md: "401 (revoked) leads to the re-enrol screen"); any other 401 is tried again, and a help request keeps
+    being sent.
+  - The emulator's /data was 95 % full, and Android refuses an install that would leave less than 5 % free. For this
+    session the threshold was 4 % (`settings put global sys_storage_threshold_percentage 4`), put back afterwards.

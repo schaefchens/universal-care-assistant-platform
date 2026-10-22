@@ -17,6 +17,7 @@ import android.os.Build;
 public class SmsJob extends JobService {
     private static final int RETRY = 4721;
     private static final int PERIODIC = 4722;
+    private static final int MMS = 4723;
 
     @Override
     public boolean onStartJob(JobParameters params) {
@@ -24,6 +25,8 @@ public class SmsJob extends JobService {
             boolean left = false;
             try {
                 SmsDb.get(this).forgetOldSends();
+                // MMS whose fetch failed: tried again when due (until they expire).
+                MmsFetch.retryDue(this);
                 if (SmsSync.connection(this) != null) {
                     left = !SmsSender.take(this);
                     left |= SmsSync.run(this);
@@ -53,6 +56,16 @@ public class SmsJob extends JobService {
         JobInfo.Builder b = new JobInfo.Builder(PERIODIC, new ComponentName(ctx, SmsJob.class))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setPeriodic(15 * 60_000L)
+            .setPersisted(true);
+        schedule(ctx, b, false);
+    }
+
+    /** The next try of an MMS fetch, at `atMs` (or when a network is there after it). */
+    static void mmsRetry(Context ctx, long atMs) {
+        if (atMs < 0) return;
+        JobInfo.Builder b = new JobInfo.Builder(MMS, new ComponentName(ctx, SmsJob.class))
+            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+            .setMinimumLatency(Math.max(0, atMs - System.currentTimeMillis()))
             .setPersisted(true);
         schedule(ctx, b, false);
     }

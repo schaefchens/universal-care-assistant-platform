@@ -131,8 +131,11 @@ again. Nothing to set up on the server.
   server is told, and replies that waited for the phone are not sent (kept as drafts).
 - **Sending** a reply confirmed on another device needs the phone: it is woken by a push (the ntfy app as its
   UnifiedPush distributor), else it looks every 15 minutes, or at once when UCAP is opened there.
-- **Not yet:** MMS, a new SMS to a number (with K6's contacts), and what only a real phone with a SIM shows (RCS after
-  the switch, a carrier's MMS centre and reports).
+- **MMS** come in whole (text, pictures, groups) from the carrier's MMS centre, over mobile data, as with any SMS app.
+  One that cannot be loaded is told, and fetched again until it expires there. A group shows everyone but the person
+  when the SIM carries the phone's own number; where it does not, that number is among the members.
+- **Not yet:** sending MMS, a new SMS to a number (with K6's contacts), and what only a real phone with a SIM shows
+  (RCS after the switch, a carrier's MMS centre and reports).
 
 ### herde
 
@@ -195,6 +198,8 @@ request instead.
   out there.
 - **Only the app's web storage was lost** (Android kept the device's key): the device signs in again by itself, and a
   helper's alarms keep ringing meanwhile.
+- **A device signs out only when it was removed** ("Meine Geräte", or its account deleted). A sign-in refused for
+  anything else, such as a phone too busy or paused to sign in time, is tried again.
 
 ## Ports (development)
 

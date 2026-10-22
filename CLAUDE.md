@@ -163,6 +163,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   ("isn't responding"); insert text over DevTools (`Input.insertText`) instead, and tap with `adb shell input tap`.
 - The Keystore outlives the WebView's storage: a new enrolment removes any old key first (the server refuses a key it
   knows), and native code keeps who the device is until a real sign-out, so the app can sign in again with it.
+- Only a 401 whose reason is `device_revoked` means a device is revoked (`deviceRevoked`, app/src/net/api.ts). A
+  challenge lives 120 s, and a phone paused or busy between asking and signing gets a plain 401: the loaded emulator
+  once took that for a revocation and deleted its own key.
 - The app's security policy is in the built index.html only (Vite's dev server runs React refresh inline): check
   features in a build. A library's inline style is refused unless its hash is in `app/src/csp.ts`; script URLs
   (workers, worklets) go through `scriptUrl()` (Trusted Types).
@@ -178,9 +181,11 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - LIVE mode on the emulator: its microphone is the Mac's, so `adb emu avd hostmicoff` first, and recordings are played
   into the running capture (`node tools/live/drive.ts`, a debug build); afterwards LIVE off and the host microphone as
   it was. Keyword measurements: `tools/live/corpus.ts` and `tools/live/bench.ts` (docs/spikes/m2.md).
-- The emulator's /data is small: below about 5 % free an install fails ("not enough space"); the measurement sets are
-  pushed and removed by set. A debug APK built over an old one keeps holes (50 MB for 17 MB of content): delete it
-  before a build to see its size.
+- The emulator's /data is small: below 5 % free an install fails ("not enough space"; the Play Store's updates fill it).
+  For a session `adb shell settings put global sys_storage_threshold_percentage 4`, deleted afterwards; the measurement
+  sets are pushed and removed by set. A debug APK built over an old one keeps holes (50 MB for 17 MB of content):
+  delete it before a build to see its size. Under load (`/proc/loadavg` 30) a new process fails to attach in time and
+  broadcasts to it are lost: wait for the load to fall below 8.
 - A React Aria switch or radio is pressed through its label's text: a click on the hidden input (or `label.click()`
   from script) does not toggle it.
 - **The SMS role** (docs/spikes/m3.md):
@@ -191,10 +196,15 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   - The emulator's SMS centre time is an hour off.
   - Try the role and notification access with `tools/android/spikes/m3` (own packages); `drive.ts restore` puts the
     shared emulator back.
-- **UCAP as the SMS app** (K4): SMS into the emulator with `adb emu sms send <number> <text>` (raw PDUs: `adb emu sms
-  pdu`); the shell may read the store (`adb shell content query --uri content://sms`), only the SMS app writes it. Its
-  network sends sent and delivery reports. Android shows an app the SMS app there is only with a `<queries>` entry
-  (`smsto:`); without one it says there is none.
+- **UCAP as the SMS app** (K4): SMS into the emulator with `adb emu sms send <number> <text>` (`adb emu sms pdu`
+  answers OK and delivers nothing); the shell may read the store (`adb shell content query --uri content://sms`), only
+  the SMS app writes it. Its network sends sent and delivery reports. Android shows an app the SMS app there is only
+  with a `<queries>` entry (`smsto:`); without one it says there is none.
+- **MMS on the emulator:** none arrives, and its carrier configuration disables MMS (Android's MMS service answers 12),
+  unchangeable on this image. `node tools/dev/mms-centre.ts send --from 5551234 --text … [--image dot] [--to 5550002]
+  [--repeat]` hands the notification and the fetched MMS to the debug build's `DebugMmsReceiver`. The emulator's own
+  number is its SIM's, +1 555-123-4567. Android's MMS store keeps a subject's and an address's bytes as ISO-8859-1
+  characters beside their charset (AOSP's PduPersister): write and read them that way (`MmsStore.decoded`).
 - **The emulator drives:** leave a screen with the back key (`adb shell input keyevent KEYCODE_BACK`), never with a
   double tap on its areas: the second tap's echo lands on the next screen (it once pressed "Hilfe"). A page laid out
   wider than the screen (a long word) is drawn smaller, and taps by measured coordinates land off: check `innerWidth`.
