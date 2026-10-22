@@ -178,8 +178,9 @@ describe('a WhatsApp connection', () => {
     });
     const chats = of('chat.upsert').map((e) => e.chat);
     expect(chats.map((c) => c.externalId)).toEqual([ANNA, MARIA]);
+    expect(chats[0]).toMatchObject({ title: 'Anna Beispiel', kind: 'private', userId: 'user:4915112345678', unread: 1 });
     // One unread: read up to the incoming message before it.
-    expect(chats[0]).toMatchObject({ title: 'Anna Beispiel', kind: 'private', userId: 'user:4915112345678', unread: 1, readInboxMaxId: String(NOW - 2 * DAY) });
+    expect(of('chat.read')).toEqual([{ t: 'chat.read', id: 'c1', chatId: ANNA, inboxMaxId: String(NOW - 2 * DAY), outboxMaxId: null }]);
     expect(of('user.upsert').map((e) => e.user)).toEqual([
       { externalId: 'user:4915112345678', name: 'Anna Beispiel', isContact: true, isBot: false },
       // Never the name she gave herself.
@@ -191,6 +192,20 @@ describe('a WhatsApp connection', () => {
       ['A4', false, false],
       ['M1', false, false],
     ]);
+    await conn.stop();
+  });
+
+  it("a later part's messages count when an earlier part named their chat, and read states follow what was seen", async () => {
+    const { conn, sock, of, open } = await setup({ linked: true });
+    await open();
+    // WhatsApp's first part names the chat with its newest message, the unread one.
+    await sock().push({ 'messaging-history.set': { chats: [{ id: ANNA, unreadCount: 1, conversationTimestamp: NOW - 60 }], contacts: [], messages: [text({ jid: ANNA, id: 'P1', at: NOW - 60 })] } });
+    expect(of('chat.read')).toHaveLength(0);
+    // The next parts bring older messages, and no chat (spike A: thousands of them).
+    await sock().push({ 'messaging-history.set': { chats: [], contacts: [], messages: [text({ jid: ANNA, id: 'P2', at: NOW - 3 * DAY }), text({ jid: ANNA, id: 'P3', at: NOW - 2 * DAY })] } });
+    expect(of('msg.upsert').map((e) => e.msg.externalId)).toEqual(['P1', 'P2', 'P3']);
+    expect(of('chat.read').at(-1)).toMatchObject({ chatId: ANNA, inboxMaxId: String(NOW - 2 * DAY) });
+    expect(of('chat.upsert').map((e) => e.chat.externalId)).toEqual([ANNA]);
     await conn.stop();
   });
 

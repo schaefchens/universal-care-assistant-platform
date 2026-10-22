@@ -63,10 +63,13 @@ export function MessagesScreen(p: {
   const [conns, setConns] = useState<{ id: string; name: string; state: string }[]>([]);
   const [i, setI] = useState(0);
   const reading = useRef(0);
+  /** What was shown on this visit: a refresh of the queue leads on past it (messages-list.ts). */
+  const shownHere = useRef(new Set<string>());
   const current = items?.[i];
 
   async function readItem(m: MessageItem) {
     const mine = ++reading.current;
+    shownHere.current.add(m.id);
     p.stop();
     resume = { id: m.id, at: Date.now() };
     const text = m.say.text ? `${m.say.frame} ${m.say.text}` : m.say.frame;
@@ -103,7 +106,8 @@ export function MessagesScreen(p: {
       // The message in front stays first (fetched again after a new message, or back from a reply's question), so
       // "Nächste" leads on to the rest, the unread first.
       const keep = first ? (resume && Date.now() - resume.at < 5 * 60_000 ? resume.id : null) : (items?.[i]?.id ?? null);
-      const list = keepInFront(r.items, first ? r.items.find((x) => x.id === keep) : items?.[i]);
+      if (first) shownHere.current.clear();
+      const list = keepInFront(r.items, first ? r.items.find((x) => x.id === keep) : items?.[i], shownHere.current);
       setItems(list);
       setI(0);
       if (!first || Date.now() - introducedAt < 1500) return;
@@ -138,6 +142,8 @@ export function MessagesScreen(p: {
     if (!items?.length) return say(tr('messages.empty'), 'system');
     if (i + 1 >= items.length) {
       setI(0);
+      // Through all of them: the next round goes in the queue's own order again.
+      shownHere.current.clear();
       say(tr('messages.noMore'), 'system');
       return;
     }

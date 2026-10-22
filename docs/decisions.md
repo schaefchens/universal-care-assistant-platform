@@ -958,3 +958,18 @@ The plan: [plan-m3.md](plan-m3.md).
   - Found and fixed: the person's own chat was named as a stranger's; the risk was said again right after
     disconnecting.
 - **The browser walk** (2026-10-21): 15 of 15, WhatsApp linked on its own page.
+- **By hand, with the owner's own account, on the emulator (2026-10-22)**, the person "Wanda Test":
+  - **Linked** with the code typed on the owner's phone; 36 chats of the last 30 days.
+  - **Read** on the messages screen; the voice message the owner recorded in their own chat played.
+  - **One message to the owner's own chat**: "Sent to Schäfchen." came 0.42 s after it went out, at WhatsApp's
+    acknowledgement; it was on the phone.
+  - **Found and fixed: the history lost most of its messages.** WhatsApp's first part named the chats, and its later
+    parts brought thousands of their messages without naming the chats again; those were dropped (612 of about 5,000
+    from the last 30 days kept). Every message of the last 30 days now counts, whichever part brings it, and a chat's
+    read part follows all its incoming messages seen so far, once WhatsApp has said how many are unread.
+  - **Found and fixed: "Next" never reached the end of a long list.** Each refresh of the messages screen (a
+    transcript done, a message arrived) started it over at the first unread message, and the history's voice
+    messages were transcribed one after another in the background. It now leads on past what was shown on this
+    visit; the messages skipped come at the end.
+  - Clicking through quickly to reach the own chat, one group message was read to its end and marked read on
+    WhatsApp.

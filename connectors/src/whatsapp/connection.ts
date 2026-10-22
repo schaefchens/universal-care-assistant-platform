@@ -122,7 +122,10 @@ export class WhatsappConnection {
   private readonly outgoing = new Map<string, { chatId: string; at: number }>();
   /** People and chats already reported (names are reported again when they change). */
   private readonly toldUsers = new Set<string>();
-  private readonly chats = new Map<string, { jid: string; unread: number; muteEndTime: unknown }>();
+  /** `counted`: WhatsApp said how many are unread (a chat only seen in a message has no count yet). */
+  private readonly chats = new Map<string, { jid: string; unread: number; counted: boolean; muteEndTime: unknown }>();
+  /** The times of the incoming messages the history brought, by chat: where its read part ends. */
+  private readonly historyIn = new Map<string, number[]>();
   private readonly groupsAsked = new Set<string>();
 
   constructor(o: ConnectionOptions) {
@@ -333,7 +336,11 @@ export class WhatsappConnection {
     const h = ev['messaging-history.set'];
     if (h) this.onHistory(h);
     for (const c of [...(ev['contacts.upsert'] ?? []), ...(ev['contacts.update'] ?? [])]) this.onContact(c);
-    for (const c of ev['chats.upsert'] ?? []) this.onChat(c);
+    for (const c of ev['chats.upsert'] ?? []) {
+      if (!c.id || skipChat(c.id)) continue;
+      this.noteChat(c);
+      this.tellChat(c.id, null, null);
+    }
     for (const c of ev['chats.update'] ?? []) {
       if (!c.id || skipChat(c.id)) continue;
       // Baileys counts a new message as +1; 0 is "read on another device" (the phone), -1 "marked unread there".
@@ -362,7 +369,11 @@ export class WhatsappConnection {
     if (this.ids.dirty) this.save();
   }
 
-  /** What WhatsApp sends at linking: chats, contacts, the mappings between numbers and LIDs, and messages. */
+  /**
+   * What WhatsApp sends at linking, in parts: chats, contacts, the mappings between numbers and LIDs, and messages. A
+   * part's messages may belong to chats an earlier part named (spike A: the first part names 113 chats, the next ones
+   * bring thousands of their messages and no chat): every message of the last 30 days counts, whichever part brings it.
+   */
   private onHistory(h: BaileysEventMap['messaging-history.set']) {
     for (const p of h.lidPnMappings ?? []) this.ids.pair(p.lid, p.pn);
     for (const c of h.contacts) this.onContact(c, false);
@@ -370,7 +381,7 @@ export class WhatsappConnection {
     const byChat = new Map<string, WAMessage[]>();
     for (const m of h.messages) {
       learn(m, this.ids);
-      if (seconds(m.messageTimestamp) < since || !m.key.remoteJid) continue;
+      if (seconds(m.messageTimestamp) < since || !m.key.remoteJid || skipChat(m.key.remoteJid)) continue;
       const list = byChat.get(m.key.remoteJid) ?? [];
       list.push(m);
       byChat.set(m.key.remoteJid, list);
@@ -382,16 +393,41 @@ export class WhatsappConnection {
     }
     for (const c of h.chats) {
       if (!c.id || skipChat(c.id)) continue;
-      const msgs = byChat.get(c.id) ?? [];
-      // Only chats with something in the last 30 days: the others are no news, and come when they have some.
-      if (!msgs.length && seconds(c.conversationTimestamp) < since) continue;
-      this.onChat(c, msgs);
+      this.noteChat(c);
+      // Only chats with something in the last 30 days are told: the others are no news, and come when they have some.
+      if (byChat.has(c.id) || seconds(c.conversationTimestamp) >= since) this.tellChat(c.id, null, null);
     }
-    // Messages of chats the history did not name in this part.
+    let kept = 0;
     for (const [jid, msgs] of byChat) {
-      if (!this.chats.has(chatId(jid, this.ids))) this.onChat({ id: jid } as BaileysEventMap['chats.upsert'][number], msgs);
+      const key = chatId(jid, this.ids);
+      if (!this.chats.has(key)) {
+        this.noteChat({ id: jid } as BaileysEventMap['chats.upsert'][number]);
+        this.tellChat(jid, null, null);
+      }
+      const seen = this.historyIn.get(key) ?? [];
+      for (const m of msgs.sort((a, b) => seconds(a.messageTimestamp) - seconds(b.messageTimestamp))) {
+        this.onMessage(this.sock, m, false);
+        if (!m.key.fromMe) seen.push(seconds(m.messageTimestamp));
+        kept++;
+      }
+      this.historyIn.set(key, seen);
+      this.tellRead(key);
     }
-    this.o.log(`whatsapp ${this.o.id}: history part (${h.chats.length} chats, ${h.messages.length} messages, ${[...byChat.values()].reduce((n, l) => n + l.length, 0)} kept)`);
+    // A chat whose unread count came in this part, with its messages in earlier ones.
+    for (const c of h.chats) if (c.id && !skipChat(c.id) && !byChat.has(c.id)) this.tellRead(chatId(c.id, this.ids));
+    this.o.log(`whatsapp ${this.o.id}: history part (${h.chats.length} chats, ${h.messages.length} messages, ${kept} kept)`);
+  }
+
+  /**
+   * Read up to the newest incoming message older than the unread ones: WhatsApp counts a chat's unread messages, which
+   * are its newest, and its history comes newest first, so the ones seen so far decide.
+   */
+  private tellRead(key: string) {
+    const known = this.chats.get(key);
+    const seen = this.historyIn.get(key);
+    if (!known?.counted || !seen || seen.length <= known.unread) return;
+    const newestFirst = [...seen].sort((a, b) => b - a);
+    this.emit({ t: 'chat.read', id: this.o.id, chatId: key, inboxMaxId: String(newestFirst[known.unread]), outboxMaxId: null });
   }
 
   private onContact(c: Partial<BaileysEventMap['contacts.upsert'][number]>, tell = true) {
@@ -407,30 +443,22 @@ export class WhatsappConnection {
     }
   }
 
-  /** A chat, with the history's messages for it (read as far as WhatsApp says), or alone. */
-  private onChat(c: BaileysEventMap['chats.upsert'][number], msgs: WAMessage[] = []) {
-    if (!c.id || skipChat(c.id)) return;
+  /** What a chat says about itself: its unread count, whether it is muted, a group's name (asked for when missing). */
+  private noteChat(c: BaileysEventMap['chats.upsert'][number]) {
+    if (!c.id) return;
     const key = chatId(c.id, this.ids);
     const prev = this.chats.get(key);
-    this.chats.set(key, { jid: c.id, unread: c.unreadCount ?? prev?.unread ?? 0, muteEndTime: c.muteEndTime ?? prev?.muteEndTime });
+    const counted = typeof c.unreadCount === 'number';
+    this.chats.set(key, { jid: c.id, unread: counted ? c.unreadCount! : (prev?.unread ?? 0), counted: counted || prev?.counted === true, muteEndTime: c.muteEndTime ?? prev?.muteEndTime });
     if (isJidGroup(c.id)) {
       this.ids.setSubject(c.id, c.name);
       if (!this.ids.subject(c.id)) this.askSubject(c.id);
     }
-    // Read up to the newest incoming message older than the unread ones (WhatsApp counts them, newest first).
-    const incoming = msgs
-      .filter((m) => !m.key.fromMe)
-      .map((m) => seconds(m.messageTimestamp))
-      .sort((a, b) => b - a);
-    const unread = c.unreadCount ?? 0;
-    const inbox = incoming.length > unread ? String(incoming[unread]) : null;
-    this.tellChat(c.id, inbox, null);
-    for (const m of msgs.sort((a, b) => seconds(a.messageTimestamp) - seconds(b.messageTimestamp))) this.onMessage(this.sock, m, false);
   }
 
   private tellChat(jid: string, inbox: string | null, outbox: string | null) {
     const key = chatId(jid, this.ids);
-    const known = this.chats.get(key) ?? { jid, unread: 0, muteEndTime: undefined };
+    const known = this.chats.get(key) ?? { jid, unread: 0, counted: false, muteEndTime: undefined };
     this.chats.set(key, known);
     const w = chat({ id: jid, unreadCount: known.unread, muteEndTime: known.muteEndTime } as BaileysEventMap['chats.upsert'][number], this.ids, this.lang, this.now(), { inbox, outbox });
     if (!w) return;
