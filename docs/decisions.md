@@ -865,6 +865,9 @@ The plan: [plan-m3.md](plan-m3.md).
    - Nothing is marked read on the service for it: no read receipts, the phone's own unread state stays.
    - Before, the history copied the service's own unread state (Telegram's backfill too): after linking WhatsApp
      the owner had 26 "new" messages, and many more while the history was still coming.
+10. **On WhatsApp, someone not in the address book is named by the name they gave themselves**, as a stranger (the
+    owner, 2026-10-22: "self given names are better than numbers, no one knows numbers"; To confirm, item 3).
+    plan-m3.md, K2, said "never push names".
 
 ### To confirm
 
@@ -892,6 +895,10 @@ The plan: [plan-m3.md](plan-m3.md).
    - The other choice: the self-given name, always with "nicht in deinen Kontakten", as Telegram's.
    - Seen with the owner's account (2026-10-22): in a community group, 24 people were "Unbekannt" and 17 only a
      number WhatsApp masks ("+49 … 55"), so its messages hardly say who wrote them.
+   - **The owner chose the other choice, 2026-10-22:** "self given names are better than numbers, no one knows
+     numbers". Built: someone not in the address book is named by the name they gave themselves, and stays a stranger
+     ("Achtung: … ist nicht in deinen Kontakten." before anything is sent to them), as on Telegram; then their number,
+     the part of it WhatsApp shows, or "Unbekannt".
 4. **WhatsApp's "delivered" is not kept yet; "read" is.**
    - plan-m3.md, K2: "delivered and read states kept".
    - Built: the other side's read receipts mark the person's messages read, as Telegram's do. "Delivered" has no place

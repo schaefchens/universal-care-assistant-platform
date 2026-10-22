@@ -173,6 +173,18 @@ describe('whatsapp ids', () => {
     expect(maskedNumber('+1 ••• •• 01')).toBe('+1 … 01');
   });
 
+  it('someone not in the address book is named by the name they gave themselves, never as a contact; a saved name wins', () => {
+    const x = new Ids();
+    x.setOwnName('4915112345679@s.whatsapp.net', 'Maria (Tochter)');
+    expect(x.name('4915112345679@s.whatsapp.net', 'Unbekannt')).toBe('Maria (Tochter)');
+    expect(x.savedName('4915112345679@s.whatsapp.net')).toBeNull();
+    x.setName('4915112345679@s.whatsapp.net', 'Maria Beispiel');
+    expect(x.name('4915112345679@s.whatsapp.net', 'Unbekannt')).toBe('Maria Beispiel');
+    // A masked number or "~" is no name of their own.
+    expect(x.setOwnName('123456789012348@lid', '+49∙∙∙∙∙∙55')).toBe(false);
+    expect(x.setOwnName('123456789012348@lid', '~')).toBe(false);
+  });
+
   it('numbers are said as people write them', () => {
     expect(formatNumber('4915112345678')).toBe('+49 1511 2345678');
     expect(formatNumber('12025550123')).toBe('+1 202 555 0123');

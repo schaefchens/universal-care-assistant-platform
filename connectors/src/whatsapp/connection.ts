@@ -434,8 +434,10 @@ export class WhatsappConnection {
     if (!c.id) return;
     this.ids.pair(c.id, c.lid ?? c.phoneNumber);
     if (c.phoneNumber) this.ids.pair(c.phoneNumber, c.lid ?? c.id);
-    // `name` is the person's own (their address book); `notify` is what the other gave themselves, never used.
-    if ('name' in c && this.ids.setName(c.id, c.name) && tell) {
+    // `name` is the person's own (their address book); `notify` is what the other gave themselves, said for someone
+    // not in the address book, as a stranger.
+    const changed = ('name' in c && this.ids.setName(c.id, c.name)) || ('notify' in c && this.ids.setOwnName(c.id, c.notify) && !this.ids.savedName(c.id));
+    if (changed && tell) {
       const userId = this.ids.userId(c.id);
       if (this.toldUsers.has(userId)) this.tellUser(c.id, true);
       const chat = this.chats.get(this.ids.canonical(c.id));
@@ -507,6 +509,8 @@ export class WhatsappConnection {
       if (c) this.emit({ t: 'msg.upsert', id, msg: { chatId: chatId(jid, this.ids), externalId: ch.targetId, fromId: senderOf(m, this.ids), outgoing: m.key.fromMe === true, date: seconds(m.messageTimestamp), editDate: ch.at, ...c } });
       return;
     }
+    // The sender's own name comes with their message: said until the person saves one for them.
+    if (!m.key.fromMe && m.pushName) this.ids.setOwnName((isJidGroup(jid) ? m.key.participant : jid) ?? jid, m.pushName);
     const w = message(m, this.ids, this.lang, (a) => this.fileOf(m, a));
     if (!w) return;
     const key = w.chatId;

@@ -11,7 +11,6 @@ import type { FromConnectors } from '@ucap/shared';
 import type { BaileysEventMap, BinaryNode, WAMessage, WAMessageKey } from 'baileys';
 import { describe, expect, it } from 'vitest';
 import { type SocketLike, WhatsappConnection } from '../src/whatsapp/connection.ts';
-import { formatNumber } from '../src/whatsapp/ids.ts';
 import { openStore, type SealedStore } from '../src/whatsapp/store.ts';
 
 const NOW = 1_792_000_000;
@@ -152,7 +151,7 @@ describe('a WhatsApp connection', () => {
     await conn.stop();
   });
 
-  it('keeps 30 days of what WhatsApp sends at linking, read as far as WhatsApp says, named from the address book only', async () => {
+  it('keeps 30 days of what WhatsApp sends at linking, read as far as WhatsApp says, named from the address book, a stranger by their own name', async () => {
     const { conn, sock, of, open } = await setup({ linked: true });
     await open();
     await sock().push({
@@ -183,8 +182,8 @@ describe('a WhatsApp connection', () => {
     expect(of('chat.read')).toEqual([{ t: 'chat.read', id: 'c1', chatId: ANNA, inboxMaxId: String(NOW - 2 * DAY), outboxMaxId: null }]);
     expect(of('user.upsert').map((e) => e.user)).toEqual([
       { externalId: 'user:4915112345678', name: 'Anna Beispiel', isContact: true, isBot: false },
-      // Never the name she gave herself.
-      { externalId: 'user:4917699999999', name: formatNumber('4917699999999'), isContact: false, isBot: false },
+      // Not in the address book: the name she gave herself, as a stranger (the owner, 2026-10-22).
+      { externalId: 'user:4917699999999', name: 'Maria (Tochter)', isContact: false, isBot: false },
     ]);
     expect(of('msg.upsert').map((e) => [e.msg.externalId, e.msg.outgoing, e.live ?? false])).toEqual([
       ['A2', false, false],
