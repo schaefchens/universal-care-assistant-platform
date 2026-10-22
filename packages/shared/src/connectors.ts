@@ -58,6 +58,8 @@ export interface WireMessage {
   fileName: string | null;
   /** An email's subject. */
   subject?: string | null;
+  /** An email's quoted part, kept apart from what is new: its first line names it ("Am … schrieb Anna:"). */
+  quoted?: string | null;
 }
 
 export interface WireChat {
@@ -121,6 +123,11 @@ export type FromConnectors =
    * connectors process TDLib still sends what was pending; its result then comes by the temporary id alone.
    */
   | { t: 'send.result'; id: string; requestId?: string; state: 'pending_service' | 'sent' | 'failed'; externalId?: string; tempId?: string; error?: string }
+  /**
+   * A sent email came back (docs/plan-m3.md, K3): the mail server's report names the original's Message-ID
+   * (`externalId`) and its status ("5.1.1": no such mailbox).
+   */
+  | { t: 'send.bounced'; id: string; externalId: string; status: string | null }
   | { t: 'file.ready'; id: string; requestId: string; ok: boolean; path?: string; mime?: string | null };
 
 /**

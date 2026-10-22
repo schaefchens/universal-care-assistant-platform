@@ -47,6 +47,7 @@ import { MessagingServices } from './screens/MessagingServices.tsx';
 import { NotesScreen } from './screens/NotesScreen.tsx';
 import { TelegramPage } from './screens/TelegramPage.tsx';
 import { WhatsappPage } from './screens/WhatsappPage.tsx';
+import { EmailPage } from './screens/EmailPage.tsx';
 import { Devices } from './screens/Devices.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
@@ -104,6 +105,8 @@ type Page =
   | 'messagingServices'
   | 'telegram'
   | 'whatsapp'
+  /** An email account: a new one (null), or one connected (K3). */
+  | { email: string | null }
   /** An action of the assistant waiting for the person's yes; then back where it was asked (the messages). */
   | { confirm: { id: string; contentHash: string; prompt: string }; back?: 'messages' | 'notes' }
   /** The recovery words were said to the assistant: a warning, and new words offered (Appendix C). */
@@ -679,7 +682,7 @@ export function App() {
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
     if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
-    else if (page === 'telegram' || page === 'whatsapp') setPage('messagingServices');
+    else if (page === 'telegram' || page === 'whatsapp' || (typeof page === 'object' && 'email' in page)) setPage('messagingServices');
     else if (typeof page === 'object' && ('remindersOf' in page || 'configOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
@@ -1081,9 +1084,20 @@ export function App() {
       />
     );
   else if (page === 'messagingServices')
-    content = <MessagingServices session={session} refresh={messagingRev} onTelegram={() => setPage('telegram')} onWhatsapp={() => setPage('whatsapp')} onClose={() => setPage('settings')} />;
+    content = (
+      <MessagingServices
+        session={session}
+        refresh={messagingRev}
+        onTelegram={() => setPage('telegram')}
+        onWhatsapp={() => setPage('whatsapp')}
+        onEmail={(id) => setPage({ email: id })}
+        onClose={() => setPage('settings')}
+      />
+    );
   else if (page === 'telegram') content = <TelegramPage session={session} refresh={messagingRev} onClose={() => setPage('messagingServices')} />;
   else if (page === 'whatsapp') content = <WhatsappPage session={session} refresh={messagingRev} onClose={() => setPage('messagingServices')} />;
+  else if (typeof page === 'object' && 'email' in page)
+    content = <EmailPage session={session} refresh={messagingRev} connectionId={page.email} onConnected={(id) => setPage({ email: id })} onClose={() => setPage('messagingServices')} />;
   else if (page === 'leak')
     content = (
       <main className="area-screen" aria-label={ui.tr('voice.leak.title')}>

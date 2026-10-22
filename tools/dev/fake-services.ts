@@ -17,7 +17,8 @@
  * A sent message is pending, then sent after 1.5 s, and Anna answers a little later on the same service. A text with
  * "#fail", or any to "Maria (Tochter)" (as if she had blocked the person), is refused; "#slow" is confirmed after 20 s,
  * "#lost" is never answered. Control on 127.0.0.1:8823 (POST, JSON):
- *   /incoming {service?, chat: "anna"|"familie"|"maria", text, subject?}   a new message (Telegram unless named)
+ *   /incoming {service?, chat: "anna"|"familie"|"maria", text, subject?, quoted?}  a new message (Telegram unless
+ *                                                                          named; an email's subject and quoted part)
  *   /voice {service?, chat, ogg: <base64>, seconds}                        a new voice message (Ogg/Opus; not by email)
  *   /delete {service?, chat, id}                                           a message deleted for everyone
  *   /pair {}                                                               WhatsApp: the code typed on the phone now
@@ -305,7 +306,7 @@ createServer(async (req, res) => {
   }
   if (!a) return done(409, { error: `no ready ${service} connection` });
   if (req.url === '/incoming') {
-    const m = message(a, chat, { text: String(b.text ?? 'Hallo'), ...(typeof b.subject === 'string' ? { subject: b.subject } : {}) });
+    const m = message(a, chat, { text: String(b.text ?? 'Hallo'), ...(typeof b.subject === 'string' ? { subject: b.subject } : {}), ...(typeof b.quoted === 'string' ? { quoted: b.quoted } : {}) });
     emit({ t: 'msg.upsert', id: a.id, msg: m, live: true });
     return done(200, { id: m.externalId });
   }

@@ -2,7 +2,7 @@
  * The person's messaging services (docs/plan-m3.md, K1): each connection with its state and what it can do (docs/plan.md,
  * Appendix K: "capability descriptors per connection"), shown and said, so previews are never taken for a whole history
  * (CONCEPT §3: "Access to notification previews must not be presented as access to a complete conversation history").
- * Telegram and WhatsApp open their own pages to connect; email, SMS and previews come with their own steps (K3–K5).
+ * Telegram, WhatsApp and each email account open their own pages; SMS and previews come with their own steps (K4, K5).
  * Disconnecting asks first and deletes what UCAP kept; the service keeps its own. Helpers see none of it (CONCEPT §3).
  */
 import { useEffect, useRef, useState } from 'react';
@@ -31,7 +31,7 @@ interface Connection {
 const LOGIN = new Set(['wait_phone', 'wait_code', 'wait_password', 'wait_qr', 'wait_pairing']);
 const ON_PHONE = new Set(['sms', 'notifications']);
 
-export function MessagingServices(p: { session: Session; refresh: number; onTelegram: () => void; onWhatsapp: () => void; onClose: () => void }) {
+export function MessagingServices(p: { session: Session; refresh: number; onTelegram: () => void; onWhatsapp: () => void; onEmail: (connectionId: string | null) => void; onClose: () => void }) {
   const ui = useUi();
   const { tr, say } = ui;
   const [list, setList] = useState<Connection[] | null>(null);
@@ -93,7 +93,7 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
     setAsking(null);
     try {
       await p.session.call(`/api/v1/messaging/connections/${c.id}`, { method: 'DELETE' });
-      report(tr('messaging.disconnected', { name: c.name }));
+      report(tr('messaging.disconnected', { name: `${c.name}${account(c)}` }));
       await load();
     } catch (e) {
       report(tr(`error.${e instanceof ApiError ? e.code : 'internal'}`));
@@ -121,19 +121,19 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
             <li key={c.id} className="stack">
               <p>{line(c)}</p>
               <div className="row">
-                {(c.service === 'telegram' || c.service === 'whatsapp') && (
-                  <Button className="button" onPress={c.service === 'telegram' ? p.onTelegram : p.onWhatsapp}>
-                    {tr('messaging.open', { name: c.name })}
+                {(c.service === 'telegram' || c.service === 'whatsapp' || c.service === 'email') && (
+                  <Button className="button" onPress={() => (c.service === 'telegram' ? p.onTelegram() : c.service === 'whatsapp' ? p.onWhatsapp() : p.onEmail(c.id))}>
+                    {tr('messaging.open', { name: `${c.name}${account(c)}` })}
                   </Button>
                 )}
                 <Button
                   className="button"
                   onPress={() => {
                     setAsking(c);
-                    say(tr('messaging.disconnect.confirm', { name: c.name }), 'system');
+                    say(tr('messaging.disconnect.confirm', { name: `${c.name}${account(c)}` }), 'system');
                   }}
                 >
-                  {tr('messaging.disconnect', { name: c.name })}
+                  {tr('messaging.disconnect', { name: `${c.name}${account(c)}` })}
                 </Button>
               </div>
             </li>
@@ -143,7 +143,7 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
       {asking && (
         <div className="stack">
           <p ref={questionRef} tabIndex={-1} className="question">
-            {tr('messaging.disconnect.confirm', { name: asking.name })}
+            {tr('messaging.disconnect.confirm', { name: `${asking.name}${account(asking)}` })}
           </p>
           <div className="row">
             <Button className="button primary" onPress={() => void disconnect(asking)}>
@@ -163,6 +163,12 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
       {offered.whatsapp && !whatsapp && (
         <Button className="button primary" onPress={p.onWhatsapp}>
           {tr('messaging.connect.whatsapp')}
+        </Button>
+      )}
+      {/* Several accounts, each connected on its own. */}
+      {offered.email && (
+        <Button className="button primary" onPress={() => p.onEmail(null)}>
+          {tr(list?.some((c) => c.service === 'email') ? 'messaging.connect.emailMore' : 'messaging.connect.email')}
         </Button>
       )}
     </main>

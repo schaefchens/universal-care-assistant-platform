@@ -24,14 +24,15 @@ UCAP is a self-hosted assistive and care platform for disabled people. **CONCEPT
 ```sh
 npm run setup                     # once: secrets outside the repo (~/.config/ucap/dev-secrets), writes .env
 npm install                       # host node_modules (macOS) for tests, tsc and the editor
-docker compose up -d --wait       # db :55440, ntfy :8811, caddy :8810, core :8816, assistant :8817, connectors, whatsapp
+docker compose up -d --wait       # db :55440, ntfy :8811, caddy :8810, core :8816, assistant :8817, connectors, whatsapp, email
 npm test                          # vitest: herde-project, server, tools (needs the db service)
 npm run typecheck
 npm run test:docker               # the same suite inside the image
 npm run test:e2e                  # the acceptance script in browsers, on the e2e stack (made afresh; UCAP_E2E_KEEP=1 keeps it)
 npm run android:install           # build and install the app on the emulator; npm run android:check checks it there
 npm run backup:check              # backup, restore into a scratch database, compare every table
-docker compose logs -f core       # core restarts on save (node --watch); connectors, whatsapp: docker compose restart <it>
+docker compose logs -f core       # core restarts on save (node --watch); connectors, whatsapp, email: docker compose restart <it>
+UCAP_EMAIL_TEST=1 npx vitest run --project connectors test/email-live.test.ts   # email against the two Hetzner test mailboxes
 services/stt-mlx/run.sh           # native whisper on 127.0.0.1:8813 (Docker cannot reach the Mac's GPU)
 npm --prefix app run dev          # Vite on 127.0.0.1:8812: the app in a browser, through the stack (its /api proxy)
 node tools/live/drive.ts state    # LIVE mode on the emulator: play recordings into its capture (docs/spikes/m2.md)
@@ -106,6 +107,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 **WhatsApp (Baileys; docs/spikes/m3.md, A)**
 - Nothing automated ever reaches the owner's WhatsApp, and Claude Code's auto mode refuses to start a command that
   does: the owner runs such steps (the spike, hand checks) in a terminal of their own. Everything else uses the stand-in.
+- The emulator's test person ("Wanda Test") holds the owner's real WhatsApp. Never print its screens or speech: only
+  states, counts, and texts a test sent itself. The messages screen reads its first unread message as it opens, and a
+  message heard to its end is marked read on WhatsApp: open it only with a test message first (a mail dated back).
 - libsignal, under Baileys, prints session records with their private keys through `console.info` ("Closing
   session: …"), past Baileys' logger: a process or script that loads Baileys replaces the console first.
 - WhatsApp refuses a pairing code for a device named by UCAP: keep Baileys' default (`Browsers.macOS('Chrome')`, listed
@@ -126,6 +130,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - At their debug levels imapflow and nodemailer log commands, and LOGIN carries the password: always `logger: false`.
 - imapflow never reconnects: after `close` make a new client (the old one refuses: `InstanceReused`). Without QRESYNC
   a flag change heard in IDLE has no UID.
+- imapflow goes into IDLE only after `autoIdleDelay` without a command (15 s by default): a mail that comes meanwhile
+  waits for it. UCAP sets 1 s.
+- Do not run another IMAP command while a `fetch()` streams (it waits for the fetch): collect, then act.
 - nodemailer resolves a host with its own DNS queries before the system resolver; in this Mac's sandbox each one
   times out after 27 s, so pass the address from `dns.lookup` and the name as `servername`.
 - mailparser puts `List-*` under one `list` header. Its HTML-to-text keeps hidden text, image URLs and tracking pixels:

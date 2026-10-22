@@ -76,11 +76,11 @@ export function createMessageStore(d: { db: Db; clock: Clock }) {
         const read = fromHistory || (readMax !== null && BigInt(key) <= BigInt(readMax)) ? now() : null;
         const before = await sql<{ text: string }>`select text from messaging_messages where conversation_id = ${conv.id} and external_id = ${m.externalId}`.execute(trx);
         const r = await sql<{ id: string; inserted: boolean }>`
-          insert into messaging_messages (id, conversation_id, external_id, sort_key, sender_external_id, direction, kind, text, file_name, subject, sent_at, edited_at, read_at, created_at, updated_at)
-          values (${uuidv7(d.clock())}, ${conv.id}, ${m.externalId}, ${key}, ${m.fromId}, ${m.outgoing ? 'out' : 'in'}, ${m.kind}, ${m.text}, ${m.fileName}, ${m.subject ?? null},
+          insert into messaging_messages (id, conversation_id, external_id, sort_key, sender_external_id, direction, kind, text, file_name, subject, quoted, sent_at, edited_at, read_at, created_at, updated_at)
+          values (${uuidv7(d.clock())}, ${conv.id}, ${m.externalId}, ${key}, ${m.fromId}, ${m.outgoing ? 'out' : 'in'}, ${m.kind}, ${m.text}, ${m.fileName}, ${m.subject ?? null}, ${m.quoted ?? null},
                   ${at(m.date)}, ${m.editDate ? at(m.editDate) : null}, ${read}, ${now()}, ${now()})
           on conflict (conversation_id, external_id) do update set kind = excluded.kind, text = excluded.text, file_name = excluded.file_name, subject = excluded.subject,
-            edited_at = excluded.edited_at, updated_at = excluded.updated_at
+            quoted = excluded.quoted, edited_at = excluded.edited_at, updated_at = excluded.updated_at
           returning id, (xmax = 0) as inserted`.execute(trx);
         const { id, inserted } = r.rows[0]!;
         if (m.file) {

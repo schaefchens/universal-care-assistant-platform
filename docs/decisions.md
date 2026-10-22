@@ -904,6 +904,31 @@ The plan: [plan-m3.md](plan-m3.md).
    - Built: the other side's read receipts mark the person's messages read, as Telegram's do. "Delivered" has no place
      in the store or the connector protocol yet, and nothing tells the person either state so far.
    - It comes with K4, where SMS delivery reports need the same: one "delivered" for both.
+5. **Email senders are named by the name they give themselves, and count as known when the person wrote to them in
+   the last year** (their Sent folder), until UCAP's own contacts come (K6).
+   - plan-m3.md, Principles: "Names come from the person's contacts, never from the sender. A WhatsApp push name, an
+     email's display name or a Telegram name ("Maria (Tochter)") is the sender's own claim."
+   - Built as the owner chose for WhatsApp (decided item 10): the display name, else the address; whoever the person
+     never wrote to is a stranger ("Achtung: … ist nicht in deinen Kontakten." before C1). A sender whose domain failed
+     DMARC at the person's provider is named "… (Absender nicht bestätigt)" and never counts as known.
+   - The other choice: everyone a stranger by email until K6.
+6. **A reply goes to everyone in the thread's newest mail**: its sender (or the address its Reply-To asks for) and
+   everyone it went to, but the person ("Allen antworten"). plan-m3.md says what a reply carries (In-Reply-To,
+   References, the subject), not to whom. A thread with several people is one conversation, as a group is on Telegram
+   and WhatsApp, and C1 names it. The other choice: the sender alone, as a mail program's "Antworten".
+7. **A new email to someone without a thread waits for K6.** plan-m3.md, K3: "a new mail gets a subject (proposed by
+   the model, read back in C1)". A new mail needs an address, which by voice is hard to say and to check; with K6 it
+   comes from a contact. Until then UCAP replies in the threads there are, and email's capabilities say so ("antwortet
+   in den Unterhaltungen, die es gibt"); they said "any address" until the emulator check showed it.
+8. **A mail UCAP sends carries the person's address alone as its sender**, no name: UCAP has no setting for how a
+   person signs their mail, and their display name in UCAP is what helpers see. The other choice: the display name.
+9. **A mail that comes back is told once, on the device it was confirmed on**, as a new template: C13, "Die E-Mail an
+   {recipient} kam zurück: {reason}." The reason comes from the report's status: the address unknown (5.1.x), the
+   mailbox full (x.2.2), refused (5.7.x), or "sie konnte nicht zugestellt werden". plan-m3.md: "a bounce is matched
+   and told"; plan.md's Appendix F has C1–C12.
+   - A report that a mail is only delayed is no news. A report about a mail UCAP did not send, or sent more than 30
+     days before, is shown as a mail.
+   - A bounced mail is not kept as a draft: it was sent, and its words are in the thread.
 
 ### Decided (within the plan)
 
@@ -957,6 +982,44 @@ The plan: [plan-m3.md](plan-m3.md).
   there (spike A), so the console is replaced and its lines counted once an hour, by their wording.
 - **The person's own chat ("Message yourself") is named by the name they gave themselves on WhatsApp** (or their number)
   and counts as known: a message to oneself is no stranger's ("Achtung: … ist nicht in deinen Kontakten").
+- **The first start of an email account checks it, sending included** (IMAP's login and SMTP's): a refused password,
+  a server that cannot be reached or one not on the internet is said on the page in plain words ("Der Mailserver hat
+  die Anmeldung abgelehnt. Stimmt das Passwort?"), with what the provider asks for first (an app password: Gmail,
+  iCloud, Telekom; IMAP switched on: GMX, WEB.DE). Once the account worked, a dropped connection is tried again (5 s,
+  doubling to 5 minutes), "wird verbunden" only after 30 s; a refused login is never tried again (it could lock the
+  account).
+- **An email account's servers are filled in by the address's domain** for GMX, WEB.DE, Telekom, Posteo, mailbox.org,
+  iCloud and Gmail; for other domains the person picks a provider (Hetzner hosts domains of one's own) or types them.
+  Outlook.com, Hotmail and Microsoft 365 are named as not possible yet.
+- **A mail server must be on the internet.** The API refuses literal private addresses and names without a dot; the
+  email process resolves a name through the system and connects only when every address is public (not the server
+  itself, its Docker network or the LAN), to that address, with the name kept for TLS. STARTTLS is required where
+  chosen.
+- **The email volume keeps UIDs and Message-IDs per connection**, no content and no password: the password is sealed
+  in the database and lives in the email process's memory.
+- **The inbox and the Sent folder: 30 days at connecting, then everything new.** The inbox in IDLE; the Sent folder
+  every 10 minutes. A folder the server renumbered (UIDVALIDITY) has its 30 days fetched again. A mail moved or deleted
+  in another program stays in UCAP for its days.
+- **Email threads** by References and In-Reply-To (a mail that names only its parent joins the parent's thread). One
+  other person: the thread is named by them, and their threads are told apart by subject; several: by the topic (the
+  subject without "Re:", "AW:", "WG:" …).
+- **Email read states go both ways**: \Seen once the person heard a mail; a mail read in another program is read in
+  UCAP (QRESYNC gives a change's UID; at a start, the flags of the 30 days).
+- **An email's words**: its plain text if it has one; else its HTML turned into text by UCAP, with htmlparser2
+  (hidden parts dropped, pictures by their alt text, table cells apart, links by their words, no addresses). The new
+  part is said; the quoted part is named by its first line ("Darunter zitiert: Am Montag schrieb Anna.") and kept; the
+  signature (after "-- ") is not said. A forward is said whole: what was sent on is the message. Attachments are named
+  by name and kind ("Anhang: Plan.pdf (PDF)."), never opened.
+- **A mail's first megabyte is fetched**: its words come first; what a larger mail carries beyond it is named from
+  its structure (BODYSTRUCTURE).
+- **"Gesendet" at the mail server's 250**, and the same bytes appended to the Sent folder, read (Gmail files its own
+  copy); a copy that cannot go there while IMAP is away waits for it.
+- **A reply's subject is the thread's with "Re: "**, also when the model repeats the thread's subject (seen on the
+  emulator: the model wrote it without "Re: "); the person's own when they want another.
+- **imapflow is in IDLE one second after its last command**, not after its default 15 s: a mail that came in those
+  seconds waited for them (measured below).
+- **htmlparser2 (MIT) is used directly**, for the HTML to speak: mailparser's own HTML-to-text is not fit for speech
+  (spike B), and htmlparser2 is already part of mailparser's dependencies.
 
 ### Measured
 
@@ -999,3 +1062,30 @@ The plan: [plan-m3.md](plan-m3.md).
     says how many there are.
   - The owner's data on the dev server was brought in line with both fixes and the new rule by hand (12 messages read
     in UCAP, 17 people no longer contacts), instead of a third link.
+- **K3's live suite with the two test mailboxes** (`UCAP_EMAIL_TEST=1`, 2026-10-22):
+  - One mailbox sends; the other is told over IDLE and replies through UCAP; the reply comes back in the same thread,
+    and so does the answer to it.
+  - The reply's copy is in the Sent folder, and the first mail is read on the server once heard.
+  - Nothing of the mails, the addresses or the passwords is in the log.
+  - IDLE told the first mail 1.2 s after the server took it; with imapflow's default auto-IDLE delay, right after the
+    start, it was 15.2 s. A run takes 7 s.
+- **K3 on the emulator** (2026-10-22), "Wanda Test" with a Hetzner test mailbox; this is also K1's check of the
+  messages screen with two services (To confirm, item 1), WhatsApp and email:
+  - **Connected** on the page: the provider list for the test domain, Hetzner, the password, the account checked, then
+    "Connected: … UCAP has your emails of the last 30 days and all new ones."
+  - **Read:** a mail from the other test mailbox was announced ("New message from Anna Tester by email.") and read on
+    the messages screen with its subject; heard to its end, it was read on the server.
+  - **Replied** through the assistant from the home screen ("Reply to Anna Tester by email that Saturday at three is
+    perfect."): C1 with the thread's subject, "Yes", then "Sent to Anna Tester." at the server's 250. The reply arrived
+    in the other mailbox, in reply to the first mail.
+  - **Found and fixed: the model's repeated subject.** The model repeated the thread's subject without "Re: ", and UCAP
+    took it as the person's own (C1: "subject “Visit on Saturday”"). Nobody answered, so the question lapsed (C8).
+  - **Found and fixed: the messages screen left the message it was reading.** A refresh started as the screen opened
+    came back after the mail had been heard, and put the server's order in its place: an unread WhatsApp message of
+    the owner's in front, shown but not said. The screen now keeps the message in front as it is when an answer comes,
+    and it no longer refreshes as it opens. While this was checked, that message's text and two senders' names were
+    printed into Claude Code's session; nothing was marked read or said.
+  - Opening the messages screen reads its first unread message, which counts as read on its service once heard. With
+    the owner's WhatsApp on the same account, the test mail was dated ten minutes back so the screen opened on it.
+  - The first assistant turn failed with a provider error after 17 s, while the 22 GB model was being loaded; the
+    second went through.

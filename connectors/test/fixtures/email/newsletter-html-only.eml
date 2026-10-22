@@ -1,0 +1,27 @@
+Precedence: bulk
+From: Gartenmarkt <news@example.org>
+To: Clara Test <clara@example.org>
+Subject: =?UTF-8?Q?Fr=C3=BChlingsangebote?=
+Message-ID: <newsletter@example.org>
+Date: Mon, 12 Oct 2026 08:30:00 +0000
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><head><style>.x{color:red}</style><title>Angebote</title></head><body=
+><div style=3D"display:none;max-height:0;overflow:hidden">Nur heute: 20 % =
+auf alles</div><table width=3D"100%"><tr><td><img src=3D"https://example.=
+org/logo.png" alt=3D"Gartenmarkt" width=3D"120"></td></tr><tr><td><h1>Fr=
+=C3=BChlingsangebote</h1><p>Liebe Kundin, lieber Kunde,</p><p>unsere =
+<b>Tulpenzwiebeln</b> sind da. Dazu: Erde, 40 Liter, f=C3=BCr 4,=
+99&nbsp;=E2=82=AC.</p><table><tr><td>Tulpen</td><td>3,49 =
+=E2=82=AC</td></tr><tr><td>Narzissen</td><td>2,99 =E2=82=AC</td></tr></tabl=
+e><p><a href=3D"https://example.org/angebot?utm_source=3Dnewsletter" =
+style=3D"background:#2a7;padding:12px 24px;color:#fff">Jetzt =
+ansehen</a></p><p>Oder hier: <a href=3D"https://example.=
+org/x">https://example.org/x</a></p></td></tr><tr><td><p =
+style=3D"font-size:11px">Sie erhalten diese E-Mail, weil Sie sich =
+angemeldet haben. <a href=3D"https://example.org/abmelden">Abmelden</a> =
+=C2=B7 <a href=3D"https://example.org/impressum">Impressum</a></p><img =
+src=3D"https://example.org/p.gif" width=3D"1" height=3D"1" =
+alt=3D""></td></tr></table></body></html>

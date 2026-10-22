@@ -19,7 +19,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type AddressForm, type DeviceEvent, type DeviceSend, type FromConnectors, type Lang, type MailServer, type ServerService, t, type ToConnectors, uuidv7, type WireFile } from '@ucap/shared';
+import { type AddressForm, type DeviceEvent, type DeviceSend, type FromConnectors, type Lang, type MailServer, quoteHeader, type ServerService, t, type ToConnectors, uuidv7, type WireFile } from '@ucap/shared';
 import { judgeTranscript } from '@ucap/speech-text';
 import { sql } from 'kysely';
 import type { Stt } from '../ai/stt/service.ts';
@@ -102,6 +102,8 @@ export interface Item {
   label: string | null;
   /** An email's subject. */
   subject: string | null;
+  /** An email's quoted part, kept apart from what is new. */
+  quoted: string | null;
 }
 
 interface ConnRow {
@@ -158,7 +160,8 @@ export function serviceMatches(said: string, service: Service, label: string | n
 }
 
 export type SendOutcome = 'attempting' | 'queued';
-export type Told = 'C3' | 'C4' | 'C5' | 'C6';
+/** C13: a sent email came back (docs/plan-m3.md, K3). */
+export type Told = 'C3' | 'C4' | 'C5' | 'C6' | 'C13';
 
 /** A service's name as the person hears it: the app's name for previews. */
 /** A service as it is named in the person's language ("E-Mail", "Email"); previews by their app ("Signal"). */
@@ -458,6 +461,14 @@ export function createMessaging(d: {
       case 'send.result':
         await onSendResult(c.id, e);
         return;
+      case 'send.bounced': {
+        // Sent (the server took it), and now a mail server's report says it came back: told, with the report's reason.
+        const r = await sql<{ id: string }>`
+          update messaging_outbound set state = 'bounced', error = ${`bounce_${e.status ?? ''}`}, updated_at = ${now()}
+          where connection_id = ${c.id} and external_id = ${e.externalId} and state = 'sent' returning id`.execute(d.db);
+        for (const o of r.rows) await told(o.id, 'C13');
+        return;
+      }
       case 'file.ready':
         await onFileReady(c, e);
         return;
@@ -481,6 +492,7 @@ export function createMessaging(d: {
       text: string;
       file_name: string | null;
       subject: string | null;
+      quoted: string | null;
       duration_s: number | null;
       file_id: string | null;
       transcript: string | null;
@@ -491,7 +503,7 @@ export function createMessaging(d: {
       label: string | null;
     }>`
       select m.id, m.conversation_id, v.connection_id, v.title, v.kind as ckind, m.sender_external_id, p.name as sender_name, m.direction, m.sent_at, m.kind, m.text, m.file_name,
-        m.subject, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label
+        m.subject, m.quoted, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label
       from messaging_messages m
       join messaging_conversations v on v.id = m.conversation_id
       join messaging_connections k on k.id = v.connection_id
@@ -519,6 +531,7 @@ export function createMessaging(d: {
       service: x.service,
       label: x.label,
       subject: x.subject,
+      quoted: x.quoted,
     }));
   }
 
@@ -886,7 +899,7 @@ export function createMessaging(d: {
      * How the messages screen says an item: UCAP's frame, then the original (a caption introduced as one). A voice
      * message's original is its recording, played after the frame.
      */
-    async spoken(userId: string, list: Item[], lang?: Lang): Promise<(Item & { say: { frame: string; text: string; announce: string } })[]> {
+    async spoken(userId: string, list: Item[], lang?: Lang): Promise<(Item & { say: { frame: string; text: string; announce: string; quote?: string } })[]> {
       const p = await langOf(userId);
       const L = lang ?? p.lang;
       // "Neue Nachricht von Anna auf WhatsApp.": the service named once the person has more than one.
@@ -896,7 +909,9 @@ export function createMessaging(d: {
         const text = i.kind === 'voice' || !i.text ? '' : CAPTIONED.has(i.kind) ? `${t(L, 'messages.frame.caption', {}, p.form)} ${i.text}` : i.text;
         const name = i.from || i.conversation;
         const announce = several ? t(L, 'messages.announce.via', { name, via: via(L, i.service, i.label) }, p.form) : t(L, 'messages.announce', { name }, p.form);
-        return { ...i, say: { frame: f, text, announce } };
+        // An email's quoted part is named by its first line, after the new text: "Darunter zitiert: Am Montag schrieb Anna."
+        const quote = i.quoted && quoteHeader(i.quoted) ? t(L, 'messages.frame.quoted', { header: quoteHeader(i.quoted) }, p.form) : null;
+        return { ...i, say: { frame: f, text, announce, ...(quote ? { quote } : {}) } };
       });
     },
 
@@ -1014,9 +1029,10 @@ export function createMessaging(d: {
       const p = await langOf(userId);
       const L = lang ?? p.lang;
       const service = serviceName(o.service, o.label, L);
-      const params = { recipient: o.title, service, reason: t(L, `messages.reason.${reasonKey(o.error, o.service)}`, { service }, p.form) };
+      const reason = o.state === 'bounced' ? `messages.bounce.${bounceKey(o.error)}` : `messages.reason.${reasonKey(o.error, o.service)}`;
+      const params = { recipient: o.title, service, reason: t(L, reason, { service }, p.form) };
       const last = o.told.at(-1);
-      const key = o.state === 'sent' ? 'C3' : o.state === 'failed' ? 'C4' : o.state === 'uncertain' ? 'C6' : last === 'C5' ? 'C5' : null;
+      const key = o.state === 'sent' ? 'C3' : o.state === 'failed' ? 'C4' : o.state === 'uncertain' ? 'C6' : o.state === 'bounced' ? 'C13' : last === 'C5' ? 'C5' : null;
       // "Slow" says what the service has not done yet: confirmed it, accepted it (a mail server), sent it (the phone), shown it (another app).
       const sent = CAPABILITIES[o.service].sent;
       const variant = key === 'C5' && sent !== 'service' ? `C5.${sent}` : key;
@@ -1087,7 +1103,7 @@ export function createMessaging(d: {
         await told(o.id, 'C4');
       }
       await sql`update messaging_conversations set draft = null, draft_at = null where draft_at < ${new Date(d.clock() - DRAFT_MS)}`.execute(d.db);
-      await sql`delete from messaging_outbound where state in ('sent', 'failed', 'uncertain') and updated_at < ${new Date(d.clock() - 30 * 86_400_000)}`.execute(d.db);
+      await sql`delete from messaging_outbound where state in ('sent', 'failed', 'uncertain', 'bounced') and updated_at < ${new Date(d.clock() - 30 * 86_400_000)}`.execute(d.db);
       await d.files.sweep(d.db, 'message_media');
     },
   };
@@ -1120,6 +1136,14 @@ function frameKind(kind: string): string {
 }
 
 function reasonKey(error: string | null, service: Service): string {
+  // A mail server's words (K3): its refusal (5xx), the password it did not take, a thread with nobody to answer.
+  if (service === 'email') {
+    if (error === 'offline') return 'mail.offline';
+    if (error === 'auth') return 'mail.auth';
+    if (error === 'no_recipient') return 'mail.noRecipient';
+    if (/^smtp_5\d\d$/.test(error ?? '')) return 'mail.refused';
+    return 'mail.service';
+  }
   if (error === 'offline') return 'offline';
   if (error === 'off') return service === 'sms' ? 'off.sms' : 'off.preview';
   if (error === 'signed_out') return 'signedOut';
@@ -1128,6 +1152,18 @@ function reasonKey(error: string | null, service: Service): string {
   // WhatsApp's 463: the account may not start conversations for now (an account restriction, docs/spikes/m3.md, A).
   if (error === 'wa_463') return 'restricted';
   return 'service';
+}
+
+/**
+ * Why a sent email came back, from its report's status (RFC 3463): the address (5.1.x), a full mailbox (x.2.2), a
+ * refusal (5.7.x), or not said.
+ */
+function bounceKey(error: string | null): string {
+  const s = /^bounce_\d\.(\d{1,3})\.(\d{1,3})$/.exec(error ?? '');
+  if (s?.[1] === '1') return 'address';
+  if (s?.[1] === '2' && s[2] === '2') return 'full';
+  if (s?.[1] === '7') return 'refused';
+  return 'other';
 }
 
 /** "heute um 14:02", "gestern um 18:00", "am Montag, 12. Oktober, um 9:15", where the person is. */

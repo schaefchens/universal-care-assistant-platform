@@ -13,7 +13,7 @@
  * clarification rather than a guess"). A message is marked read on its service only when the person heard its
  * original, never because the model read it. The model never confirms: the person's yes comes from their device.
  */
-import { t } from '@ucap/shared';
+import { quoteHeader, t } from '@ucap/shared';
 import type { JsonSchema } from '../ai/llm/reply.ts';
 import { type ActTool, type ReadTool, type ToolContext, ToolError } from '../assistant/tools.ts';
 import { type Found, type Item, type Messaging, serviceName, whenSaid } from './service.ts';
@@ -38,12 +38,20 @@ export function cleanText(s: string): string {
   return s.replace(/[​-‏‪-‮⁦-⁩﻿]/g, '').trim();
 }
 
-/** A reply's subject: the thread's with "Re: " before it (once), or the one the model wrote. */
+const PREFIX = /^((re|aw|antw|antwort|wg|fwd?|tr|sv|vs)(\[\d+\])?:\s*)+/i;
+/** A subject as a thread's topic: what replies and forwards put before it, case and spaces aside. */
+const topic = (s: string) => s.replace(PREFIX, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * A reply's subject: the thread's with "Re: " before it (once), or the person's own, as the model wrote it. The model
+ * often repeats the thread's subject without "Re: " (seen on the emulator, 2026-10-22): that is the thread's, and a
+ * reply keeps "Re: ".
+ */
 export function replySubject(threadSubject: string | null, written: string | null): string {
+  const thread = cleanText(threadSubject ?? '');
   const own = cleanText(written ?? '');
-  if (own) return own.slice(0, MAX_SUBJECT);
-  const s = cleanText(threadSubject ?? '');
-  return (/^(re|aw|antw|wg|fwd?):/i.test(s) ? s : `Re: ${s}`).slice(0, MAX_SUBJECT);
+  if (own && topic(own) !== topic(thread)) return own.slice(0, MAX_SUBJECT);
+  return (PREFIX.test(thread) ? thread : `Re: ${thread}`).slice(0, MAX_SUBJECT);
 }
 
 /** A message as data for the model: who, when, what, on which service; a voice message's automatic transcript marked as such. */
@@ -57,6 +65,8 @@ function asData(ctx: ToolContext, i: Item) {
     kind: i.kind,
     ...(i.subject ? { subject: i.subject } : {}),
     text: i.text,
+    // An email's quoted part, by its first line: the new text is what it says.
+    ...(i.quoted && quoteHeader(i.quoted) ? { quotes: quoteHeader(i.quoted) } : {}),
     ...(i.fileName ? { file: i.fileName } : {}),
     ...(i.durationS ? { seconds: i.durationS } : {}),
     ...(i.kind === 'voice' ? { transcript: i.transcriptState === 'done' ? { text: i.transcript, automatic: true } : null } : {}),
@@ -108,7 +118,7 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     kind: 'read',
     name: 'messages.read',
     description:
-      'Messages, oldest first: of one conversation, or (chat null) of all of them. Each with its ref, service, conversation, sender, time, kind and text (a voice message with its automatic transcript, if there is one; an email with its subject). "Lies meine neuen Nachrichten": chat null, unread_only true. To read one out word for word, say it as kind "original" with its ref; the original of a voice message is its recording.',
+      'Messages, oldest first: of one conversation, or (chat null) of all of them. Each with its ref, service, conversation, sender, time, kind and text (a voice message with its automatic transcript, if there is one; an email with its subject, and the first line of what it quotes). "Lies meine neuen Nachrichten": chat null, unread_only true. To read one out word for word, say it as kind "original" with its ref; the original of a voice message is its recording.',
     args: {
       chat: nullableStr('The conversation, as "chat:<id>", or the name of the person or group; null for all.'),
       unread_only: { type: 'boolean', description: 'Only messages not read yet.' },

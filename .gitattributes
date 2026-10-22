@@ -1,0 +1,2 @@
+# Mail as it travels (CRLF line endings), kept byte for byte: the parsing tests read it as servers send it.
+*.eml -text

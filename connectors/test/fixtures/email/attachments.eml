@@ -1,0 +1,55 @@
+From: Anna Beispiel <anna@example.org>
+To: Clara Test <clara@example.org>
+Subject: Plan
+Message-ID: <attachments@example.org>
+Date: Mon, 12 Oct 2026 08:30:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="--_NmP-6027862250ed0e82-Part_1"
+
+----_NmP-6027862250ed0e82-Part_1
+Content-Type: multipart/alternative;
+ boundary="--_NmP-6027862250ed0e82-Part_2"
+
+----_NmP-6027862250ed0e82-Part_2
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Anbei der Plan f=C3=BCr Samstag und ein Foto.
+----_NmP-6027862250ed0e82-Part_2
+Content-Type: multipart/related; type="text/html";
+ boundary="--_NmP-6027862250ed0e82-Part_4"
+
+----_NmP-6027862250ed0e82-Part_4
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<p>Anbei der Plan f=C3=BCr Samstag und ein Foto.</p><p><img =
+src=3D"cid:foto@ucap" alt=3D"Foto vom Garten"></p>
+----_NmP-6027862250ed0e82-Part_4
+Content-Type: image/png; name=garten.png
+Content-ID: <foto@ucap>
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; filename=garten.png
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sA
+AAAASUVORK5CYII=
+----_NmP-6027862250ed0e82-Part_4--
+
+----_NmP-6027862250ed0e82-Part_2--
+
+----_NmP-6027862250ed0e82-Part_1
+Content-Type: application/pdf; name="Plan Samstag.pdf"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Plan Samstag.pdf"
+
+JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCnRyYWls
+ZXI8PC9Sb290IDEgMCBSPj4KJSVFT0YK
+----_NmP-6027862250ed0e82-Part_1
+Content-Type:
+ application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;
+ name=Einkauf.xlsx
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename=Einkauf.xlsx
+
+eA==
+----_NmP-6027862250ed0e82-Part_1--

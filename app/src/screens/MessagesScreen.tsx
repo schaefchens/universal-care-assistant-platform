@@ -34,7 +34,8 @@ export interface MessageItem {
   transcript: string | null;
   transcriptState: string;
   unread: boolean;
-  say: { frame: string; text: string };
+  /** `quote`: an email's quoted part, named by its first line ("Darunter zitiert: …"). */
+  say: { frame: string; text: string; quote?: string };
 }
 
 /** Where the person was, so coming back from a reply's question continues there. */
@@ -66,13 +67,22 @@ export function MessagesScreen(p: {
   /** What was shown on this visit: a refresh of the queue leads on past it (messages-list.ts). */
   const shownHere = useRef(new Set<string>());
   const current = items?.[i];
+  /**
+   * The message in front as it is now, for a fetch that comes back later: state seen by the fetch's own render could
+   * be from before the screen had a list, and the queue as the server has it then (a message just heard among the
+   * newest, an unread one first) would take its place without a word (seen on the emulator on 2026-10-22).
+   */
+  const front = useRef<MessageItem | undefined>(undefined);
+  front.current = current;
+  /** The refreshes counted before the screen opened are no reason to fetch again: it fetches as it opens. */
+  const refreshAtOpen = useRef(p.refresh);
 
   async function readItem(m: MessageItem) {
     const mine = ++reading.current;
     shownHere.current.add(m.id);
     p.stop();
     resume = { id: m.id, at: Date.now() };
-    const text = m.say.text ? `${m.say.frame} ${m.say.text}` : m.say.frame;
+    const text = [m.say.frame, m.say.text, m.say.quote].filter(Boolean).join(' ');
     const said = p.read(text, () => mine === reading.current);
     let done: boolean;
     if (m.kind === 'voice') {
@@ -105,9 +115,9 @@ export function MessagesScreen(p: {
       const names = down.length > 1 ? tr('messages.and', { first: down.slice(0, -1).join(', '), last: down.at(-1)! }) : (down[0] ?? '');
       // The message in front stays first (fetched again after a new message, or back from a reply's question), so
       // "Nächste" leads on to the rest, the unread first.
-      const keep = first ? (resume && Date.now() - resume.at < 5 * 60_000 ? resume.id : null) : (items?.[i]?.id ?? null);
+      const keep = first ? (resume && Date.now() - resume.at < 5 * 60_000 ? resume.id : null) : (front.current?.id ?? null);
       if (first) shownHere.current.clear();
-      const list = keepInFront(r.items, first ? r.items.find((x) => x.id === keep) : items?.[i], shownHere.current);
+      const list = keepInFront(r.items, first ? r.items.find((x) => x.id === keep) : front.current, shownHere.current);
       setItems(list);
       setI(0);
       if (!first || Date.now() - introducedAt < 1500) return;
@@ -136,7 +146,7 @@ export function MessagesScreen(p: {
     };
   }, [p.session]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (p.refresh) void load(false);
+    if (p.refresh !== refreshAtOpen.current) void load(false);
   }, [p.refresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function next() {
@@ -204,6 +214,7 @@ export function MessagesScreen(p: {
             </h2>
             <p>{current.say.frame}</p>
             {current.say.text && <p className="note-body">{current.say.text}</p>}
+            {current.say.quote && <p className="muted">{current.say.quote}</p>}
             {current.kind === 'voice' && current.transcriptState === 'done' && current.transcript && (
               <p className="note-body">
                 {tr('messages.transcript.label')}: {current.transcript}

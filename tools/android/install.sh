@@ -15,4 +15,5 @@ echo "$out" | tail -1
 "$ADB" reverse tcp:8810 tcp:8810 >/dev/null
 "$ADB" reverse tcp:8811 tcp:8811 >/dev/null
 "$ADB" shell am force-stop de.schaefchens.ucap
-"$ADB" shell am start -W -n de.schaefchens.ucap/.MainActivity | grep TotalTime
+# A busy emulator can take longer to draw than `am start -W` waits ("Status: timeout"): the app runs all the same.
+"$ADB" shell am start -W -n de.schaefchens.ucap/.MainActivity | grep -E 'TotalTime|Status: timeout' || true

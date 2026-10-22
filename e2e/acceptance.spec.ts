@@ -450,6 +450,54 @@ test('7b · across services (docs/plan-m3.md, K1): WhatsApp linked and UCAP the 
   await said(clara, /^Gesendet an Anna Beispiel\.$/, from);
 });
 
+test('7c · email (docs/plan-m3.md, K3): connected on its own page with the servers of a known provider; a refused password said with what the provider asks for; a mail read with its subject and what it quotes named; a reply read back with the thread’s subject, "Gesendet" at the server’s acceptance', async () => {
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Nachrichtendienste', exact: true }).click();
+  let from = await mark(clara);
+  await clara.getByRole('button', { name: 'E-Mail verbinden', exact: true }).click();
+  await said(clara, /^E-Mail verbinden\. Gib deine E-Mail-Adresse und dein Passwort ein\.$/, from);
+  await clara.getByLabel('E-Mail-Adresse').fill('clara.test@gmx.de');
+  await expect(clara.getByText('Erkannt: GMX. Die Server sind eingetragen.', { exact: true })).toBeVisible();
+  // A password the server refuses (the stand-in's "falsch"): said, with what GMX asks for first.
+  await clara.getByLabel('Passwort', { exact: true }).fill('falsch');
+  await clara.getByRole('button', { name: 'E-Mail verbinden', exact: true }).click();
+  await said(clara, /^Der Mailserver hat die Anmeldung abgelehnt\. Stimmt das Passwort\? Bei GMX muss der Zugriff für andere Programme erst eingeschaltet sein/, from);
+  await clara.getByRole('button', { name: 'Neu verbinden', exact: true }).click();
+  await said(clara, /^Gib das Passwort noch einmal ein\.$/, from);
+  await clara.getByLabel('Passwort', { exact: true }).fill('richtig');
+  await clara.getByRole('button', { name: 'E-Mail verbinden', exact: true }).click();
+  await said(clara, /^Verbunden: clara\.test@gmx\.de\. UCAP hat deine E-Mails der letzten 30 Tage und alle neuen\.$/, from);
+  await clara.getByRole('button', { name: 'Zurück', exact: true }).click();
+  await said(clara, /^Nachrichtendienste\. Telegram: verbunden\. SMS: verbunden\. WhatsApp: verbunden\. E-Mail \(clara\.test@gmx\.de\): verbunden\.$/, from);
+  await home(clara);
+
+  // Anna answers by email, above what she quotes: announced with the service, read with its subject, the quote named.
+  from = await mark(clara);
+  const mail = { service: 'email', chat: 'anna', text: 'Wir bringen Kuchen mit.', subject: 'Re: Besuch am Sonntag', quoted: 'Am Samstag schrieb Clara:\n> Wir freuen uns.' };
+  expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify(mail) })).ok).toBe(true);
+  await said(clara, /^Neue Nachricht von Anna Beispiel per E-Mail\.$/, from);
+  const read = /^Anna Beispiel schrieb .* per E-Mail mit dem Betreff „Re: Besuch am Sonntag“: Wir bringen Kuchen mit\. Darunter zitiert: Am Samstag schrieb Clara\.$/;
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Nachrichten', exact: true }).click();
+  for (let n = 1; n <= 5 && !(await spoken(clara)).slice(from).some((t) => read.test(t)); n++) {
+    await expect.poll(async () => (await spoken(clara)).slice(from).filter((t) => / schrieb /.test(t)).length, { message: `message ${n} read`, timeout: n === 1 ? 90_000 : undefined }).toBeGreaterThanOrEqual(n);
+    if (!(await spoken(clara)).slice(from).some((t) => read.test(t))) await clara.getByRole('button', { name: 'Nächste', exact: true }).click();
+  }
+  expect((await spoken(clara)).slice(from).some((t) => read.test(t))).toBe(true);
+  await home(clara);
+
+  // A reply by email: the model repeats the thread's subject, as models do; C1 reads it back as a reply's, and
+  // "Gesendet" comes once the mail server took it.
+  engines.model = asked(/per E-Mail/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Anna Beispiel', text: 'Wunderbar, danke!', service: 'E-Mail', subject: 'Besuch am Sonntag' }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Antworte Anna per E-Mail: Wunderbar, danke!');
+  await said(clara, /^E-Mail an Anna Beispiel, Betreff „Re: Besuch am Sonntag“: „Wunderbar, danke!“\. Senden\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Gesendet an Anna Beispiel\.$/, from);
+  expect(await sql(`select subject from messaging_outbound where text = 'Wunderbar, danke!'`)).toBe('Re: Besuch am Sonntag');
+});
+
 test('8 · a remote change: Maria moves Messages and switches the device to high contrast; it waits while the person uses it, then is applied, announced with undo; Maria’s page says "angewendet"', async () => {
   await home(clara);
   await home(maria);

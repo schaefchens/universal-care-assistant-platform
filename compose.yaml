@@ -169,6 +169,26 @@ services:
       timeout: 3s
       retries: 30
 
+  # Email (docs/plan-m3.md, K3): imapflow and nodemailer in a process of their own, restarted by hand (docker compose
+  # restart email). No database credentials: it dials the assistant, which sends each account's password in `start`;
+  # its volume keeps UIDs and Message-IDs only. It reaches mail servers on the internet only (connectors/src/email/net.ts).
+  email:
+    <<: *node
+    command: node connectors/src/email/main.ts
+    secrets: [connectors_token]
+    stop_grace_period: 20s
+    volumes:
+      - ./:/app
+      - node-modules:/app/node_modules
+      - ucap-email:/data/email
+    environment:
+      UCAP_ASSISTANT_WS: ws://assistant:8821/internal/connectors
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8822/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   caddy:
     image: caddy:2.11
     ports:
@@ -292,6 +312,7 @@ volumes:
   e2e-files:
   ucap-tdlib:
   ucap-whatsapp:
+  ucap-email:
   ntfy-cache:
   node-modules:
   caddy-data:

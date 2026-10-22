@@ -115,7 +115,7 @@ describe('messaging across services', () => {
     const c = (r.json() as { connection: View }).connection;
     emailId = c.id;
     expect(c).toMatchObject({ service: 'email', account: 'anna.beispiel@example.org', name: 'E-Mail', deviceId: null, state: 'starting', running: true });
-    expect(c.capabilities).toEqual({ history: 'since', send: 'any', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false });
+    expect(c.capabilities).toEqual({ history: 'since', send: 'conversations', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false });
     // Its messages start 30 days before it was linked: never "the whole history" (CONCEPT §3).
     const back = clock() - Date.parse(c.historySince!);
     expect(back).toBeGreaterThanOrEqual(30 * 86_400_000);
@@ -232,6 +232,42 @@ describe('messaging across services', () => {
     await as(anna, 'POST', `/api/v1/assistant/actions/${a.id}/confirm`, { contentHash: a.contentHash, via: 'voice' });
     expect(await mail.next('send', n)).toMatchObject({ t: 'send', id: emailId, chatId: '<thread-1@example.org>', text: 'Danke für die Nachricht.', subject: 'Re: Ihr Termin am Dienstag' });
     expect(tg.got.slice(t0).filter((c) => c.t === 'send')).toEqual([]);
+  });
+
+  it("an email reply is sent at the mail server's 250 (C3); a report that it came back is told (C13) with its reason, once; a quoted part is named after the new text", async () => {
+    const cmd = [...mail.got].reverse().find((c) => c.t === 'send') as Extract<ToConnectors, { t: 'send' }>;
+    const row = async (id: string) => (await sql<{ state: string; told: string[]; error: string | null }>`select state, told, error from messaging_outbound where id = ${id}`.execute(db)).rows[0]!;
+    mail.emit({ t: 'send.result', id: emailId, requestId: cmd.requestId, state: 'pending_service', tempId: 'r1@example.org' });
+    mail.emit({ t: 'send.result', id: emailId, requestId: cmd.requestId, state: 'sent', externalId: 'r1@example.org', tempId: 'r1@example.org' });
+    await until(async () => (await row(cmd.requestId)).state === 'sent', 'sent');
+    mail.emit({ t: 'send.bounced', id: emailId, externalId: 'r1@example.org', status: '5.1.1' });
+    await until(async () => (await row(cmd.requestId)).state === 'bounced', 'bounced');
+    expect(await row(cmd.requestId)).toEqual({ state: 'bounced', told: ['C3', 'C13'], error: 'bounce_5.1.1' });
+    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'de'))?.say).toBe('Die E-Mail an Praxis Dr. Klein kam zurück: der Mailserver kennt diese Adresse nicht.');
+    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'en'))?.say).toBe('The email to Praxis Dr. Klein came back: the mail server does not know this address.');
+    // A second report changes nothing (the events of one process are applied in order: the mail after it shows it was).
+    mail.emit({ t: 'send.bounced', id: emailId, externalId: 'r1@example.org', status: '5.2.2' });
+    mail.emit({
+      t: 'msg.upsert',
+      id: emailId,
+      msg: { chatId: '<thread-1@example.org>', externalId: '<m2@example.org>', fromId: 'praxis@example.org', outgoing: false, date: now() - 10, editDate: null, kind: 'text', text: 'Der neue Termin ist am Freitag.', subject: 'Re: Ihr Termin am Dienstag', quoted: 'Am Montag schrieb Anna:\n> Danke für die Nachricht.', file: null, fileName: null },
+      live: true,
+    });
+    await until(async () => (await sql`select 1 from messaging_messages where external_id = '<m2@example.org>'`.execute(db)).rows.length > 0, 'the quoting mail');
+    expect(await row(cmd.requestId)).toEqual({ state: 'bounced', told: ['C3', 'C13'], error: 'bounce_5.1.1' });
+    // What is new is said; what it quotes is named by its first line, after it.
+    const q = (await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { items: { text: string; say: { text: string; quote?: string } }[] };
+    expect(q.items.find((i) => i.text === 'Der neue Termin ist am Freitag.')!.say).toMatchObject({ text: 'Der neue Termin ist am Freitag.', quote: 'Darunter zitiert: Am Montag schrieb Anna.' });
+
+    // Refused by the mail server: said as the mail server's refusal.
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Praxis Dr. Klein', text: 'Und am Samstag?' }], help: false });
+    const a = (await turn(anna, 'Antworte der Praxis: Und am Samstag?')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string };
+    const n = mail.got.length;
+    await as(anna, 'POST', `/api/v1/assistant/actions/${a.id}/confirm`, { contentHash: a.contentHash, via: 'voice' });
+    const second = await mail.next('send', n);
+    mail.emit({ t: 'send.result', id: emailId, requestId: second.requestId, state: 'failed', error: 'smtp_550' });
+    await until(async () => (await row(second.requestId)).state === 'failed', 'failed');
+    expect((await assistant.messaging.outbound(anna.userId, second.requestId, 'de'))?.say).toBe('Nicht gesendet: der Mailserver hat sie abgelehnt. Der Entwurf ist gespeichert.');
   });
 
   it('the model is told which services are connected, in the order they were connected; a link not finished is not named', async () => {

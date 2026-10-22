@@ -11,6 +11,7 @@ For whoever runs UCAP for a person, a household or a care organisation. The plan
 | **assistant** | voice turns, language models, speech, the person's messages, AI administration, herde | Docker |
 | **connectors** | TDLib for Telegram; no database credentials, talks only to the assistant | Docker |
 | **whatsapp** | Baileys for WhatsApp, the same way: no database credentials; each person's keys sealed on its own volume `ucap-whatsapp` | Docker |
+| **email** | imapflow and nodemailer for email accounts, the same way; it keeps UIDs and Message-IDs on its volume `ucap-email`, the passwords only in memory | Docker |
 | **db** | Postgres 17 | Docker, named volume `pgdata` |
 | **ntfy** | the push server Android devices listen to (UnifiedPush) | Docker |
 | **caddy** | the one address everything uses | Docker |
@@ -95,6 +96,27 @@ time. "Gesendet" comes when WhatsApp's server acknowledged the message.
 - **Disconnecting** (by the person) removes UCAP from their linked devices and deletes its keys and copies; a person
   who unlinks it on the phone is shown "Neu verbinden".
 
+### Email
+
+Each person connects their own accounts on their own device (Settings → Nachrichtendienste → E-Mail verbinden), as
+many as they have: the address and the password, with the servers filled in for GMX, WEB.DE, Telekom, Posteo,
+mailbox.org, iCloud and Gmail by the address, chosen for Hetzner (domains of one's own), or typed. Nothing to set up
+on the admin page.
+
+- **Passwords:** Gmail and iCloud take an app password only (with two-step sign-in), Telekom an email password of its
+  own; GMX and WEB.DE take the account's password once IMAP is switched on in their settings. The page says so, and the
+  first connection checks the account, sending included, and says what went wrong.
+- **Not yet:** Outlook.com, Hotmail and Microsoft 365, which need a sign-in at Microsoft (OAuth2).
+- **What UCAP does with a mailbox:** reads the inbox (in IDLE, a new mail within about a second) and the Sent folder
+  (every ten minutes), 30 days back from connecting; marks a mail read once the person heard it; puts a copy of each
+  reply in the Sent folder (Gmail files its own). It never deletes or moves mail. "Gesendet" means the mail server
+  accepted it; a mail that comes back is told to the person.
+- **Only servers on the internet:** a server name that leads to this machine's network or the LAN is refused.
+- **Restarts** are by hand after an update (`docker compose restart email`); imapflow and nodemailer are pinned.
+- **The test mailboxes:** `UCAP_EMAIL_TEST=1 npx vitest run --project connectors test/email-live.test.ts` runs the
+  connector against the two Hetzner mailboxes in `.secrets` (a mail one way, a reply and its answer back) and deletes
+  what it sent.
+
 ### herde
 
 KI und Stimmen verwalten → herde → invitation: the page shows `herde join <address> <code>`. On the machine that runs
@@ -129,6 +151,7 @@ A restore goes into a new database, never over the live one; point `DATABASE_URL
 master key the sealed values cannot be opened after a restore; the secrets never change, so one safe copy is enough.
 Add `--with-tdlib` with the connectors stopped to keep the Telegram sessions. WhatsApp's keys (the volume
 `ucap-whatsapp`) are not in a backup yet (docs/plan-m3.md, K9): restored without them, each person links WhatsApp again.
+The email volume (`ucap-email`) needs none: without it, the email process fetches each account's 30 days again.
 
 ## What is kept, and for how long
 
