@@ -61,13 +61,19 @@ export function createMessageStore(d: { db: Db; clock: Clock }) {
         on conflict (connection_id, external_id) do update set name = excluded.name, is_contact = excluded.is_contact, is_bot = excluded.is_bot, updated_at = excluded.updated_at`.execute(d.db);
     },
 
-    async upsertMessage(connectionId: string, m: WireMessage): Promise<Upserted> {
+    /**
+     * `history`: the time the person connected the service, for a message that did not just arrive. What the service
+     * sends from before it is no news: read here, whatever the service says, and never marked read there (the owner,
+     * 2026-10-22: "only show new messages from that time onwards").
+     */
+    async upsertMessage(connectionId: string, m: WireMessage, o: { history?: Date } = {}): Promise<Upserted> {
       return d.db.transaction().execute(async (trx) => {
         const conv = await conversationOf(trx, connectionId, m.chatId);
         const key = sortKey(m);
-        // Read already, as far as the service says (the history fetched at login is mostly read).
+        // Read already, as far as the service says, or from before the person connected it.
         const readMax = m.outgoing ? conv.readOutboxMax : conv.readInboxMax;
-        const read = readMax !== null && BigInt(key) <= BigInt(readMax) ? now() : null;
+        const fromHistory = !m.outgoing && o.history !== undefined && m.date * 1000 < o.history.getTime();
+        const read = fromHistory || (readMax !== null && BigInt(key) <= BigInt(readMax)) ? now() : null;
         const before = await sql<{ text: string }>`select text from messaging_messages where conversation_id = ${conv.id} and external_id = ${m.externalId}`.execute(trx);
         const r = await sql<{ id: string; inserted: boolean }>`
           insert into messaging_messages (id, conversation_id, external_id, sort_key, sender_external_id, direction, kind, text, file_name, subject, sent_at, edited_at, read_at, created_at, updated_at)

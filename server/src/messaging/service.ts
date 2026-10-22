@@ -435,7 +435,8 @@ export function createMessaging(d: {
         await store.upsertUser(c.id, e.user);
         return;
       case 'msg.upsert': {
-        const up = await store.upsertMessage(c.id, e.msg);
+        // From the service's history (not just arrived): what is from before the connection is no news.
+        const up = await store.upsertMessage(c.id, e.msg, e.live ? {} : { history: c.created_at });
         if (up.inserted && e.msg.kind === 'voice') await requestDownload(c, up.id, e.msg.file);
         if (up.inserted && e.live) {
           const v = await sql<{ kind: string; muted: boolean }>`select kind, muted from messaging_conversations where id = ${up.conversationId}`.execute(d.db);
@@ -789,6 +790,15 @@ export function createMessaging(d: {
      * For the messages screen: what is unread, oldest first, then the newest message of each other recent
      * conversation, so "Nächste" always has somewhere to go.
      */
+    /** How many messages are new for the person: all of them, where the queue holds the oldest 30. */
+    async unreadCount(userId: string): Promise<number> {
+      const r = await sql<{ n: number }>`
+        select count(*)::int as n from messaging_messages m join messaging_conversations v on v.id = m.conversation_id
+        join messaging_connections k on k.id = v.connection_id
+        where k.user_id = ${userId} and m.direction = 'in' and m.read_at is null and m.heard_at is null and v.kind <> 'channel'`.execute(d.db);
+      return r.rows[0]?.n ?? 0;
+    },
+
     async queue(userId: string): Promise<Item[]> {
       const unread = await items(userId, sql`m.direction = 'in' and m.read_at is null and m.heard_at is null and v.kind <> 'channel'`, sql`m.sent_at, m.sort_key`, 30);
       const seen = new Set(unread.map((x) => x.conversationId));

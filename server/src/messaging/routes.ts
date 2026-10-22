@@ -155,8 +155,9 @@ export function registerMessagingRoutes(
   app.get('/api/v1/messaging/queue', { preHandler: requireAuth, schema: { querystring: LangQuery } }, async (req) => {
     const userId = auth(req).userId;
     const connections = (await m.connections(userId, (req.query as { lang?: 'de' | 'en' }).lang)).map((c) => ({ id: c.id, service: c.service, name: c.name, state: c.state, running: c.running }));
-    if (!connections.length) return { connections, items: [] };
-    return { connections, items: await m.spoken(userId, await m.queue(userId), (req.query as { lang?: 'de' | 'en' }).lang) };
+    if (!connections.length) return { connections, items: [], unread: 0 };
+    // `unread`: all of them, said as the screen opens; the items hold the oldest 30.
+    return { connections, items: await m.spoken(userId, await m.queue(userId), (req.query as { lang?: 'de' | 'en' }).lang), unread: await m.unreadCount(userId) };
   });
   app.get('/api/v1/messaging/conversations', { preHandler: requireAuth }, async (req) => ({ conversations: await m.overview(auth(req).userId, 50) }));
   app.get('/api/v1/messaging/conversations/:id/messages', { preHandler: requireAuth, schema: { params: Id, querystring: LangQuery } }, async (req) => {

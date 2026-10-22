@@ -21,12 +21,24 @@ export interface IdsState {
   numbers: Record<string, string>;
   /** A group → its name. */
   subjects: Record<string, string>;
+  /** That address → its number as WhatsApp shows it masked ("+49 … 55"), where it hides the rest. */
+  masked?: Record<string, string>;
 }
 
 /** WhatsApp itself: its notices come from this account. */
 export const WHATSAPP_JID = '0@s.whatsapp.net';
 
 const isPerson = (jid: string) => (isPnUser(jid) === true || isLidUser(jid) === true) && jid !== WHATSAPP_JID;
+
+/**
+ * A number WhatsApp hides in part (a community's members): it sends "+49∙∙∙∙∙∙∙∙∙55" in a contact's name. It is no
+ * name the person saved; said as "+49 … 55". Null for anything else.
+ */
+export function maskedNumber(name: string): string | null {
+  const v = name.trim();
+  if (!/^\+?[\d\s]*[∙•·*]{2,}[\d\s∙•·*]*$/.test(v)) return null;
+  return v.replace(/\s+/g, '').replace(/[∙•·*]+/g, ' … ').trim();
+}
 
 /** A number as people say it: "+49 151 23456789". */
 export function formatNumber(digits: string): string {
@@ -130,6 +142,16 @@ export class Ids {
   setName(jid: string, name: string | null | undefined): boolean {
     if (!isPerson(jidNormalizedUser(jid))) return false;
     const id = this.canonical(jid);
+    const masked = name ? maskedNumber(name) : null;
+    if (masked) {
+      // WhatsApp's masked number in the name: kept to say, never taken for a name the person saved.
+      const was = this.s.masked?.[id] ?? null;
+      (this.s.masked ??= {})[id] = masked;
+      const hadName = id in this.s.names;
+      delete this.s.names[id];
+      if (was !== masked || hadName) this.dirty = true;
+      return was !== masked || hadName;
+    }
     const v = name?.trim() || null;
     if ((this.s.names[id] ?? null) === v) return false;
     if (v) this.s.names[id] = v;
@@ -142,13 +164,17 @@ export class Ids {
     return this.s.names[this.canonical(jid)] ?? null;
   }
 
-  /** The name to say: the saved one, else the number, else `unknown`; the person themselves by their own name. */
+  /**
+   * The name to say: the saved one, else the number, else the part of it WhatsApp shows, else `unknown`; the person
+   * themselves by their own name.
+   */
   name(jid: string, unknown: string): string {
     if (this.isSelf(jid) && this.meName) return this.meName;
     const saved = this.savedName(jid);
     if (saved) return saved;
     const digits = this.number(jid);
-    return digits ? formatNumber(digits) : unknown;
+    if (digits) return formatNumber(digits);
+    return this.s.masked?.[this.canonical(jid)] ?? unknown;
   }
 
   setSubject(group: string, subject: string | null | undefined): boolean {

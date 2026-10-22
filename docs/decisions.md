@@ -855,6 +855,16 @@ The plan: [plan-m3.md](plan-m3.md).
    - `packages/herde-project` stays Apache-2.0, as vendored.
    - The font stays under the SIL Open Font License (NOTICE).
    - It combines with Baileys' `libsignal` (GPL-3.0), so the WhatsApp connector needs no licence of its own.
+9. **What a service sends from before the person connected it is no news** (the owner, 2026-10-22, after the
+   hand check: "clicking through 5000 messages on connect isnt something the user shoud do. when he connects i
+   think its better to only show new messages from that time onwards, basically marking all as read"; "how are we
+   doing this in telegram, they should behave equal").
+   - Built for every service, in the store: a message that did not just arrive and is from before the connection
+     was made is read in UCAP, whatever the service counts as unread. Only what comes after is new, also when it
+     arrives late (after a gap).
+   - Nothing is marked read on the service for it: no read receipts, the phone's own unread state stays.
+   - Before, the history copied the service's own unread state (Telegram's backfill too): after linking WhatsApp
+     the owner had 26 "new" messages, and many more while the history was still coming.
 
 ### To confirm
 
@@ -880,6 +890,8 @@ The plan: [plan-m3.md](plan-m3.md).
    - Where WhatsApp shows a person only by their LID (group members whose number it hides), they are "Unbekannt".
      Spike A found 142 contacts with the owner's own name among 1,752.
    - The other choice: the self-given name, always with "nicht in deinen Kontakten", as Telegram's.
+   - Seen with the owner's account (2026-10-22): in a community group, 24 people were "Unbekannt" and 17 only a
+     number WhatsApp masks ("+49 … 55"), so its messages hardly say who wrote them.
 4. **WhatsApp's "delivered" is not kept yet; "read" is.**
    - plan-m3.md, K2: "delivered and read states kept".
    - Built: the other side's read receipts mark the person's messages read, as Telegram's do. "Delivered" has no place
@@ -973,3 +985,10 @@ The plan: [plan-m3.md](plan-m3.md).
     visit; the messages skipped come at the end.
   - Clicking through quickly to reach the own chat, one group message was read to its end and marked read on
     WhatsApp.
+  - **Found and fixed: numbers WhatsApp masks were taken for saved names.** For a community's members WhatsApp sends
+    "+49∙∙∙∙∙∙∙∙∙55" in a contact's name; 17 such people counted as the owner's contacts, so no stranger warning.
+    A masked number is never a saved name now: the person is a stranger, said as "+49 … 55".
+  - **Found and fixed: "30 neue Nachrichten" when there were more.** The screen counted the 30 it holds; the server now
+    says how many there are.
+  - The owner's data on the dev server was brought in line with both fixes and the new rule by hand (12 messages read
+    in UCAP, 17 people no longer contacts), instead of a third link.

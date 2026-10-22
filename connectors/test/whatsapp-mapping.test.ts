@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import type { WAMessage } from 'baileys';
 import { describe, expect, it } from 'vitest';
-import { formatNumber, Ids } from '../src/whatsapp/ids.ts';
+import { formatNumber, Ids, maskedNumber } from '../src/whatsapp/ids.ts';
 import { change, chat, message, skipChat } from '../src/whatsapp/mapping.ts';
 
 type Samples = Record<string, unknown[]>;
@@ -159,6 +159,18 @@ describe('whatsapp ids', () => {
     expect(x.isSelf('123456789012345@lid')).toBe(true);
     expect(x.name('4915112345678@s.whatsapp.net', 'Unbekannt')).toBe('Clara Test');
     expect(chat({ id: '123456789012345@lid' } as never, x, 'de', 1700100000, { inbox: null, outbox: null })).toMatchObject({ title: 'Clara Test', userId: 'user:4915112345678' });
+  });
+
+  it("a number WhatsApp masks in a contact's name is no saved name: said as what it shows, the person a stranger", () => {
+    const x = new Ids();
+    expect(x.setName('123456789012347@lid', '+49∙∙∙∙∙∙∙∙∙55')).toBe(true);
+    expect(x.savedName('123456789012347@lid')).toBeNull();
+    expect(x.name('123456789012347@lid', 'Unbekannt')).toBe('+49 … 55');
+    // A real name later wins; a masked one never replaces it as a saved name.
+    x.setName('123456789012347@lid', 'Anna Beispiel');
+    expect(x.savedName('123456789012347@lid')).toBe('Anna Beispiel');
+    expect(maskedNumber('Anna ∙ Beispiel')).toBeNull();
+    expect(maskedNumber('+1 ••• •• 01')).toBe('+1 … 01');
   });
 
   it('numbers are said as people write them', () => {

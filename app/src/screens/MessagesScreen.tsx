@@ -95,7 +95,7 @@ export function MessagesScreen(p: {
 
   const load = async (first: boolean) => {
     try {
-      const r = await p.session.call<{ connections: { id: string; service: string; name: string; state: string }[]; items: MessageItem[] }>(`/api/v1/messaging/queue?lang=${ui.lang}`);
+      const r = await p.session.call<{ connections: { id: string; service: string; name: string; state: string }[]; items: MessageItem[]; unread?: number }>(`/api/v1/messaging/queue?lang=${ui.lang}`);
       // Ready while one of the person's services is (each message keeps its own service).
       const st = !r.connections.length ? 'none' : r.connections.some((x) => x.state === 'ready') ? 'ready' : 'not_ready';
       setState(st);
@@ -114,7 +114,8 @@ export function MessagesScreen(p: {
       introducedAt = Date.now();
       ui.earcons.play('screen');
       if (st === 'none') return say(`${tr('messages.title')}. ${tr('messages.notConnected')}`, 'system');
-      const unread = r.items.filter((x) => x.unread).length;
+      // All of them: the list holds the oldest 30.
+      const unread = r.unread ?? r.items.filter((x) => x.unread).length;
       const intro = `${tr('messages.title')}. ${tr('messages.count', { count: unread })}${down.length ? ` ${tr('messages.notReady', { names, count: down.length })}` : ''}`;
       if (!list.length) return say(`${intro} ${tr('messages.empty')}`, 'system');
       // Back from a reply's question: where it was, without reading it again.

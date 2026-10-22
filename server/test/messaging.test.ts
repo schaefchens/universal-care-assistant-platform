@@ -216,6 +216,29 @@ describe('messaging', () => {
     expect(conv.conversations.find((c) => c.channel)?.unread).toBe(0);
   });
 
+  it('the history at connecting is no news: read here (never on the service); what came after is new, even late', async () => {
+    const created = (await sql<{ created_at: Date }>`select created_at from messaging_connections where id = ${connId}`.execute(db)).rows[0]!.created_at.getTime() / 1000;
+    const from = fake.got.length;
+    // Unread on the service, by its own count: nothing is read there.
+    fake.emit({ t: 'chat.upsert', id: connId, chat: { externalId: '777003', title: 'Clara Beispiel', kind: 'private', userId: 'user:44', muted: false, unread: 2, readInboxMaxId: null, readOutboxMaxId: null } });
+    fake.emit({ t: 'msg.upsert', id: connId, msg: msg(800, 'Von vor dem Verbinden', { chatId: '777003', fromId: 'user:44', date: Math.floor(created) - 600 }) });
+    // From after it, though not just arrived (it came late, after a gap): new.
+    fake.emit({ t: 'msg.upsert', id: connId, msg: msg(801, 'Danach', { chatId: '777003', fromId: 'user:44', date: Math.floor(created) + 5 }) });
+    const rows = async () =>
+      (await sql<{ text: string; read: boolean }>`
+        select m.text, m.read_at is not null as read from messaging_messages m join messaging_conversations v on v.id = m.conversation_id
+        where v.external_id = '777003' order by m.sort_key`.execute(db)).rows;
+    await until(async () => (await rows()).length === 2, 'both');
+    expect(await rows()).toEqual([
+      { text: 'Von vor dem Verbinden', read: true },
+      { text: 'Danach', read: false },
+    ]);
+    // The screen says how many are new, all of them.
+    const q = (await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { unread: number; items: { unread: boolean }[] };
+    expect(q.unread).toBe(q.items.filter((i) => i.unread).length);
+    expect(fake.got.slice(from).filter((c) => c.t === 'mark_read')).toEqual([]);
+  });
+
   it('marks a message read on Telegram only once the person heard its original', async () => {
     const id = (await sql<{ id: string }>`select id from messaging_messages where external_id = '2097152'`.execute(db)).rows[0]!.id;
     const n = fake.got.length;
