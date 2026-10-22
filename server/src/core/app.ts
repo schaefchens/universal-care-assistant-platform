@@ -118,6 +118,8 @@ export async function buildCore(o: {
     'care.tick': async (job) => care.tick(String(job.payload.requestId)),
     'care.reach': async (job) => care.reachCheck(String(job.payload.requestId), Number(job.payload.episode)),
     'push.send': async (job) => push.deliver(String(job.payload.deliveryId), job.attempts),
+    // A device woken for what waits for it (the assistant asks: a reply the phone's SMS app is to send).
+    'device.wake': async (job) => push.wake(String(job.payload.deviceId), String(job.payload.topic)),
     'heartbeat.round': async () => heartbeats.round(),
     'heartbeat.check': async (job) => heartbeats.check(String(job.payload.deliveryId)),
     'push.soak': async (job) => void (await heartbeats.soak(job.payload as unknown as Soak)),

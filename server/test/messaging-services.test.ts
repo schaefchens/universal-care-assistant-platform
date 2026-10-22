@@ -176,7 +176,7 @@ describe('messaging across services', () => {
   it("a phone's own connections: SMS for the phone that asks, previews per app, each with what it can do; one goes, the others stay", async () => {
     const sms = ((await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'sms' })).json() as { connection: View }).connection;
     expect(sms).toMatchObject({ service: 'sms', name: 'SMS', deviceId: anna.deviceId, state: 'ready', running: true });
-    expect(sms.capabilities).toMatchObject({ history: 'since', send: 'any', sent: 'network', delivery: true });
+    expect(sms.capabilities).toMatchObject({ history: 'since', send: 'conversations', sent: 'network', delivery: true });
     const signal = { service: 'notifications', app: { package: 'org.thoughtcrime.securesms', name: 'Signal' } };
     const prev = ((await as(anna, 'POST', '/api/v1/messaging/connections', signal)).json() as { connection: View }).connection;
     expect(prev).toMatchObject({ service: 'notifications', account: 'org.thoughtcrime.securesms', name: 'Signal', deviceId: anna.deviceId, state: 'ready' });
@@ -312,12 +312,15 @@ describe('messaging across services', () => {
     expect((await sql<{ state: string }>`select state from messaging_connections where id = ${smsId}`.execute(db)).rows[0]!.state).toBe('ready');
   });
 
-  it('a reply by SMS waits for the phone, which is told, takes it once and reports it: pending, then sent (C3); what was heard, the phone marks read', async () => {
+  it('a reply by SMS waits for the phone, which is told and woken, takes it once and reports it: pending, then sent (C3), then delivered; what was heard, the phone marks read', async () => {
     const { a, said } = await reply('Ich rufe gleich an.');
     expect(said).toBe('Bestätigt. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist.');
     const o = await outbound(a.id);
     expect(o.state).toBe('queued');
     expect((await events('messaging.device.send')).at(-1)).toEqual({ connectionId: smsId, deviceId: anna.deviceId });
+    // Woken by a push that names only "sms" (core sends it; the assistant only asks for it).
+    const wake = await sql<{ queue: string; kind: string; payload: unknown }>`select queue, kind, payload from jobs where key = ${`wake:${anna.deviceId}:sms`}`.execute(db);
+    expect(wake.rows[0]).toEqual({ queue: 'core', kind: 'device.wake', payload: { deviceId: anna.deviceId, topic: 'sms' } });
     // Another phone of nobody takes nothing; this one takes it once.
     expect(((await signedPost(bernd, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([]);
     expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([{ id: o.id, connectionId: smsId, chatId: '12', text: 'Ich rufe gleich an.' }]);
@@ -327,9 +330,27 @@ describe('messaging across services', () => {
     expect((await outbound(a.id)).state).toBe('pending_service');
     await forward(anna, [{ t: 'send.result', requestId: o.id, state: 'sent', externalId: '303' }]);
     expect(await outbound(a.id)).toMatchObject({ state: 'sent', told: ['C3'] });
+    // The phone keeps it in its store and reports it; then the network's delivery report: kept with it, once.
+    await forward(anna, [{ t: 'msg.upsert', msg: { chatId: '12', externalId: '303', fromId: null, outgoing: true, date: now(), editDate: null, kind: 'text', text: 'Ich rufe gleich an.', file: null, fileName: null } }]);
+    expect((await forward(anna, [{ t: 'msg.delivered', chatId: '12', externalIds: ['303'] }])).statusCode).toBe(200);
+    const delivered = async () => (await sql<{ d: Date | null }>`select delivered_at as d from messaging_messages where external_id = '303'`.execute(db)).rows[0]!.d;
+    const first = await delivered();
+    expect(first).not.toBeNull();
+    await forward(anna, [{ t: 'msg.delivered', chatId: '12', externalIds: ['303'] }]);
+    expect(await delivered()).toEqual(first);
+    // An incoming message is never "delivered" by a report.
+    await forward(anna, [{ t: 'msg.delivered', chatId: '12', externalIds: ['301'] }]);
+    expect((await sql<{ d: Date | null }>`select delivered_at as d from messaging_messages where external_id = '301'`.execute(db)).rows[0]!.d).toBeNull();
     const msg = (await sql<{ id: string }>`select id from messaging_messages where external_id = '301'`.execute(db)).rows[0]!.id;
     await as(anna, 'POST', '/api/v1/messaging/messages/heard', { ids: [msg] });
     expect((await events('messaging.device.read')).at(-1)).toEqual({ connectionId: smsId, chatId: '12', externalIds: ['301'] });
+
+    // A reply the phone cannot send (the thread is a group): said with the phone's reason, kept as a draft.
+    const g = await reply('Gruppe?');
+    const og = await outbound(g.a.id);
+    await signedPost(anna, '/api/v1/messaging/device/outbound', {});
+    await forward(anna, [{ t: 'send.result', requestId: og.id, state: 'failed', error: 'group' }]);
+    expect((await assistant.messaging.outbound(anna.userId, og.id, 'de'))?.say).toBe('Nicht gesendet: in eine Gruppen-SMS kann UCAP noch nicht antworten. Der Entwurf ist gespeichert.');
   });
 
   it('a phone that stops running it (the SMS role went back): what waited is not sent (C4) and kept as a draft; when it runs again, it is told', async () => {
@@ -398,21 +419,20 @@ describe('messaging across services', () => {
       ],
       previewId,
     );
-    const items = ((await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { items: { text: string; say: { frame: string } }[] }).items;
-    const frameOf = (text: string) => items.find((i) => i.text === text)?.say.frame;
-    expect(frameOf('Ihr Termin am Dienstag fällt aus.')).toMatch(/^Praxis Dr\. Klein schrieb .+ per E-Mail mit dem Betreff „Ihr Termin am Dienstag“:$/);
-    expect(frameOf('Ruf mich bitte an.')).toMatch(/^Mama schrieb .+ per SMS:$/);
-    expect(frameOf('Bin gleich zurück.')).toMatch(/^Vorschau von Signal: Lena schrieb .+ auf Signal:$/);
-    expect(frameOf('Kommst du morgen?')).toMatch(/^Clara Beispiel schrieb .+ auf Telegram:$/);
-    // Announced with its service, since there is more than one ("Neue Nachricht von Mama per SMS.").
-    const announce = async (text: string) => {
-      const id = (items.find((i) => i.text === text) as unknown as { id: string }).id;
-      return ((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { say: { announce: string } }).say.announce;
+    /** A message as the person hears it, found by its words (the queue holds only each conversation's newest). */
+    const said = async (text: string) => {
+      const id = (await sql<{ id: string }>`select id from messaging_messages where text = ${text}`.execute(db)).rows[0]!.id;
+      return ((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { say: { frame: string; announce: string } }).say;
     };
-    expect(await announce('Ruf mich bitte an.')).toBe('Neue Nachricht von Mama per SMS.');
-    expect(await announce('Ihr Termin am Dienstag fällt aus.')).toBe('Neue Nachricht von Praxis Dr. Klein per E-Mail.');
-    expect(await announce('Bin gleich zurück.')).toBe('Neue Nachricht von Lena auf Signal.');
-    expect(await announce('Kommst du morgen?')).toBe('Neue Nachricht von Clara Beispiel auf Telegram.');
+    expect((await said('Ihr Termin am Dienstag fällt aus.')).frame).toMatch(/^Praxis Dr\. Klein schrieb .+ per E-Mail mit dem Betreff „Ihr Termin am Dienstag“:$/);
+    expect((await said('Ruf mich bitte an.')).frame).toMatch(/^Mama schrieb .+ per SMS:$/);
+    expect((await said('Bin gleich zurück.')).frame).toMatch(/^Vorschau von Signal: Lena schrieb .+ auf Signal:$/);
+    expect((await said('Kommst du morgen?')).frame).toMatch(/^Clara Beispiel schrieb .+ auf Telegram:$/);
+    // Announced with its service, since there is more than one ("Neue Nachricht von Mama per SMS.").
+    expect((await said('Ruf mich bitte an.')).announce).toBe('Neue Nachricht von Mama per SMS.');
+    expect((await said('Ihr Termin am Dienstag fällt aus.')).announce).toBe('Neue Nachricht von Praxis Dr. Klein per E-Mail.');
+    expect((await said('Bin gleich zurück.')).announce).toBe('Neue Nachricht von Lena auf Signal.');
+    expect((await said('Kommst du morgen?')).announce).toBe('Neue Nachricht von Clara Beispiel auf Telegram.');
   });
 
   it('the confirmation names the service: a reply through a preview, an SMS', async () => {

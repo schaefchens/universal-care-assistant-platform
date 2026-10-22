@@ -868,6 +868,8 @@ The plan: [plan-m3.md](plan-m3.md).
 10. **On WhatsApp, someone not in the address book is named by the name they gave themselves**, as a stranger (the
     owner, 2026-10-22: "self given names are better than numbers, no one knows numbers"; To confirm, item 3).
     plan-m3.md, K2, said "never push names".
+11. **K5 (previews from other apps) comes after K8**, so the order is K4, K6, K7, K8, K5, K9 (the owner, 2026-10-22:
+    "lets make k5 after k8").
 
 ### To confirm
 
@@ -904,6 +906,8 @@ The plan: [plan-m3.md](plan-m3.md).
    - Built: the other side's read receipts mark the person's messages read, as Telegram's do. "Delivered" has no place
      in the store or the connector protocol yet, and nothing tells the person either state so far.
    - It comes with K4, where SMS delivery reports need the same: one "delivered" for both.
+   - **Built with K4:** "delivered" is kept for both (`msg.delivered`, `delivered_at`): WhatsApp's DELIVERY_ACK and an
+     SMS's delivery report. The model gets it with the person's own messages; nothing says it by itself yet.
 5. **Email senders are named by the name they give themselves, and count as known when the person wrote to them in
    the last year** (their Sent folder), until UCAP's own contacts come (K6).
    - plan-m3.md, Principles: "Names come from the person's contacts, never from the sender. A WhatsApp push name, an
@@ -929,6 +933,14 @@ The plan: [plan-m3.md](plan-m3.md).
    - A report that a mail is only delayed is no news. A report about a mail UCAP did not send, or sent more than 30
      days before, is shown as a mail.
    - A bounced mail is not kept as a draft: it was sent, and its words are in the thread.
+10. **An SMS from UCAP is a reply in a thread there is, until K6.** plan-m3.md, K4: "an SMS confirmed on any of the
+    person's devices is sent by the phone" (and the capabilities said "any number"). A new SMS to a number needs the
+    number, which by voice is hard to say and check; with K6 it comes from a contact. Another app's "write an SMS"
+    (`smsto:`) opens UCAP with the number. A reply into a group thread fails with its reason ("in eine Gruppen-SMS kann
+    UCAP noch nicht antworten"), as plan-m3.md says for group MMS.
+11. **UCAP's notification for a new SMS says who wrote, never what**: "Neue SMS von Anna Beispiel", private on the lock
+    screen, gone once the SMS was heard. UCAP announces messages the same way. The other choice: the text in the
+    notification, as most SMS apps show it.
 
 ### Decided (within the plan)
 
@@ -1020,6 +1032,27 @@ The plan: [plan-m3.md](plan-m3.md).
   seconds waited for them (measured below).
 - **htmlparser2 (MIT) is used directly**, for the HTML to speak: mailparser's own HTML-to-text is not fit for speech
   (spike B), and htmlparser2 is already part of mailparser's dependencies.
+- **UCAP's SMS work runs in a process of its own** (`:sms`): receiving, the store, sending with the reports, and the
+  forwarding to the server, so a crash there never takes the app's help with it. The app's process only asks it
+  (explicit broadcasts); it keeps its own small database.
+- **Android's SMS store is the queue.** The phone forwards what is in it by the order of its ids, signed with the
+  device key, so it works with the app closed; a position says how far it got. At connecting the position is set 30
+  days back: that history is no news, what comes after it is. What waits for the server otherwise (results, delivery
+  reports, states) waits in order and is sent again after a failure; a message the server refuses is skipped.
+- **An SMS and an MMS share a thread but not an id sequence**: they are "s12" and "m3" for the server, ordered by
+  time, and their read positions are times.
+- **People on SMS are their number in E.164** where it can be one (else as it came, "DHL"), named from the phone's
+  address book (the role grants READ_CONTACTS), else by the number as people write it, and never a contact then.
+- **A reply for the phone wakes it**: the assistant asks core for a push that names only "sms" (`device.wake`: core
+  has no messaging code), and the phone takes what waits for it, signed. With the app open the realtime channel does
+  the same; a push that never came is caught by a look every 15 minutes while UCAP is the SMS app.
+- **"Gesendet" for an SMS** comes when the network reported every part as sent (a long SMS goes in parts); a part the
+  network refused fails it with the network's code. The delivery report, where the network sends one, is kept.
+- **Giving the role back** is Android's Default apps page, opened from UCAP's SMS page; Android then ends UCAP's
+  processes and takes the role's permissions. The role-change broadcast, or the next look, tells the server "off", so
+  what waited for the phone is not sent and kept as a draft.
+- **The phone names the SMS app there is otherwise** ("Deine SMS-App ist gerade Messages."): Android shows it to an app
+  that says it looks for SMS apps (`<queries>` for `smsto:`), and hides it otherwise (package visibility).
 
 ### Measured
 
@@ -1089,3 +1122,30 @@ The plan: [plan-m3.md](plan-m3.md).
     the owner's WhatsApp on the same account, the test mail was dated ten minutes back so the screen opened on it.
   - The first assistant turn failed with a provider error after 17 s, while the 22 GB model was being loaded; the
     second went through.
+- **K4 on the emulator** (2026-10-22), "Wanda Test" (German, LIVE on, as the owner had set the device):
+  - **The role:** "UCAP als SMS-App verwenden" opened Android's dialog with Messages preselected; UCAP chosen, "Set as
+    default": UCAP held the role, and the server's SMS connection was ready on that phone.
+  - **SMS in** (`adb emu sms send`): written to the store, UCAP's notification ("Neue SMS von 555-1234"), reported to
+    the server as new in seconds, named by its number and no contact. LIVE said it word for word, which counts as heard:
+    the phone marked it read in the store.
+  - **SMS out:** a confirmed reply, put in the server's queue as the assistant does after "Ja", reached the phone
+    through the realtime channel; it was sent through the emulator's network, "Gesendet an 555-1234." came (C3) within
+    two seconds, and the delivery report was kept (store status 0, `delivered_at`).
+  - **The way back:** UCAP's button opened Android's Default apps page; SMS app, Messages: Google Messages held the
+    role again, Android ended UCAP's processes, the server's connection went "off" (the role), and both SMS stayed in
+    Android's store.
+  - **Not checked here:** the wake push (this phone has no UnifiedPush endpoint; the server test sends one through the
+    dev stack's ntfy), and dictating the reply (with LIVE on, push-to-talk heard nothing; the confirmation by voice is
+    covered by the tests and the browser walk).
+  - **Found and fixed: the SMS page named no SMS app** ("Dieses Telefon hat gerade keine SMS-App"): Android hid Google
+    Messages from UCAP (package visibility).
+  - **Found and fixed: a heading wider than the screen.** "Nachrichtendienste" at 125 % with the easy-to-read font was
+    449 px on a 411 px screen, so the WebView laid out the whole page wider and drew it smaller than the person chose;
+    taps measured on the page landed on the next button. Headings now break long words, hyphenated.
+  - **Found and fixed: a double tap that left a screen pressed "Hilfe" on the next.** The browser's click that echoes a
+    touch went to the home screen's help area after the messages screen's "Zurück"; the new grid did not know the
+    touch. It sent a help request, cancelled after 47 s; nobody was alerted (the test person has no helpers). Every
+    grid now ignores that echo.
+  - **Found and fixed:** an SMS's notification stayed after it was heard.
+  - Opening the messages screen reads its first message; with the owner chatting on WhatsApp, the newest was a WhatsApp
+    message once, read aloud for a moment until the screen was left (not heard to its end, nothing marked read).

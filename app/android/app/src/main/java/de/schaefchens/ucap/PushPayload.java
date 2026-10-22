@@ -8,13 +8,13 @@ import org.json.JSONObject;
 
 /**
  * A decrypted push from the server (server/src/domain/care/push.ts): {v, t, dlv, n, at, ttl} and, for care, {rid, ep,
- * who, dev, u, st, by}. Anything else is not UCAP's and is dropped before anything rings. `late`: ntfy keeps messages
+ * who, dev, u, st, by}; a wake names only what waits ({w: "sms"}: a reply for the SMS app to send). Anything else is not UCAP's and is dropped before anything rings. `late`: ntfy keeps messages
  * for hours, so a phone that was off may get an alarm long after it was sent; that one is shown, never rung.
  *
  * Pure Java over org.json, so it is unit-tested on the JVM (PushPayloadTest).
  */
 final class PushPayload {
-    static final Set<String> TYPES = new HashSet<>(Arrays.asList("care.alert", "care.update", "care.cancel", "care.watchdog", "hb", "test", "reminder.due", "reminder.followup"));
+    static final Set<String> TYPES = new HashSet<>(Arrays.asList("care.alert", "care.update", "care.cancel", "care.watchdog", "hb", "test", "reminder.due", "reminder.followup", "wake"));
     private static final Pattern ID = Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     /** Grace for clocks that differ a little between server and phone. */
     static final long SKEW_S = 60;
@@ -38,6 +38,8 @@ final class PushPayload {
     final String title;
     final String text;
     final String category;
+    /** A wake: what waits on the device ("sms"). */
+    final String what;
 
     private PushPayload(JSONObject o, String type, long nowS) {
         this.type = type;
@@ -58,6 +60,7 @@ final class PushPayload {
         title = str(o, "title", 80);
         text = str(o, "prompt", 240);
         category = str(o, "cat", 20);
+        what = str(o, "w", 20);
     }
 
     private static String str(JSONObject o, String key, int max) {

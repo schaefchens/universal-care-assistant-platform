@@ -21,6 +21,17 @@ public class PushPayloadTest {
     }
 
     @Test
+    public void aWakeNamesWhatWaitsAndNeverRings() throws Exception {
+        String wake = new JSONObject().put("v", 1).put("t", "wake").put("w", "sms").put("dlv", DLV).put("n", "AbCdEfGhIjKlMnOpQrStUv").put("at", NOW - 5).put("ttl", 3600).toString();
+        PushPayload p = PushPayload.parse(wake, NOW);
+        assertNotNull(p);
+        assertEquals("wake", p.type);
+        assertEquals("sms", p.what);
+        assertFalse(p.care());
+        assertFalse(p.rings());
+    }
+
+    @Test
     public void readsAnAlert() throws Exception {
         PushPayload p = PushPayload.parse(alert().toString(), NOW);
         assertNotNull(p);

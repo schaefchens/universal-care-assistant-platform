@@ -208,6 +208,26 @@ export interface VoiceCapturePlugin {
   addListener(event: 'model', fn: (e: { bytes: number; total: number }) => void): Promise<PluginListenerHandle>;
 }
 
+/** UCAP as the SMS app (SmsPlugin.java, docs/plan-m3.md, K4); the SMS work itself runs in the app's SMS process. */
+export interface SmsPlugin {
+  /** `available`: the phone has SMS and Android's SMS role; `other`: the app that holds it otherwise ("Messages"). */
+  status(): Promise<{ available: boolean; held: boolean; other: string | null; sdk: number }>;
+  /** Android's own dialog (two choices: the current app is preselected). */
+  requestRole(): Promise<{ held: boolean; reason?: 'unavailable' }>;
+  /** Android's Default apps page: giving the role back is one tap there. */
+  openDefaultApps(): Promise<void>;
+  /** The SMS process reports to this connection from now on: 30 days of the store, then all that comes. */
+  connect(o: { connectionId: string }): Promise<void>;
+  disconnect(): Promise<void>;
+  /** Something waits for this phone to send. */
+  take(): Promise<void>;
+  /** SMS the person heard: read in the store. */
+  markRead(o: { connectionId: string; externalIds: string[] }): Promise<void>;
+  /** What the app was opened for: a conversation (a notification) or an SMS to write (another app); once. */
+  launched(): Promise<{ thread?: string; compose?: string; body?: string | null }>;
+  addListener(event: 'opened', fn: (e: { thread?: string; compose?: string; body?: string | null }) => void): Promise<PluginListenerHandle>;
+}
+
 export const Earcons = registerPlugin<EarconsPlugin>('Earcons');
 export const DeviceTts = registerPlugin<DeviceTtsPlugin>('DeviceTts');
 export const A11y = registerPlugin<A11yPlugin>('A11y');
@@ -217,3 +237,4 @@ export const Alerts = registerPlugin<AlertsPlugin>('Alerts');
 export const Keys = registerPlugin<KeysPlugin>('Keys');
 export const Reminders = registerPlugin<RemindersPlugin>('Reminders');
 export const VoiceCapture = registerPlugin<VoiceCapturePlugin>('VoiceCapture');
+export const Sms = registerPlugin<SmsPlugin>('Sms');

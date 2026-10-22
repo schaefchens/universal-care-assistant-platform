@@ -36,6 +36,7 @@ export const MIGRATIONS: { id: string; url: URL }[] = [
   { id: '0017_outbound_subject.sql', url: new URL('0017_outbound_subject.sql', SERVER) },
   { id: '0018_capabilities_own.sql', url: new URL('0018_capabilities_own.sql', SERVER) },
   { id: '0019_email.sql', url: new URL('0019_email.sql', SERVER) },
+  { id: '0020_sms.sql', url: new URL('0020_sms.sql', SERVER) },
 ];
 
 const checksum = (text: string) => createHash('sha256').update(text).digest('hex');

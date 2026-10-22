@@ -107,9 +107,10 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 **WhatsApp (Baileys; docs/spikes/m3.md, A)**
 - Nothing automated ever reaches the owner's WhatsApp, and Claude Code's auto mode refuses to start a command that
   does: the owner runs such steps (the spike, hand checks) in a terminal of their own. Everything else uses the stand-in.
-- The emulator's test person ("Wanda Test") holds the owner's real WhatsApp. Never print its screens or speech: only
-  states, counts, and texts a test sent itself. The messages screen reads its first unread message as it opens, and a
-  message heard to its end is marked read on WhatsApp: open it only with a test message first (a mail dated back).
+- The emulator's test person ("Wanda Test") holds the owner's real WhatsApp, and the owner may be chatting on it. Never
+  print its screens or speech: only states, counts, and texts a test sent itself. The messages screen reads its first
+  message as it opens (the oldest unread, else the newest), and a message heard to its end is marked read on WhatsApp:
+  open it only right after checking that a test message is first, and stop when it is not.
 - libsignal, under Baileys, prints session records with their private keys through `console.info` ("Closing
   session: …"), past Baileys' logger: a process or script that loads Baileys replaces the console first.
 - WhatsApp refuses a pairing code for a device named by UCAP: keep Baileys' default (`Browsers.macOS('Chrome')`, listed
@@ -190,6 +191,13 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   - The emulator's SMS centre time is an hour off.
   - Try the role and notification access with `tools/android/spikes/m3` (own packages); `drive.ts restore` puts the
     shared emulator back.
+- **UCAP as the SMS app** (K4): SMS into the emulator with `adb emu sms send <number> <text>` (raw PDUs: `adb emu sms
+  pdu`); the shell may read the store (`adb shell content query --uri content://sms`), only the SMS app writes it. Its
+  network sends sent and delivery reports. Android shows an app the SMS app there is only with a `<queries>` entry
+  (`smsto:`); without one it says there is none.
+- **The emulator drives:** leave a screen with the back key (`adb shell input keyevent KEYCODE_BACK`), never with a
+  double tap on its areas: the second tap's echo lands on the next screen (it once pressed "Hilfe"). A page laid out
+  wider than the screen (a long word) is drawn smaller, and taps by measured coordinates land off: check `innerWidth`.
 - **A notification listener** restarted after its process died reports the notifications still showing as new again:
   "each message once" belongs on the server. One-time codes are not redacted on the emulator.
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.

@@ -66,6 +66,73 @@
             </intent-filter>
         </receiver>
 
+        <!-- UCAP as the SMS app (docs/plan-m3.md, K4): the SMS role's four parts (SMS and MMS delivery, composing for
+             other apps, quick replies to a call) and the work behind them, in a process of their own (":sms"), so a crash
+             there never takes the app's help with it. -->
+        <receiver
+            android:name=".SmsDeliverReceiver"
+            android:exported="true"
+            android:process=":sms"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".MmsPushReceiver"
+            android:exported="true"
+            android:process=":sms"
+            android:permission="android.permission.BROADCAST_WAP_PUSH">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".SmsComposeActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </activity>
+        <service
+            android:name=".SmsRespondService"
+            android:exported="true"
+            android:process=":sms"
+            android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </service>
+        <!-- The network's reports on what UCAP sent; what the app's process asks of the SMS process; the role changing
+             hands; the retries and the 15-minute look for what waits on the server. -->
+        <receiver android:name=".SmsReportReceiver" android:exported="false" android:process=":sms" />
+        <receiver android:name=".SmsCommands" android:exported="false" android:process=":sms" />
+        <receiver android:name=".SmsRoleReceiver" android:exported="true" android:process=":sms">
+            <intent-filter>
+                <action android:name="android.provider.action.DEFAULT_SMS_PACKAGE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".SmsJob"
+            android:exported="false"
+            android:process=":sms"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -76,6 +143,15 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
     </application>
+
+    <!-- The SMS app there is otherwise (Google Messages), by name on UCAP's SMS page: Android hides other apps from an
+         app that does not say what it looks for (package visibility, Android 11+). Every SMS app writes `smsto:`. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
+        </intent>
+    </queries>
 
     <!-- Permissions. Each one is asked for only when its feature needs it. -->
 
@@ -99,4 +175,12 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- The phone fallback (A3b): asked for only when the person chose direct calls; otherwise the dialler opens. -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- UCAP as the SMS app (K4): Android grants these with the SMS role, and takes them back with it (spike C). The
+         address book names who wrote (never the sender's own claim). -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 </manifest>

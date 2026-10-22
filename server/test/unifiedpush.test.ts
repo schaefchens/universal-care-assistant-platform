@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildCore } from '../src/core/app.ts';
 import { dispatchOnce } from '../src/core/dispatcher.ts';
 import type { Db } from '../src/lib/db.ts';
+import { enqueue } from '../src/lib/jobs.ts';
 import { type Account, accountClient, ORG } from './accounts.ts';
 import { fakeClock, SECRETS, testConfig, testDb } from './helpers.ts';
 
@@ -241,6 +242,22 @@ describe('UnifiedPush', () => {
       expect((await signed(maria, 'POST', '/api/v1/push/receipts', { dlv: test.dlv, n: test.n, silenced: true, state: { dnd: 'none' } })).statusCode).toBe(204);
       expect(await eventsOf(maria.userId, 'push.test')).toEqual([{ deliveryId, silenced: true }]);
       expect(await eventsOf(anna.userId, 'push.test')).toEqual([]);
+    });
+
+    it('a wake (docs/plan-m3.md, K4) names its topic and nobody, never rings, and its receipt is kept; a device without UnifiedPush gets none', async () => {
+      // As the assistant asks for it when a reply waits for the phone's SMS app: a core job, no messaging code in core.
+      await enqueue(db, { queue: 'core', kind: 'device.wake', key: `wake:${tom.deviceId}:sms`, runAt: clock(), payload: { deviceId: tom.deviceId, topic: 'sms' } });
+      await run();
+      await run();
+      const wake = (await tomPhone.read()).find((m) => m.t === 'wake')!;
+      expect(wake).toMatchObject({ v: 1, t: 'wake', w: 'sms', ttl: 3600 });
+      expect(Object.keys(wake).filter((k) => !['v', 't', 'w', 'ttl', 'dlv', 'n', 'at', 'pad'].includes(k))).toEqual([]);
+      expect((await signed(tom, 'POST', '/api/v1/push/receipts', { dlv: wake.dlv, n: wake.n, silenced: false })).statusCode).toBe(204);
+      const dl = await sql<{ purpose: string; status: string }>`select purpose, status from deliveries where id = ${String(wake.dlv)}`.execute(db);
+      expect(dl.rows[0]).toEqual({ purpose: 'wake', status: 'delivered' });
+      // Anna's device registered no UnifiedPush endpoint: nothing to wake.
+      await core.push.wake(anna.deviceId, 'sms');
+      expect((await sql<{ n: number }>`select count(*)::int as n from deliveries where purpose = 'wake' and device_id = ${anna.deviceId}`.execute(db)).rows[0]!.n).toBe(0);
     });
 
     it('heartbeats go out on UnifiedPush, and the answer makes the device ready', async () => {

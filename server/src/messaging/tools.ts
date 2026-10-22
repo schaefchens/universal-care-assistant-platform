@@ -73,6 +73,8 @@ function asData(ctx: ToolContext, i: Item) {
     // A preview is all UCAP knows of that conversation (CONCEPT §3).
     ...(i.service === 'notifications' ? { preview: true } : {}),
     unread: i.unread,
+    // The person's own message reached the other side's phone (an SMS delivery report).
+    ...(i.delivered ? { delivered: true } : {}),
   };
 }
 

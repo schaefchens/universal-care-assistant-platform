@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
+import { has, Sms } from '../native/plugins.ts';
 import { ApiError } from '../net/api.ts';
 import { useUi } from '../ui.tsx';
 
@@ -20,6 +21,8 @@ interface Connection {
   id: string;
   service: string;
   account: string;
+  /** The phone that runs it (SMS, previews). */
+  deviceId: string | null;
   name: string;
   state: string;
   running: boolean;
@@ -31,13 +34,23 @@ interface Connection {
 const LOGIN = new Set(['wait_phone', 'wait_code', 'wait_password', 'wait_qr', 'wait_pairing']);
 const ON_PHONE = new Set(['sms', 'notifications']);
 
-export function MessagingServices(p: { session: Session; refresh: number; onTelegram: () => void; onWhatsapp: () => void; onEmail: (connectionId: string | null) => void; onClose: () => void }) {
+export function MessagingServices(p: {
+  session: Session;
+  refresh: number;
+  onTelegram: () => void;
+  onWhatsapp: () => void;
+  onEmail: (connectionId: string | null) => void;
+  onSms: () => void;
+  onClose: () => void;
+}) {
   const ui = useUi();
   const { tr, say } = ui;
   const [list, setList] = useState<Connection[] | null>(null);
   const [offered, setOffered] = useState<Record<string, boolean>>({});
   const [asking, setAsking] = useState<Connection | null>(null);
   const [status, setStatus] = useState('');
+  /** This phone can be the SMS app (the app on a phone with SMS). */
+  const [smsHere, setSmsHere] = useState(false);
   const introduced = useRef(false);
   const questionRef = useRef<HTMLParagraphElement>(null);
 
@@ -82,6 +95,9 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
     void load();
   }, [p.refresh]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
+    if (has('Sms')) void Sms.status().then((s) => setSmsHere(s.available), () => {});
+  }, []);
+  useEffect(() => {
     if (asking) questionRef.current?.focus();
   }, [asking]);
 
@@ -121,8 +137,11 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
             <li key={c.id} className="stack">
               <p>{line(c)}</p>
               <div className="row">
-                {(c.service === 'telegram' || c.service === 'whatsapp' || c.service === 'email') && (
-                  <Button className="button" onPress={() => (c.service === 'telegram' ? p.onTelegram() : c.service === 'whatsapp' ? p.onWhatsapp() : p.onEmail(c.id))}>
+                {(c.service === 'telegram' || c.service === 'whatsapp' || c.service === 'email' || (c.service === 'sms' && smsHere && c.deviceId === p.session.ref.deviceId)) && (
+                  <Button
+                    className="button"
+                    onPress={() => (c.service === 'telegram' ? p.onTelegram() : c.service === 'whatsapp' ? p.onWhatsapp() : c.service === 'sms' ? p.onSms() : p.onEmail(c.id))}
+                  >
                     {tr('messaging.open', { name: `${c.name}${account(c)}` })}
                   </Button>
                 )}
@@ -155,22 +174,31 @@ export function MessagingServices(p: { session: Session; refresh: number; onTele
           </div>
         </div>
       )}
-      {offered.telegram && !telegram && (
-        <Button className="button primary" onPress={p.onTelegram}>
-          {tr('messaging.connect.telegram')}
-        </Button>
-      )}
-      {offered.whatsapp && !whatsapp && (
-        <Button className="button primary" onPress={p.onWhatsapp}>
-          {tr('messaging.connect.whatsapp')}
-        </Button>
-      )}
-      {/* Several accounts, each connected on its own. */}
-      {offered.email && (
-        <Button className="button primary" onPress={() => p.onEmail(null)}>
-          {tr(list?.some((c) => c.service === 'email') ? 'messaging.connect.emailMore' : 'messaging.connect.email')}
-        </Button>
-      )}
+      {/* Spaced apart: buttons right on top of each other are easy to miss. */}
+      <div className="stack">
+        {offered.telegram && !telegram && (
+          <Button className="button primary" onPress={p.onTelegram}>
+            {tr('messaging.connect.telegram')}
+          </Button>
+        )}
+        {offered.whatsapp && !whatsapp && (
+          <Button className="button primary" onPress={p.onWhatsapp}>
+            {tr('messaging.connect.whatsapp')}
+          </Button>
+        )}
+        {/* On a phone with SMS: UCAP as its SMS app (its own page explains first). */}
+        {smsHere && !list?.some((c) => c.service === 'sms' && c.deviceId === p.session.ref.deviceId) && (
+          <Button className="button primary" onPress={p.onSms}>
+            {tr('messaging.connect.sms')}
+          </Button>
+        )}
+        {/* Several accounts, each connected on its own. */}
+        {offered.email && (
+          <Button className="button primary" onPress={() => p.onEmail(null)}>
+            {tr(list?.some((c) => c.service === 'email') ? 'messaging.connect.emailMore' : 'messaging.connect.email')}
+          </Button>
+        )}
+      </div>
     </main>
   );
 }

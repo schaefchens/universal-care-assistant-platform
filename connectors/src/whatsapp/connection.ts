@@ -535,15 +535,21 @@ export class WhatsappConnection {
     return { fileId, mime: (a.mimetype ?? 'audio/ogg').split(';')[0]!.trim(), size: seconds(a.fileLength) || null, durationS: a.seconds ?? null };
   }
 
-  /** Read states: the person's own (on another device) and the other side's. */
+  /**
+   * Read states, the person's own (on another device) and the other side's, and the other side's "delivered" (its
+   * phone has the message: DELIVERY_ACK; read implies it). SERVER_ACK comes from the person's other devices, not here.
+   */
   private onUpdate(u: BaileysEventMap['messages.update'][number]) {
     const status = u.update.status;
-    if (status === null || status === undefined || status < proto.WebMessageInfo.Status.READ || !u.key.id) return;
+    if (status === null || status === undefined || status < proto.WebMessageInfo.Status.DELIVERY_ACK || !u.key.id) return;
     if (u.key.fromMe) {
       const o = this.outgoing.get(u.key.id);
-      if (o) this.emit({ t: 'chat.read', id: this.o.id, chatId: o.chatId, inboxMaxId: null, outboxMaxId: String(o.at) });
+      if (!o) return;
+      this.emit({ t: 'msg.delivered', id: this.o.id, chatId: o.chatId, externalIds: [u.key.id] });
+      if (status >= proto.WebMessageInfo.Status.READ) this.emit({ t: 'chat.read', id: this.o.id, chatId: o.chatId, inboxMaxId: null, outboxMaxId: String(o.at) });
       return;
     }
+    if (status < proto.WebMessageInfo.Status.READ) return;
     const r = this.extra.recent[u.key.id];
     if (r) this.emit({ t: 'chat.read', id: this.o.id, chatId: chatId(r.jid, this.ids), inboxMaxId: String(r.at), outboxMaxId: null });
   }

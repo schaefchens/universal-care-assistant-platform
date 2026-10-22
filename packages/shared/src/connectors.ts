@@ -118,6 +118,8 @@ export type FromConnectors =
   | { t: 'msg.upsert'; id: string; msg: WireMessage; live?: boolean }
   | { t: 'msg.delete'; id: string; chatId: string; externalIds: string[] }
   | { t: 'chat.read'; id: string; chatId: string; inboxMaxId: string | null; outboxMaxId: string | null; unread?: number }
+  /** The other side's phone has these messages of the person's (WhatsApp's "delivered"). */
+  | { t: 'msg.delivered'; id: string; chatId: string; externalIds: string[] }
   /**
    * A sent message's fate: accepted by the service (its temporary id), then sent or failed. After a restart of the
    * connectors process TDLib still sends what was pending; its result then comes by the temporary id alone.
@@ -144,6 +146,8 @@ export type DeviceEvent =
   | { t: 'msg.upsert'; msg: WireMessage; live?: boolean }
   | { t: 'msg.delete'; chatId: string; externalIds: string[] }
   | { t: 'chat.read'; chatId: string; inboxMaxId: string | null; outboxMaxId: string | null; unread?: number }
+  /** The network's delivery report: the other side's phone has these SMS of the person's. */
+  | { t: 'msg.delivered'; chatId: string; externalIds: string[] }
   /** A send the phone took: handed to the network or the other app, then sent or failed. */
   | { t: 'send.result'; requestId: string; state: 'pending_service' | 'sent' | 'failed'; externalId?: string; error?: string };
 

@@ -108,6 +108,14 @@ export function createMessageStore(d: { db: Db; clock: Clock }) {
       });
     },
 
+    /** The other side has these messages of the person's (a delivery report): kept with them, once. */
+    async delivered(connectionId: string, chatId: string, externalIds: string[]): Promise<void> {
+      await sql`
+        update messaging_messages m set delivered_at = ${now()} from messaging_conversations v
+        where v.connection_id = ${connectionId} and v.external_id = ${chatId} and m.conversation_id = v.id
+          and m.external_id = any(${externalIds}::text[]) and m.direction = 'out' and m.delivered_at is null`.execute(d.db);
+    },
+
     async read(connectionId: string, chatId: string, inboxMax: string | null, outboxMax: string | null, unread?: number): Promise<void> {
       await d.db.transaction().execute(async (trx) => {
         const c = await sql<{ id: string }>`

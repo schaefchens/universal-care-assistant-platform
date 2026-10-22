@@ -117,6 +117,23 @@ on the admin page.
   connector against the two Hetzner mailboxes in `.secrets` (a mail one way, a reply and its answer back) and deletes
   what it sent.
 
+### SMS
+
+UCAP can become the SMS app of the person's phone (Settings → Nachrichtendienste → UCAP als SMS-App, on that phone):
+it then receives and sends their SMS itself, and Android keeps them in its own store, where Google Messages finds them
+again. Nothing to set up on the server.
+
+- **Before:** the page asks to switch off Google Messages' chat features (RCS): chats sent there may stop arriving
+  while UCAP is the SMS app. Android's own dialog takes two choices (the current app is preselected), which a helper
+  may need to do with the person. An app installed from a file needs "Eingeschränkte Einstellungen zulassen" first
+  (the app's info page, menu).
+- **The way back** is on the same page: Android's Default apps page, SMS app. Android then ends UCAP's processes; the
+  server is told, and replies that waited for the phone are not sent (kept as drafts).
+- **Sending** a reply confirmed on another device needs the phone: it is woken by a push (the ntfy app as its
+  UnifiedPush distributor), else it looks every 15 minutes, or at once when UCAP is opened there.
+- **Not yet:** MMS, a new SMS to a number (with K6's contacts), and what only a real phone with a SIM shows (RCS after
+  the switch, a carrier's MMS centre and reports).
+
 ### herde
 
 KI und Stimmen verwalten → herde → invitation: the page shows `herde join <address> <code>`. On the machine that runs

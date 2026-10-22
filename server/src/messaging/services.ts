@@ -46,6 +46,7 @@ export const CAPABILITIES: Record<Service, Capabilities> = {
   whatsapp: { history: 'since', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
   // Email answers in its threads; a new mail to an address comes with the contacts it is taken from (K6).
   email: { history: 'since', send: 'conversations', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false },
-  sms: { history: 'since', send: 'any', sent: 'network', voice: false, readState: true, groups: true, subject: false, delivery: true },
+  // Replies in the threads there are; a new SMS to a number comes with the contacts it is taken from (K6).
+  sms: { history: 'since', send: 'conversations', sent: 'network', voice: false, readState: true, groups: true, subject: false, delivery: true },
   notifications: { history: 'previews', send: 'replies', sent: 'app', voice: false, readState: true, groups: true, subject: false, delivery: false },
 };

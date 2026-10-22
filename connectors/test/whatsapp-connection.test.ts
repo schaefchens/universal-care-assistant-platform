@@ -255,11 +255,12 @@ describe('a WhatsApp connection', () => {
     await sock().push({ 'chats.update': [{ id: ANNA, unreadCount: 0 }] });
     expect(of('chat.read').at(-1)).toMatchObject({ chatId: ANNA, inboxMaxId: String(NOW), unread: 0 });
 
-    // Read by the other side.
+    // Delivered to the other side's phone, then read there.
     await conn.send('r1', ANNA, 'Hallo');
     const id = of('send.result').at(-1)!.tempId!;
     sock().ack({ class: 'message', id, from: ANNA, t: String(NOW + 5) });
     await sock().push({ 'messages.update': [{ key: { remoteJid: ANNA, id, fromMe: true }, update: { status: 3 } }] });
+    expect(of('msg.delivered')).toEqual([{ t: 'msg.delivered', id: 'c1', chatId: ANNA, externalIds: [id] }]);
     expect(of('chat.read').filter((e) => e.outboxMaxId)).toHaveLength(0);
     await sock().push({ 'messages.update': [{ key: { remoteJid: ANNA, id, fromMe: true }, update: { status: 4 } }] });
     expect(of('chat.read').at(-1)).toMatchObject({ chatId: ANNA, inboxMaxId: null, outboxMaxId: String(NOW + 5) });

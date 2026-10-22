@@ -34,6 +34,8 @@ const PAYLOAD_BYTES = 512;
 /** Reminders carry their own words (a title and a question): one larger size for all of them. */
 const REMINDER_PAYLOAD_BYTES = 1024;
 const TEST_TTL_S = 300;
+/** A wake keeps for an hour; a phone that was off longer takes what waits for it when it next looks. */
+const WAKE_TTL_S = 3600;
 
 export interface Ntfy {
   /** The address phones use; endpoints must start with it. */
@@ -134,6 +136,30 @@ export async function createPush(d: PushDeps) {
       return res;
     },
 
+    /**
+     * Wakes one of a person's devices for what waits for it there (docs/plan-m3.md, K4: a reply the phone's SMS app is
+     * to send), with a push that names no more than the topic. Only a device with UnifiedPush (the Android app):
+     * nothing rings, and its receipt only records that it came. Core knows nothing of the topic's meaning.
+     */
+    async wake(deviceId: string, topic: string) {
+      if (!/^[a-z]{1,20}$/.test(topic)) return;
+      const id = await d.db.transaction().execute(async (trx) => {
+        const r = await sql<{ user_id: string }>`
+          select dv.user_id from devices dv join push_endpoints pe on pe.device_id = dv.id and pe.kind = 'unifiedpush'
+          where dv.id = ${deviceId} and dv.revoked_at is null`.execute(trx);
+        const userId = r.rows[0]?.user_id;
+        if (!userId) return null;
+        const id = uuidv7(d.clock());
+        await sql`
+          insert into deliveries (id, purpose, recipient, device_id, channel, kind, nonce_hash, status, created_at, expires_at)
+          values (${id}, 'wake', ${userId}, ${deviceId}, 'unifiedpush', ${`wake.${topic}`}, ${mac(d.pepper, 'delivery', d.care.nonceFor(id))}, 'queued', ${now()},
+                  ${new Date(d.clock() + WAKE_TTL_S * 1000)})`.execute(trx);
+        await enqueue(trx, { queue: 'core', kind: 'push.send', key: `push:${id}`, runAt: d.clock(), payload: { deliveryId: id }, maxAttempts: 4 });
+        return id;
+      });
+      if (id) d.wake?.();
+    },
+
     /** The push.send job: one delivery, sent once; retried by the job runner on transient failures. */
     async deliver(deliveryId: string, attempt: number) {
       const r = await sql<{
@@ -186,6 +212,9 @@ export async function createPush(d: PushDeps) {
       const body: Record<string, unknown> =
         dl.kind === 'hb'
           ? { ...common, t: 'hb', ttl: 1800 }
+          : dl.kind.startsWith('wake.')
+            ? // What waits on the device, by topic only ("sms"): it fetches the rest itself, signed.
+              { ...common, t: 'wake', w: dl.kind.slice(5), ttl: WAKE_TTL_S }
           : dl.kind === 'test'
             ? { ...common, t: 'test', ttl: TEST_TTL_S }
             : dl.kind === 'reminder.due'

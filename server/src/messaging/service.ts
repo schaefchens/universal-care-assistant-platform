@@ -104,6 +104,8 @@ export interface Item {
   subject: string | null;
   /** An email's quoted part, kept apart from what is new. */
   quoted: string | null;
+  /** The person's own message is on the other side's phone (a delivery report). */
+  delivered: boolean;
 }
 
 interface ConnRow {
@@ -284,8 +286,12 @@ export function createMessaging(d: {
     const o = r.rows[0];
     if (!o || o.state !== 'queued') return 'queued';
     if (!isServerService(o.service)) {
-      // A phone sends it: told now (if it listens), it takes what waits for it when it can (deviceTake).
-      if (o.conn_state === 'ready') await notify(o.user_id, 'messaging.device.send', { connectionId: o.connection_id, deviceId: o.device_id });
+      // A phone sends it: told now (if its app listens), and woken by a push that says no more than "SMS" (core
+      // sends it); it takes what waits for it when it can (deviceTake).
+      if (o.conn_state === 'ready' && o.device_id) {
+        await notify(o.user_id, 'messaging.device.send', { connectionId: o.connection_id, deviceId: o.device_id });
+        await enqueue(d.db, { queue: 'core', kind: 'device.wake', key: `wake:${o.device_id}:sms`, runAt: d.clock(), payload: { deviceId: o.device_id, topic: 'sms' }, maxAttempts: 3 });
+      }
       return 'queued';
     }
     const h = hub();
@@ -458,6 +464,9 @@ export function createMessaging(d: {
       case 'chat.read':
         await store.read(c.id, e.chatId, e.inboxMaxId, e.outboxMaxId, e.unread);
         return;
+      case 'msg.delivered':
+        await store.delivered(c.id, e.chatId, e.externalIds);
+        return;
       case 'send.result':
         await onSendResult(c.id, e);
         return;
@@ -493,6 +502,7 @@ export function createMessaging(d: {
       file_name: string | null;
       subject: string | null;
       quoted: string | null;
+      delivered_at: Date | null;
       duration_s: number | null;
       file_id: string | null;
       transcript: string | null;
@@ -503,7 +513,7 @@ export function createMessaging(d: {
       label: string | null;
     }>`
       select m.id, m.conversation_id, v.connection_id, v.title, v.kind as ckind, m.sender_external_id, p.name as sender_name, m.direction, m.sent_at, m.kind, m.text, m.file_name,
-        m.subject, m.quoted, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label
+        m.subject, m.quoted, m.delivered_at, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label
       from messaging_messages m
       join messaging_conversations v on v.id = m.conversation_id
       join messaging_connections k on k.id = v.connection_id
@@ -532,6 +542,7 @@ export function createMessaging(d: {
       label: x.label,
       subject: x.subject,
       quoted: x.quoted,
+      delivered: x.direction === 'out' && x.delivered_at !== null,
     }));
   }
 
@@ -1147,6 +1158,13 @@ function reasonKey(error: string | null, service: Service): string {
   if (error === 'offline') return 'offline';
   if (error === 'off') return service === 'sms' ? 'off.sms' : 'off.preview';
   if (error === 'signed_out') return 'signedOut';
+  // The phone's own words for an SMS it could not send (K4): a group thread, nobody in it, the network's refusal.
+  if (service === 'sms') {
+    if (error === 'group') return 'sms.group';
+    if (error === 'no_recipient') return 'sms.noRecipient';
+    if (/^sms_/.test(error ?? '')) return 'sms.network';
+    return 'sms.phone';
+  }
   if (error === 'tg_403') return 'forbidden';
   if (error === 'tg_400') return 'refused';
   // WhatsApp's 463: the account may not start conversations for now (an account restriction, docs/spikes/m3.md, A).

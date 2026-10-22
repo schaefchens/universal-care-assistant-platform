@@ -289,10 +289,25 @@ body {
   color: var(--c-danger);
 }
 
+/* Long words (German compounds: "Nachrichtendienste") at a large text size break, hyphenated, instead of widening the
+   page: the WebView would lay out the whole page wider than the screen and draw it smaller than the person chose
+   (WCAG 1.4.10; seen at 125 % with the easy-to-read font). */
+h1,
+h2,
+h3 {
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
 .settings-header {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+/* A flex item never shrinks below its longest word unless it may. */
+.settings-header h1 {
+  min-width: 0;
 }
 
 .settings-section {

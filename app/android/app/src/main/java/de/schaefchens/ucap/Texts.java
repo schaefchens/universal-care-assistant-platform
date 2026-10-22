@@ -61,6 +61,10 @@ final class Texts {
         put("reminder.category.wellbeing", "Befinden", "Wellbeing");
         put("reminder.category.appointment", "Termin", "Appointment");
         put("reminder.category.other", "Sonstiges", "Other");
+        put("sms.channel", "SMS", "Text messages");
+        put("sms.channel.desc", "Neue SMS, solange UCAP deine SMS-App ist. Sie nennt, wer geschrieben hat; gelesen wird in UCAP.", "New text messages while UCAP is your SMS app. It says who wrote; you read them in UCAP.");
+        DE.put("sms.channel.desc@Sie", "Neue SMS, solange UCAP Ihre SMS-App ist. Sie nennt, wer geschrieben hat; gelesen wird in UCAP.");
+        put("sms.new", "Neue SMS von %s", "New text message from %s");
     }
 
     static String get(String lang, String key) {

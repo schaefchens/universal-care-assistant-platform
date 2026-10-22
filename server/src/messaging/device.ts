@@ -4,9 +4,9 @@
  * nothing a phone sends reaches the store unchecked.
  *
  * - A phone's conversations are private chats or groups; it has no channels.
- * - Its messages carry their text and nothing to fetch here (MMS pictures come with K4).
- * - Read positions are numbers: an SMS's id in the phone's store, or a preview's time in seconds (its id is a hash, so
- *   it is ordered by time).
+ * - Its messages carry their text and nothing to fetch here: an MMS picture is named as a photo, with its text.
+ * - Read positions are times in seconds: an SMS and an MMS share a thread but not an id sequence ("s12", "m3"), and a
+ *   preview's id is a hash, so both are ordered by time.
  */
 import type { DeviceEvent, MessageKind, WireChat, WireMessage, WireUser } from '@ucap/shared';
 
@@ -81,6 +81,10 @@ export function deviceEvent(v: unknown): DeviceEvent | null {
     case 'chat.read':
       return id(v.chatId) && num(v.inboxMaxId) && num(v.outboxMaxId) && (v.unread === undefined || int(v.unread))
         ? { t: 'chat.read', chatId: v.chatId, inboxMaxId: v.inboxMaxId as string | null, outboxMaxId: v.outboxMaxId as string | null, ...(v.unread !== undefined ? { unread: v.unread as number } : {}) }
+        : null;
+    case 'msg.delivered':
+      return id(v.chatId) && Array.isArray(v.externalIds) && v.externalIds.length >= 1 && v.externalIds.length <= 200 && v.externalIds.every(id)
+        ? { t: 'msg.delivered', chatId: v.chatId, externalIds: v.externalIds as string[] }
         : null;
     case 'send.result':
       return typeof v.requestId === 'string' && /^[0-9a-f-]{36}$/.test(v.requestId) && (v.state === 'pending_service' || v.state === 'sent' || v.state === 'failed') && optStr(v.externalId, 200) && optStr(v.error, 60)

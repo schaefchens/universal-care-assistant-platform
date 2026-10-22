@@ -34,6 +34,14 @@ export interface AreaGridProps {
   onTouch?: () => void;
 }
 
+/**
+ * When a touch the engine handled last ended, on any grid. The browser's click that echoes a touch goes to whatever is
+ * under the finger then, and a double tap that leaves a screen ends on the next one: on the emulator, the messages
+ * screen's "Zurück" became a press of the home screen's "Hilfe" (2026-10-22). So the echo is ignored on every grid,
+ * not only on the one that saw the touch.
+ */
+let touchEndedAt = -Infinity;
+
 /** Joins parts into sentences without doubling the punctuation a part already ends with. */
 export function sentences(...parts: string[]): string {
   return parts
@@ -67,8 +75,6 @@ export function AreaGrid(p: AreaGridProps) {
     const help = p.screen.areas.find((a) => a.role === 'help')?.id;
     return focusOrder(p.screen.areas, help).map((id) => byId.get(id)!.area);
   }, [p.screen, byId]);
-  /** A click right after a touch the engine handled is the browser's echo of that touch: ignore it. */
-  const touchEndedAt = useRef(-Infinity);
 
   useEffect(() => {
     const engine = new TouchEngine(engineSettings(p.touch, p.assistive, p.screen.areas), {
@@ -123,13 +129,14 @@ export function AreaGrid(p: AreaGridProps) {
     } else if (kind === 'move') engine.pointerMove(pt);
     else if (kind === 'up') {
       engine.pointerUp(pt);
-      touchEndedAt.current = performance.now();
+      touchEndedAt = performance.now();
     } else engine.pointerCancel(pt);
   };
 
   const click = (a: AreaDef) => (e: React.MouseEvent<HTMLButtonElement>) => {
     const pt = (e.nativeEvent as PointerEvent).pointerType;
-    if (ownGestures && (pt === 'touch' || pt === 'pen' || performance.now() - touchEndedAt.current < 600)) return;
+    // A click right after a touch is the browser's echo of it: never a press of its own.
+    if (ownGestures && (pt === 'touch' || pt === 'pen' || performance.now() - touchEndedAt < 600)) return;
     propsRef.current.onActivate(a, 'press');
   };
 
