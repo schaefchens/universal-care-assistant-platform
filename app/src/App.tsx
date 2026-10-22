@@ -27,7 +27,7 @@ import { deviceKey, shareRefWithWorker } from './identity/device-key.ts';
 import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
 import { Alerts, has, Info, Keys, Reminders, Sms } from './native/plugins.ts';
-import { ApiError } from './net/api.ts';
+import { deviceRevoked } from './net/api.ts';
 import { emitAppEvent } from './net/events.ts';
 import { Realtime } from './net/realtime.ts';
 import { defaultServerUrl, fetchServerInfo } from './net/server.ts';
@@ -231,8 +231,8 @@ export function App() {
         setMe(m);
         if (m.recoveryState === 'unconfirmed') ui.say(ui.tr('settings.recovery.reminder'), 'notice');
       } catch (e) {
-        // Offline: the device keeps working with what it has. Signed out elsewhere: back to onboarding.
-        if (!cancelled && e instanceof ApiError && e.status === 401) {
+        // Offline: the device keeps working with what it has. Revoked elsewhere: back to onboarding.
+        if (!cancelled && deviceRevoked(e)) {
           await session.forget();
           signedOut(ui.tr('devices.signedOut'));
         }

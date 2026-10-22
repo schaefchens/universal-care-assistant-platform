@@ -6,7 +6,7 @@
  * other loss reconnects with a jittered backoff from 0.5 to 15 s.
  */
 import { CLOSE, DEAD_AFTER_MS, type ServerEvent } from '@ucap/shared';
-import { ApiError } from './api.ts';
+import { deviceRevoked } from './api.ts';
 import type { Session } from '../identity/account.ts';
 
 export type RealtimeState = 'connecting' | 'open' | 'closed';
@@ -94,7 +94,7 @@ export class Realtime {
     try {
       token = await this.o.session.accessToken();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return this.o.onRevoked();
+      if (deviceRevoked(e)) return this.o.onRevoked();
       return this.retry();
     }
     if (this.stopped) return;

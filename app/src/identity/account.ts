@@ -5,7 +5,7 @@
  */
 import { b64url, deriveIdentity, inviteDigest, signIdentity, wipe } from '@ucap/identity';
 import { Alerts, has } from '../native/plugins.ts';
-import { api, ApiError } from '../net/api.ts';
+import { api, ApiError, deviceRevoked } from '../net/api.ts';
 import { startEventsAt } from '../net/realtime.ts';
 import { fetchServerInfo } from '../net/server.ts';
 import type { ServerRef } from '../state/store.ts';
@@ -122,7 +122,7 @@ export async function recoverAccount(o: { server: ServerRef; entropy: Uint8Array
  * The WebView's storage was lost, but Android kept this device's key and who it is (AN-06: the Keystore survives
  * WebView storage loss): the device signs in again with its key, without the words. Null when there is nothing to
  * restore; 'later' when the server cannot be reached now (native code keeps ringing alarms meanwhile). A server that
- * no longer knows the device has it forgotten, as on sign-out.
+ * revoked the device has it forgotten, as on sign-out.
  */
 export async function restoreDevice(): Promise<{ server: ServerRef; session: Session; lang?: string; form?: string } | 'later' | null> {
   if (!has('Alerts')) return null;
@@ -137,7 +137,8 @@ export async function restoreDevice(): Promise<{ server: ServerRef; session: Ses
     me = await probe.call<Me>('/api/v1/me');
   } catch (e) {
     if (!(e instanceof ApiError)) return 'later';
-    if (e.status === 401) await probe.forget();
+    if (deviceRevoked(e)) await probe.forget();
+    else if (e.status === 401) return 'later';
     return null;
   }
   const ref = { serverUrl: n.serverUrl, serverId: n.serverId, userId: me.id, deviceId: n.deviceId };
@@ -257,7 +258,7 @@ export class Session {
       return await api<T>(this.ref.serverUrl, path, { ...o, token: await this.accessToken() });
     } catch (e) {
       // A token the server no longer knows (restart, clock): one fresh proof, then give up.
-      if (e instanceof ApiError && e.status === 401 && e.params.reason !== 'device_revoked') {
+      if (e instanceof ApiError && e.status === 401 && !deviceRevoked(e)) {
         this.token = null;
         return api<T>(this.ref.serverUrl, path, { ...o, token: await this.accessToken() });
       }

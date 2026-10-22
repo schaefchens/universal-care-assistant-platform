@@ -19,6 +19,7 @@ const offline = () => Promise.reject(new ApiError(0, 'unavailable'));
 function client(fallback: PhoneFallback | null) {
   const said: string[] = [];
   const dialled: PhoneFallback[] = [];
+  const revoked = { n: 0 };
   const care = new CareClient({
     ref: { serverUrl: 'http://localhost:8810', serverId: 's', userId: 'u', deviceId: 'd' },
     session: { call: offline } as unknown as Session,
@@ -27,11 +28,11 @@ function client(fallback: PhoneFallback | null) {
     gesture: () => tr('care.gesture.explore'),
     say: (text) => said.push(text),
     onState: () => {},
-    onRevoked: () => {},
+    onRevoked: () => revoked.n++,
     fallback: () => fallback,
     dial: (f) => dialled.push(f),
   });
-  return { care, said, dialled };
+  return { care, said, dialled, revoked };
 }
 
 const request = { id: 'r', status: 'open', episode: 1, acceptedBy: null, receivedAt: '', delayMs: 0, resolvedAt: null, sosNumber: '112', events: [{ id: 1, episode: 1, type: 'created', at: '', actor: null, data: {} }] };
@@ -90,6 +91,28 @@ describe('a help request without a connection', () => {
     expect(said.at(-1)).toBe('Hilferuf abgebrochen. Er wurde nicht gesendet.');
     await care.press('touch');
     expect(dialled).toEqual([]);
+    care.stop();
+  });
+});
+
+describe('a help request the server refuses', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    signedCall.mockReset();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps being sent when a signature is refused; only a revoked device stops it', async () => {
+    const { care, said, revoked } = client(null);
+    signedCall.mockImplementation(() => Promise.reject(new ApiError(401, 'unauthorised', { reason: 'signature' })));
+    await care.press('touch');
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(revoked.n).toBe(0);
+    expect(signedCall.mock.calls.length).toBeGreaterThan(1);
+    expect(said.at(-1)).toBe('Dein Hilferuf ist noch nicht gesendet. Ich versuche es weiter.');
+    signedCall.mockImplementation(() => Promise.reject(new ApiError(401, 'unauthorised', { reason: 'device_revoked' })));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(revoked.n).toBe(1);
     care.stop();
   });
 });

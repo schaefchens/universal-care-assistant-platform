@@ -15,6 +15,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Whether the server said this device is revoked (or its account deleted). Only then does a device forget itself and
+ * its key (docs/plan.md: "401 (revoked) leads to the re-enrol screen"). Any other 401 on the way to a token is tried
+ * again: a challenge lives two minutes, and a phone that was paused or too busy between asking and signing (measured
+ * on a loaded emulator: three minutes) gets a 401 for it although nothing was revoked.
+ */
+export function deviceRevoked(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 401 && e.params.reason === 'device_revoked';
+}
+
 export async function api<T>(base: string, path: string, o: { method?: string; body?: unknown; token?: string; signal?: AbortSignal; headers?: Record<string, string> } = {}): Promise<T> {
   let res: Response;
   try {

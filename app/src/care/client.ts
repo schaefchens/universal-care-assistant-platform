@@ -15,7 +15,7 @@
 import { uuidv7 } from '@ucap/shared';
 import type { DeviceRef, Session } from '../identity/account.ts';
 import type { PhoneFallback } from './phone.ts';
-import { ApiError } from '../net/api.ts';
+import { ApiError, deviceRevoked } from '../net/api.ts';
 import { signedCall } from '../net/signed.ts';
 
 export interface CareEvent {
@@ -256,7 +256,8 @@ export class CareClient {
       this.announceNew(r.request);
       this.publish();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return this.o.onRevoked();
+      // Only a revoked device stops here; any other refusal of its token is tried again with the request.
+      if (deviceRevoked(e)) return this.o.onRevoked();
       const delay = BACKOFF_MS[this.attempt] ?? 10_000;
       this.attempt++;
       this.timer = setTimeout(() => void this.send(), delay);
