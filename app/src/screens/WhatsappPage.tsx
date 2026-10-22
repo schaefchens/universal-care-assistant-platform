@@ -118,7 +118,6 @@ export function WhatsappPage(p: { session: Session; refresh: number; onClose: ()
     try {
       const r = await p.session.call<{ loggedOut: boolean }>(`/api/v1/messaging/connections/${c.id}`, { method: 'DELETE' });
       told.current = '';
-      riskTold.current = false;
       report(tr(r.loggedOut ? 'whatsapp.disconnected' : 'whatsapp.disconnected.manual'));
       await load();
     } catch (e) {

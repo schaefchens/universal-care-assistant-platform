@@ -215,7 +215,16 @@ export class WhatsappConnection {
     sock.ws.on('CB:ack,class:message', (node) => this.onAck(node));
     sock.ev.process(async (ev) => {
       if (this.sock !== sock) return;
-      if (ev['creds.update']) await this.o.store.saveCreds();
+      if (ev['creds.update']) {
+        await this.o.store.saveCreds();
+        // The person's own name often comes after the link opened ("~" stands in for it while pairing).
+        const name = ev['creds.update'].me?.name?.trim();
+        if (name && name !== '~' && name !== this.ids.meName && this.ids.me.pn) {
+          this.ids.meName = name;
+          if (this.chats.has(this.ids.canonical(this.ids.me.pn))) this.tellChat(this.ids.me.pn, null, null);
+          if (this.toldUsers.has(this.ids.userId(this.ids.me.pn))) this.tellUser(this.ids.me.pn, true);
+        }
+      }
       const u = ev['connection.update'];
       if (u) {
         if (u.qr && !asked && this.number && !this.o.store.linked()) {
@@ -246,7 +255,7 @@ export class WhatsappConnection {
     this.loginTimer = this.reconnectTimer = this.downTimer = null;
     for (const w of this.openWaiters.splice(0)) w();
     const me = sock.user;
-    if (me?.id) this.ids.setMe(me.id, me.lid);
+    if (me?.id) this.ids.setMe(me.id, me.lid, me.name);
     // Back after a short gap: no news. Ready for the first time, or after "starting" was said: told.
     if (this.ready && !this.saidDown) return;
     this.ready = true;
@@ -434,8 +443,9 @@ export class WhatsappConnection {
     const userId = this.ids.userId(jid);
     if (this.toldUsers.has(userId) && !again) return;
     this.toldUsers.add(userId);
-    const saved = this.ids.savedName(jid);
-    this.emit({ t: 'user.upsert', id: this.o.id, user: { externalId: userId, name: this.ids.name(jid, unknownName(this.lang)), isContact: saved !== null, isBot: false } });
+    // The person themselves counts as known: their own chat is never a stranger's.
+    const known = this.ids.savedName(jid) !== null || this.ids.isSelf(jid);
+    this.emit({ t: 'user.upsert', id: this.o.id, user: { externalId: userId, name: this.ids.name(jid, unknownName(this.lang)), isContact: known, isBot: false } });
   }
 
   /** A group's name, asked of WhatsApp once when a group's message comes without it. */

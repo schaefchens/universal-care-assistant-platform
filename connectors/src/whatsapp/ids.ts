@@ -40,6 +40,8 @@ export class Ids {
   /** Two addresses of one person that UCAP had already given ids of their own (counted, never merged). */
   conflicts = 0;
   me: { pn: string; lid: string | null } = { pn: '', lid: null };
+  /** The name the person gave themselves on WhatsApp: their own chat is named by it. */
+  meName: string | null = null;
 
   constructor(state?: IdsState | null) {
     this.s = state ?? { aliases: {}, names: {}, numbers: {}, subjects: {} };
@@ -50,11 +52,17 @@ export class Ids {
     return this.s;
   }
 
-  /** The account's own number and LID: one person, known by the number. */
-  setMe(pn: string, lid?: string | null) {
+  /** The account's own number and LID: one person, known by the number; their own name, when WhatsApp tells it. */
+  setMe(pn: string, lid?: string | null, name?: string | null) {
     const p = jidNormalizedUser(pn);
     this.me = { pn: p, lid: lid ? jidNormalizedUser(lid) : null };
+    if (name?.trim()) this.meName = name.trim();
     this.pair(p, this.me.lid);
+  }
+
+  /** The person UCAP serves (their own chat, "Message yourself"). */
+  isSelf(jid: string): boolean {
+    return this.me.pn !== '' && this.canonical(jid) === this.canonical(this.me.pn);
   }
 
   /**
@@ -134,8 +142,9 @@ export class Ids {
     return this.s.names[this.canonical(jid)] ?? null;
   }
 
-  /** The name to say: the saved one, else the number, else `unknown`. */
+  /** The name to say: the saved one, else the number, else `unknown`; the person themselves by their own name. */
   name(jid: string, unknown: string): string {
+    if (this.isSelf(jid) && this.meName) return this.meName;
     const saved = this.savedName(jid);
     if (saved) return saved;
     const digits = this.number(jid);

@@ -153,6 +153,14 @@ describe('whatsapp ids', () => {
     expect(x.canonical('123456789012346@lid')).not.toBe(x.canonical('4915112345679@s.whatsapp.net'));
   });
 
+  it("the person's own chat is named by their own name, never as a stranger's", () => {
+    const x = new Ids();
+    x.setMe('4915112345678:3@s.whatsapp.net', '123456789012345@lid', 'Clara Test');
+    expect(x.isSelf('123456789012345@lid')).toBe(true);
+    expect(x.name('4915112345678@s.whatsapp.net', 'Unbekannt')).toBe('Clara Test');
+    expect(chat({ id: '123456789012345@lid' } as never, x, 'de', 1700100000, { inbox: null, outbox: null })).toMatchObject({ title: 'Clara Test', userId: 'user:4915112345678' });
+  });
+
   it('numbers are said as people write them', () => {
     expect(formatNumber('4915112345678')).toBe('+49 1511 2345678');
     expect(formatNumber('12025550123')).toBe('+1 202 555 0123');

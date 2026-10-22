@@ -936,3 +936,25 @@ The plan: [plan-m3.md](plan-m3.md).
   events kept while it is away, the health check, SIGTERM); Telegram's behaviour is unchanged.
 - **The WhatsApp process prints nothing through the console**: libsignal writes session records with private keys
   there (spike A), so the console is replaced and its lines counted once an hour, by their wording.
+- **The person's own chat ("Message yourself") is named by the name they gave themselves on WhatsApp** (or their number)
+  and counts as known: a message to oneself is no stranger's ("Achtung: … ist nicht in deinen Kontakten").
+
+### Measured
+
+- **K2 with the stand-in, on the emulator (2026-10-22)**, with a person of its own ("Wanda Test", English, an
+  administrator by her invitation):
+  - **Linking:** the risk said and agreed to, the number, the code said ("U, C, A, P, 2, 0, 2, 6") and shown
+    ("UCAP-2026"), then "Connected as Clara Test. UCAP has your messages of the last 30 days and all new ones."
+  - **Reading:** "New message from Anna Beispiel."; the messages screen read it "on WhatsApp".
+  - **A voice message:** fetched through the connector protocol, transcribed by whisper word for word, and played
+    with its frame ("Voice message from Anna Beispiel, today at 10:07 on WhatsApp, 3 seconds:").
+  - **A reply:** dictated; C1 named WhatsApp; after "Yes", "Sent to Anna Beispiel." came at the stand-in's
+    confirmation (outbound `sent`, C3).
+  - **Disconnecting:** through the page, after its question; UCAP's copies gone.
+  - Push-to-talk heard nothing until the emulator's host microphone access was on and the Mac's sound output was
+    not muted: the reply was played by the Mac's `say` through its speaker.
+  - Whisper, hearing German from a person whose language is English, translated it ("Ja, ich komme gern." became
+    "Yes, I'll come."), as CLAUDE.md says.
+  - Found and fixed: the person's own chat was named as a stranger's; the risk was said again right after
+    disconnecting.
+- **The browser walk** (2026-10-21): 15 of 15, WhatsApp linked on its own page.
