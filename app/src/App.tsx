@@ -274,7 +274,7 @@ export function App() {
           void careNews(e.type, e.data);
         } else if (e.type === 'push.test') {
           emitAppEvent(e.type, e.data);
-        } else if (e.type === 'contact.changed') {
+        } else if (e.type === 'contact.changed' || e.type === 'contacts.imported') {
           void contactNews(e.data);
         } else if (e.type.startsWith('reminder.')) {
           void reminderNews(e.type, e.data);

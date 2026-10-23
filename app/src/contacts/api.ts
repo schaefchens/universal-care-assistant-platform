@@ -38,6 +38,8 @@ export const contacts = (s: Session, personId: string) => {
     update: (id: string, version: number, f: ContactFields) => s.call<Contact>(`${base}/${id}`, { method: 'PUT', body: { version, ...f } }),
     remove: (id: string) => s.call<void>(`${base}/${id}`, { method: 'DELETE' }),
     undo: (id: string) => s.call<{ contact: Contact | null }>(`${base}/${id}/undo`, { method: 'POST' }),
+    /** Entries of the phone's address book: merged by number or address, else new. */
+    import: (entries: ContactFields[]) => s.call<{ created: number; merged: number; skipped: number }>(`${base}/import`, { body: { contacts: entries } }),
     /** One version as it was: what a device says of a helper's change. */
     version: (id: string, v: number) => s.call<{ name: string; deleted: boolean; changedBy: { id: string; displayName: string }; changedAt: string }>(`${base}/${id}/versions/${v}`),
   };

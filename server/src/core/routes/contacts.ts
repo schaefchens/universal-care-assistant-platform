@@ -43,6 +43,22 @@ export function registerContactRoutes(app: AnyApp, o: { contacts: ContactService
     return reply.code(204).send();
   });
 
+  // The phone's address book, sent in parts (the person's own phone only).
+  app.post(
+    '/api/v1/people/:id/contacts/import',
+    {
+      preHandler: requireAuth,
+      schema: {
+        params: Person,
+        body: Type.Object(
+          { contacts: Type.Array(Type.Object({ name: Type.String({ maxLength: 200 }), handles: Type.Array(Handle, { maxItems: 40 }) }, { additionalProperties: false }), { maxItems: 500 }) },
+          { additionalProperties: false },
+        ),
+      },
+    },
+    async (req) => contacts.import(auth(req).userId, ids(req).id, (req.body as { contacts: ContactInput[] }).contacts),
+  );
+
   app.post('/api/v1/people/:id/contacts/:cid/undo', { preHandler: requireAuth, schema: { params: PersonContact } }, async (req) =>
     contacts.undo(auth(req).userId, ids(req).id, ids(req).cid),
   );

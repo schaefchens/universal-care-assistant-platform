@@ -1107,6 +1107,12 @@ The plan: [plan-m3.md](plan-m3.md).
   once, and core never touches messaging's tables. The address comes from the service's id (SMS, email, WhatsApp by
   number), else from what the connector says (a WhatsApp person known by a LID; Telegram, where it shows the number);
   an email whose sender was not confirmed has none.
+- **The phone's address book comes in where the person allows it** (plan-m3.md: "through the SMS role if it grants
+  contacts, otherwise the system's contact picker"): all of it while UCAP is the SMS app (Android grants READ_CONTACTS
+  with the role), else one number at a time from Android's picker, which needs no permission and gives that number
+  with its contact's name. A number or address already saved merges by itself, its contact keeping the person's own
+  name and gaining what it lacked; anything else is new. Only the person, on their own phone: a helper never brings
+  in someone's address book. One event for the lot, and nothing of it is said on other devices.
 - **`contacts.manage` comes with K6, `agenda.manage` with K7**, each with what it manages. K6's tests name "the
   permission matrix with both new scopes"; K7's matrix test adds the second.
 
@@ -1265,3 +1271,13 @@ The plan: [plan-m3.md](plan-m3.md).
   - On the emulator, Wanda Test's own contacts page: axe found nothing at any impact (empty, the editor, the list with
     a contact and its undo); nor on the SMS compose screen (K4) as it says SMS is not connected. A contact added and
     deleted from the phone.
+- **K6 part 2 (2026-10-23), names and the address book, on the emulator:**
+  - Three test entries in the emulator's address book (from the shell). Without READ_CONTACTS (Google Messages held
+    the role) the page offered "Einen Kontakt vom Telefon wählen": Android's picker listed them, and a chosen one came
+    in with its number and label ("Telefon (Mobile): +49 170 1234567"; the emulator's language is English). The first
+    pick came back without anything, unexplained; the next two worked.
+  - With UCAP as the SMS app (READ_CONTACTS from the role) the page offered "Kontakte vom Telefon übernehmen": "Vom
+    Telefon übernommen: ein neuer Kontakt, einer ergänzt." (Anna gained her address; Bernd, picked before, stayed as he
+    was). axe found nothing on the page with three contacts.
+  - Afterwards the test contacts were deleted in UCAP and in the address book, and the role went back to Google
+    Messages.

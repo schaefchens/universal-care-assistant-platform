@@ -184,20 +184,26 @@ export function createContactService(d: { db: Db; clock: Clock; people: PeopleSe
     return r.rows[0];
   }
 
-  /** The new version: kept, audited when a helper made it, and told to the person's devices and the helpers. */
-  async function versioned(exec: Exec, actorId: string, personId: string, id: string, version: number, data: Data, action: ContactAction) {
+  /** The new version kept, and audited when a helper made it. */
+  async function keepVersion(exec: Exec, actorId: string, personId: string, id: string, version: number, data: Data, action: ContactAction) {
     await sql`
       insert into contact_versions (contact_id, version, data, changed_by, changed_at)
       values (${id}, ${version}, ${JSON.stringify(data)}::jsonb, ${actorId}, ${now()})`.execute(exec);
     if (actorId !== personId) await audit(exec, d.clock, { actorUser: actorId, subjectUser: personId, action: `contact.${action}`, targetType: 'contact', targetId: id, detail: { version } });
+  }
+
+  /** The person's devices and the helpers who keep their contacts. */
+  async function told(exec: Exec, personId: string, kind: string, payload: Record<string, unknown>) {
     const helpers = await sql<{ helper_id: string }>`
       select distinct rel.helper_id from relationships rel join grants g on g.relationship_id = rel.id
       where rel.person_id = ${personId} and rel.state = 'active' and g.scope = 'contacts.manage' and g.revoked_at is null`.execute(exec);
-    await emit(exec, {
-      kind: 'contact.changed',
-      recipients: [personId, ...helpers.rows.map((x) => x.helper_id)],
-      payload: { contactId: id, personId, version, action, by: actorId },
-    });
+    await emit(exec, { kind, recipients: [personId, ...helpers.rows.map((x) => x.helper_id)], payload });
+  }
+
+  /** The new version: kept, audited when a helper made it, and told. */
+  async function versioned(exec: Exec, actorId: string, personId: string, id: string, version: number, data: Data, action: ContactAction) {
+    await keepVersion(exec, actorId, personId, id, version, data, action);
+    await told(exec, personId, 'contact.changed', { contactId: id, personId, version, action, by: actorId });
   }
 
   async function view(exec: Exec, rows: ContactRow[]) {
@@ -278,6 +284,66 @@ export function createContactService(d: { db: Db; clock: Clock; people: PeopleSe
         await sql`update contacts set name = ${was.name}, deleted_at = null, version = version + 1, updated_by = ${actorId}, updated_at = ${now()} where id = ${id}`.execute(trx);
         await versioned(trx, actorId, personId, id, cur.version + 1, { ...was, deleted: false }, 'restored');
         return { contact: (await view(trx, [await lock(trx, personId, id)]))[0]! };
+      });
+    },
+
+    /**
+     * The phone's address book, where the person allows it (their own phone only; K6: "imported where the person
+     * allows"): a number or address already saved merges by itself, its contact keeping the person's own name and
+     * gaining what it lacked; anything else is a new contact. What cannot be read is left out, and an entry without a
+     * number or address is no contact. One event for it all.
+     */
+    async import(actorId: string, personId: string, entries: ContactInput[]) {
+      if (actorId !== personId) throw new AppError('not_found');
+      return d.db.transaction().execute(async (trx) => {
+        const region = await personRegion(trx, personId);
+        let created = 0;
+        let merged = 0;
+        let skipped = 0;
+        for (const e of entries) {
+          const name = e.name.trim().replace(/\s+/g, ' ').slice(0, MAX_NAME);
+          const handles: Handle[] = [];
+          for (const h of e.handles) {
+            let n: Handle;
+            try {
+              n = normalHandle(h, region);
+            } catch {
+              continue;
+            }
+            if (!handles.some((x) => x.kind === n.kind && x.value === n.value)) handles.push(n);
+          }
+          if (!name || !handles.length) {
+            skipped++;
+            continue;
+          }
+          const owners = await sql<{ contact_id: string; kind: string; value: string }>`
+            select contact_id, kind, value from contact_handles where person_id = ${personId}
+              and (kind, value) in (select * from unnest(${handles.map((h) => h.kind)}::text[], ${handles.map((h) => h.value)}::text[]))
+            order by contact_id`.execute(trx);
+          const target = owners.rows[0]?.contact_id;
+          if (target) {
+            const taken = new Set(owners.rows.map((x) => `${x.kind}:${x.value}`));
+            const add = handles.filter((h) => !taken.has(`${h.kind}:${h.value}`));
+            if (!add.length) continue;
+            const cur = await lock(trx, personId, target);
+            const all = [...((await handlesOf(trx, [target])).get(target) ?? []), ...add].slice(0, MAX_HANDLES);
+            await putHandles(trx, personId, target, all);
+            await sql`update contacts set version = version + 1, updated_by = ${actorId}, updated_at = ${now()} where id = ${target}`.execute(trx);
+            await keepVersion(trx, actorId, personId, target, cur.version + 1, { name: cur.name, handles: all, deleted: false }, 'updated');
+            merged++;
+          } else {
+            const id = uuidv7(d.clock());
+            const kept = handles.slice(0, MAX_HANDLES);
+            await sql`
+              insert into contacts (id, person_id, name, version, created_by, updated_by, created_at, updated_at)
+              values (${id}, ${personId}, ${name}, 1, ${actorId}, ${actorId}, ${now()}, ${now()})`.execute(trx);
+            await putHandles(trx, personId, id, kept);
+            await keepVersion(trx, actorId, personId, id, 1, { name, handles: kept, deleted: false }, 'created');
+            created++;
+          }
+        }
+        if (created || merged) await told(trx, personId, 'contacts.imported', { personId, created, merged, by: actorId });
+        return { created, merged, skipped };
       });
     },
 

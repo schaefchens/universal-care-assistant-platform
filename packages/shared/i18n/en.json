@@ -1331,5 +1331,10 @@
   "contacts.error.phone": "I can't read “{value}” as a phone number.",
   "contacts.error.email": "“{value}” is not an email address.",
   "contacts.error.name": "The contact needs a name.",
-  "contacts.error.taken": "{value} already belongs to the contact “{name}”."
+  "contacts.error.taken": "{value} already belongs to the contact “{name}”.",
+  "contacts.phone.all": "Take the contacts from the phone",
+  "contacts.phone.pick": "Choose a contact from the phone",
+  "contacts.phone.done": "From the phone: {created, plural, one {one new contact} other {# new contacts}}, {merged, plural, one {one completed} other {# completed}}.",
+  "contacts.phone.none": "Nothing new came from the phone.",
+  "contacts.phone.picked": "Contact “{name}” taken from the phone."
 }

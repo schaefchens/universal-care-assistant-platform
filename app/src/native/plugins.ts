@@ -230,6 +230,19 @@ export interface SmsPlugin {
   addListener(event: 'opened', fn: (e: { thread?: string; compose?: string; body?: string | null }) => void): Promise<PluginListenerHandle>;
 }
 
+/** An entry of the phone's address book: its name, numbers and addresses, labelled in the phone's language. */
+export interface PhoneContact {
+  name: string;
+  handles: { kind: 'phone' | 'email'; value: string; label: string | null }[];
+}
+
+/** The phone's address book (K6): all of it where UCAP may read it (the SMS role grants it), else one number picked. */
+export interface PhoneContactsPlugin {
+  status(): Promise<{ all: boolean }>;
+  readAll(): Promise<{ contacts: PhoneContact[] }>;
+  pick(): Promise<{ contact?: PhoneContact; cancelled?: boolean }>;
+}
+
 export const Earcons = registerPlugin<EarconsPlugin>('Earcons');
 export const DeviceTts = registerPlugin<DeviceTtsPlugin>('DeviceTts');
 export const A11y = registerPlugin<A11yPlugin>('A11y');
@@ -240,3 +253,4 @@ export const Keys = registerPlugin<KeysPlugin>('Keys');
 export const Reminders = registerPlugin<RemindersPlugin>('Reminders');
 export const VoiceCapture = registerPlugin<VoiceCapturePlugin>('VoiceCapture');
 export const Sms = registerPlugin<SmsPlugin>('Sms');
+export const PhoneContacts = registerPlugin<PhoneContactsPlugin>('PhoneContacts');

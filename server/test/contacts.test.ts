@@ -139,4 +139,32 @@ describe('contacts', () => {
     expect((await as(anna, 'POST', `/api/v1/people/${anna.userId}/contacts/${fresh.id}/undo`)).json()).toEqual({ contact: null });
     expect(((await as(anna, 'GET', `/api/v1/people/${anna.userId}/contacts`)).json() as { contacts: Contact[] }).contacts.map((x) => x.name)).toEqual(['Weber privat']);
   });
+
+  it("the phone's address book: a number already saved merges by itself, the person's name kept and what it lacked added; anything else is new; the person's own phone only", async () => {
+    await create(anna, anna, 'Physio', [{ kind: 'phone', value: '030 1234567' }]);
+    await events(anna.userId, 'contacts.imported');
+    const r = await as(anna, 'POST', `/api/v1/people/${anna.userId}/contacts/import`, {
+      contacts: [
+        // The number Anna saved: merged, with the address it lacked.
+        { name: 'Praxis Weber', handles: [{ kind: 'phone', value: '+49 30 1234567' }, { kind: 'email', value: 'praxis@example.org' }] },
+        // New; a number that is none is left out.
+        { name: 'Bernd', handles: [{ kind: 'phone', value: '0151 23456789', label: 'Handy' }, { kind: 'phone', value: 'quatsch' }] },
+        // A name without a number or an address is no contact.
+        { name: 'Nur ein Name', handles: [] },
+        // Bernd's number again, written otherwise: merged into the one just made.
+        { name: 'Bernd (Arbeit)', handles: [{ kind: 'phone', value: '015123456789' }, { kind: 'email', value: 'bernd@example.org' }] },
+      ],
+    });
+    expect(r.json()).toEqual({ created: 1, merged: 2, skipped: 1 });
+    const list = ((await as(anna, 'GET', `/api/v1/people/${anna.userId}/contacts`)).json() as { contacts: Contact[] }).contacts;
+    expect(list.map((x) => [x.name, x.handles.map((h) => `${h.kind}:${h.value}${h.label ? ` (${h.label})` : ''}`)])).toEqual([
+      ['Bernd', ['phone:+4915123456789 (Handy)', 'email:bernd@example.org']],
+      ['Physio', ['phone:+49301234567', 'email:praxis@example.org']],
+    ]);
+    // One event for it all; importing again changes nothing.
+    expect((await events(anna.userId, 'contacts.imported')).at(-1)).toEqual({ personId: anna.userId, created: 1, merged: 2, by: anna.userId });
+    expect((await as(anna, 'POST', `/api/v1/people/${anna.userId}/contacts/import`, { contacts: [{ name: 'Bernd', handles: [{ kind: 'phone', value: '0151 23456789' }] }] })).json()).toEqual({ created: 0, merged: 0, skipped: 0 });
+    // A helper never imports a person's address book, not even one who keeps their contacts.
+    expect((await as(maria, 'POST', `/api/v1/people/${anna.userId}/contacts/import`, { contacts: [] })).statusCode).toBe(404);
+  });
 });

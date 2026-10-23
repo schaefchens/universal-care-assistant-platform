@@ -8,6 +8,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Form, Heading, Input, Label, TextField } from 'react-aria-components';
 import { type Contact, type ContactFields, type ContactHandle, contacts } from '../contacts/api.ts';
 import type { Session } from '../identity/account.ts';
+import { has, PhoneContacts } from '../native/plugins.ts';
 import { ApiError } from '../net/api.ts';
 import { useUi } from '../ui.tsx';
 
@@ -125,6 +126,12 @@ export function ContactsPage(p: { session: Session; personId: string; personName
   /** The contact the last change on this page was made to: "Rückgängig" puts it back. */
   const [last, setLast] = useState<string | null>(null);
   const own = p.personId === p.session.ref.userId;
+  /** The phone's address book: all of it (the SMS role grants it), else one number picked; null where there is none. */
+  const [phoneBook, setPhoneBook] = useState<'all' | 'pick' | null>(null);
+  useEffect(() => {
+    if (!own || !has('PhoneContacts')) return;
+    void PhoneContacts.status().then((s) => setPhoneBook(s.all ? 'all' : 'pick'), () => {});
+  }, [own]);
 
   const load = async () => {
     try {
@@ -164,6 +171,32 @@ export function ContactsPage(p: { session: Session; personId: string; personName
       await api.remove(c.id);
       setLast(c.id);
       tell(tr('contacts.deleted', { name: c.name }));
+    } catch (e) {
+      tell(errorText(tr, e));
+    }
+    await load();
+  }
+
+  /** In parts, as the server takes them; said once, with what came of it. */
+  async function fromPhone() {
+    try {
+      if (phoneBook === 'all') {
+        const all = (await PhoneContacts.readAll()).contacts;
+        let created = 0;
+        let merged = 0;
+        for (let i = 0; i < all.length; i += 500) {
+          const r = await api.import(all.slice(i, i + 500));
+          created += r.created;
+          merged += r.merged;
+        }
+        tell(created || merged ? tr('contacts.phone.done', { created, merged }) : tr('contacts.phone.none'));
+      } else {
+        const r = await PhoneContacts.pick();
+        if (!r.contact) return;
+        const done = await api.import([r.contact]);
+        tell(done.created || done.merged ? tr('contacts.phone.picked', { name: r.contact.name }) : tr('contacts.phone.none'));
+      }
+      setLast(null);
     } catch (e) {
       tell(errorText(tr, e));
     }
@@ -248,6 +281,11 @@ export function ContactsPage(p: { session: Session; personId: string; personName
           <Button className="button primary" onPress={() => setEditing('new')}>
             {tr('contacts.add')}
           </Button>
+          {phoneBook && (
+            <Button className="button" onPress={() => void fromPhone()}>
+              {tr(phoneBook === 'all' ? 'contacts.phone.all' : 'contacts.phone.pick')}
+            </Button>
+          )}
         </section>
       )}
     </main>
