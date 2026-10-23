@@ -43,6 +43,7 @@ import { record } from './debug.ts';
 import { ceremony } from './identity/ceremony.ts';
 import { HelpQuestion } from './screens/HelpQuestion.tsx';
 import { MessagesScreen } from './screens/MessagesScreen.tsx';
+import { SmsCompose } from './screens/SmsCompose.tsx';
 import { MessagingServices } from './screens/MessagingServices.tsx';
 import { NotesScreen } from './screens/NotesScreen.tsx';
 import { TelegramPage } from './screens/TelegramPage.tsx';
@@ -108,8 +109,9 @@ type Page =
   | 'whatsapp'
   /** An email account: a new one (null), or one connected (K3). */
   | { email: string | null }
-  /** UCAP as this phone's SMS app (K4). */
+  /** UCAP as this phone's SMS app (K4); another app's "write an SMS" to a number, with its text if it gave one. */
   | 'sms'
+  | { smsTo: { to: string; body: string | null } }
   /** An action of the assistant waiting for the person's yes; then back where it was asked (the messages). */
   | { confirm: { id: string; contentHash: string; prompt: string }; back?: 'messages' | 'notes' }
   /** The recovery words were said to the assistant: a warning, and new words offered (Appendix C). */
@@ -614,13 +616,18 @@ export function App() {
     };
   }, [session]);
 
-  // UCAP as this phone's SMS app (K4): a tap on its notification opens the messages; as the app starts, the SMS process
-  // takes what waits for this phone and reports what is new (a push may have been missed).
+  // UCAP as this phone's SMS app (K4): a tap on its notification opens the messages, another app's "write an SMS" the
+  // screen for it; as the app starts, the SMS process takes what waits for this phone and reports what is new (a push
+  // may have been missed).
   useEffect(() => {
     if (!session || !has('Sms')) return;
     void Sms.take().catch(() => {});
-    void Sms.launched().then((r) => r.thread && setPage((pg) => (busy(pg) ? pg : 'messages')), () => {});
-    const opened = Sms.addListener('opened', (e) => e.thread && setPage((pg) => (busy(pg) ? pg : 'messages')));
+    const open = (e: { thread?: string; compose?: string; body?: string | null }) => {
+      if (e.thread) setPage((pg) => (busy(pg) ? pg : 'messages'));
+      else if (e.compose) setPage((pg) => (busy(pg) ? pg : { smsTo: { to: e.compose!, body: e.body ?? null } }));
+    };
+    void Sms.launched().then(open, () => {});
+    const opened = Sms.addListener('opened', open);
     return () => void opened.then((h) => h.remove());
   }, [session]);
 
@@ -1100,6 +1107,23 @@ export function App() {
           setPage('care');
         }}
         onConnect={() => setPage('messagingServices')}
+      />
+    );
+  else if (typeof page === 'object' && 'smsTo' in page)
+    content = (
+      <SmsCompose
+        key={page.smsTo.to}
+        session={session}
+        config={config}
+        to={page.smsTo.to}
+        body={page.smsTo.body}
+        onAction={(a) => setPage({ confirm: a })}
+        onHome={() => setPage('areas')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+        onSetup={() => setPage('sms')}
       />
     );
   else if (page === 'messagingServices')

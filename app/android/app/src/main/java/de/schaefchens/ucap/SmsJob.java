@@ -7,17 +7,22 @@ import android.app.job.JobService;
 import android.content.ComponentName;
 import android.content.Context;
 import android.os.Build;
+import android.provider.Telephony;
 
 /**
  * The SMS connection's jobs, in the SMS process (JobScheduler, as Outbox):
  * - a retry once a network is there, expedited where Android allows (a reply the person waits for);
  * - every 15 minutes while UCAP is the SMS app: what the server holds for this phone (a push that never came), and what
- *   is left to report.
+ *   is left to report;
+ * - when Android's SMS store changes: an SMS others wrote there is reported within seconds. On Android 16 the dialler
+ *   sends a quick reply to a call itself (measured: it never asks the SMS app), and Android keeps another app's sent
+ *   SMS there too. Such a watch is one-shot and not kept over a restart: armed at connecting and after every run.
  */
 public class SmsJob extends JobService {
     private static final int RETRY = 4721;
     private static final int PERIODIC = 4722;
     private static final int MMS = 4723;
+    private static final int STORE = 4724;
 
     @Override
     public boolean onStartJob(JobParameters params) {
@@ -36,6 +41,9 @@ public class SmsJob extends JobService {
                 left = true;
             }
             jobFinished(params, left && params.getJobId() == RETRY);
+            // Only once this run is over: scheduling a running job again stops it.
+            if (left && params.getJobId() != RETRY) retry(this);
+            if (SmsSync.connection(this) != null) keepWatching(this);
         }, "ucap-sms-job").start();
         return true;
     }
@@ -60,6 +68,29 @@ public class SmsJob extends JobService {
         schedule(ctx, b, false);
     }
 
+    /** Runs when Android's SMS store changed (a few seconds later, so a burst is one run). */
+    static void watchStore(Context ctx) {
+        JobInfo.Builder b = new JobInfo.Builder(STORE, new ComponentName(ctx, SmsJob.class))
+            .addTriggerContentUri(new JobInfo.TriggerContentUri(Telephony.Sms.CONTENT_URI, JobInfo.TriggerContentUri.FLAG_NOTIFY_FOR_DESCENDANTS))
+            .setTriggerContentUpdateDelay(2_000)
+            .setTriggerContentMaxDelay(10_000);
+        schedule(ctx, b, false);
+    }
+
+    /** The store's watch again, unless it waits or runs already. */
+    private static void keepWatching(Context ctx) {
+        if (ctx.getSystemService(JobScheduler.class).getPendingJob(STORE) == null) watchStore(ctx);
+    }
+
+    /**
+     * A connected phone's jobs, armed again where Android dropped them: an update of the app or a force stop cancels
+     * every job it had (measured), and only connecting armed them.
+     */
+    static void ensure(Context ctx) {
+        if (ctx.getSystemService(JobScheduler.class).getPendingJob(PERIODIC) == null) periodic(ctx);
+        keepWatching(ctx);
+    }
+
     /** The next try of an MMS fetch, at `atMs` (or when a network is there after it). */
     static void mmsRetry(Context ctx, long atMs) {
         if (atMs < 0) return;
@@ -74,6 +105,7 @@ public class SmsJob extends JobService {
         JobScheduler js = ctx.getSystemService(JobScheduler.class);
         js.cancel(RETRY);
         js.cancel(PERIODIC);
+        js.cancel(STORE);
     }
 
     private static void schedule(Context ctx, JobInfo.Builder b, boolean expedite) {

@@ -42,6 +42,7 @@ public class SmsCommands extends BroadcastReceiver {
                 if (id == null || !id.matches("^[0-9a-f-]{36}$")) return;
                 SmsSync.connect(ctx, id);
                 SmsJob.periodic(ctx);
+                SmsJob.watchStore(ctx);
                 break;
             }
             case "disconnect":
@@ -49,6 +50,8 @@ public class SmsCommands extends BroadcastReceiver {
                 SmsJob.cancel(ctx);
                 return;
             case "take":
+                // Asked as the app starts too: the jobs an update of the app cancelled come back with it.
+                if (SmsSync.connection(ctx) != null) SmsJob.ensure(ctx);
                 if (!SmsSender.take(ctx)) SmsJob.retry(ctx);
                 break;
             case "read": {

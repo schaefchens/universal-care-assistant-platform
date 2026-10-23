@@ -1,8 +1,10 @@
 package de.schaefchens.ucap;
 
+import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.provider.Settings;
+import android.provider.Telephony;
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -112,6 +114,37 @@ public class SmsPlugin extends Plugin {
     public void take(PluginCall call) {
         SmsCommands.send(getContext(), "take", null);
         call.resolve();
+    }
+
+    /**
+     * Another app's "write an SMS" (`smsto:`): Android's thread for the number, found or made, and the events that tell
+     * the server of it as the forwarding would (the person named from the address book). The app sends them, signed,
+     * and gets the conversation to send into.
+     */
+    @PluginMethod
+    public void compose(PluginCall call) {
+        String to = call.getString("to", "").trim();
+        if (to.isEmpty()) {
+            call.reject("no number", "no_number");
+            return;
+        }
+        Context ctx = getContext();
+        if (!SmsRole.held(ctx)) {
+            call.reject("not the SMS app", "not_sms_app");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                long thread = Telephony.Threads.getOrCreateThreadId(ctx, to);
+                SmsStore.Person p = SmsStore.person(ctx, to, SmsStore.country(ctx));
+                JSArray events = new JSArray();
+                events.put(SmsEvents.user(p.id, p.name, p.contact));
+                events.put(SmsEvents.chat(String.valueOf(thread), p.name, false, p.id));
+                call.resolve(new JSObject().put("thread", String.valueOf(thread)).put("name", p.name).put("events", events));
+            } catch (Exception e) {
+                call.reject("not made: " + e.getClass().getSimpleName(), "failed");
+            }
+        }, "ucap-sms-compose").start();
     }
 
     /** SMS the person heard (on any of their devices): read in the store, as in any SMS app. */

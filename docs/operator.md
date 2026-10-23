@@ -134,8 +134,11 @@ again. Nothing to set up on the server.
 - **MMS** come in whole (text, pictures, groups) from the carrier's MMS centre, over mobile data, as with any SMS app.
   One that cannot be loaded is told, and fetched again until it expires there. A group shows everyone but the person
   when the SIM carries the phone's own number; where it does not, that number is among the members.
-- **Not yet:** sending MMS, a new SMS to a number (with K6's contacts), and what only a real phone with a SIM shows
-  (RCS after the switch, a carrier's MMS centre and reports).
+- **Another app's "write an SMS"** (a contact's message button, an `sms:` link) opens UCAP's screen for that number;
+  the SMS is dictated and sent after the person's yes. **A quick reply to a call** is sent by Android's dialler itself
+  and appears in UCAP within seconds.
+- **Not yet:** sending MMS, a new SMS to a number by voice (with K6's contacts), and what only a real phone with a SIM
+  shows (RCS after the switch, a carrier's MMS centre and reports, dual SIM).
 
 ### herde
 

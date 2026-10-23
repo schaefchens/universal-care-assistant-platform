@@ -1073,6 +1073,17 @@ The plan: [plan-m3.md](plan-m3.md).
   that happens.
 - **A picture in an MMS is said as on the other services**: a photo, with its text. The picture stays on the phone,
   in Android's store.
+- **Another app's "write an SMS" (`smsto:`) opens UCAP's screen for that number**, named from the address book (a
+  stranger with the warning, Appendix E). The SMS is dictated and asked about as said (C1), as a reply is, never sent
+  without the person's yes; a text the other app gave goes straight to that question. The phone first makes its thread
+  for the number known to the server, through its signed device route, which now answers with the conversations' ids;
+  then it is sent as any reply is ("Gesendet" at the network's report).
+- **A quick reply to a call is sent by the dialler itself on Android 16** (measured: it never asks the SMS app), and
+  Android keeps it in the store. UCAP's own part for it (RESPOND_VIA_MESSAGE, which the role requires) stays for phones
+  whose dialler still asks. Android's SMS store is watched (a job on its changes), so such an SMS, or one another app
+  sent, reaches the server within seconds instead of at the next 15-minute look.
+- **Dual SIM:** an SMS goes out on the SIM Android uses for SMS (the person chooses it in Android's settings), and an
+  MMS is fetched on the SIM it came in on. The emulator has one SIM: open until a phone with two.
 
 ### Measured
 
@@ -1197,3 +1208,25 @@ The plan: [plan-m3.md](plan-m3.md).
     being sent.
   - The emulator's /data was 95 % full, and Android refuses an install that would leave less than 5 % free. For this
     session the threshold was 4 % (`settings put global sys_storage_threshold_percentage 4`), put back afterwards.
+  - **Part 3, on the emulator (2026-10-23):**
+    - The phone was back in Wanda Test's account with the account's words (a recovery), and the old device, whose key
+      the fixed bug had deleted, was signed out from it. Its SMS connection ("das Telefon dafür ist abgemeldet") was
+      disconnected, and SMS connected again on the new device: 11 messages of history, as read.
+    - **Android's role dialog with TalkBack, under a real finger** (the emulator console's touches): TalkBack's focus
+      moved with a touch and a double tap activated, on UCAP's button and in the dialog. The rows expose their state
+      (Messages checked, UCAP not; "Set as default" disabled until UCAP was chosen); UCAP chosen and set as default the
+      same way, the server's connection ready. What TalkBack said is not in the log: still to be heard on a phone.
+    - **A quick reply to a call** (`adb emu gsm call`, "Message", a canned reply): sent by the dialler itself (its
+      toast; nothing reached UCAP), in the store as sent. Forwarded at UCAP's next look; with the store watched, on the
+      server two seconds after it was in the store.
+    - **"Write an SMS" from another app** (`am start -a SENDTO -d smsto:…`): the screen "SMS an 555-0123", said once;
+      the conversation on the server, empty until a message is in it. With a text given: "Achtung: 555-0123 ist nicht in
+      deinen Kontakten. SMS an 555-0123: „Ich bin gleich da.“. Senden?"; "Ja": C9's "wird gesendet, sobald das Telefon
+      erreichbar ist", then "Gesendet an 555-0123." and the delivery report kept. Dictating on that screen is the
+      messages screen's reply turn (the server's tests); the emulator's microphone was off.
+    - **Found and fixed: an update of the app cancelled its SMS jobs** (Android drops an app's jobs at an update or a
+      force stop; measured): the 15-minute look was gone until SMS was connected again. They are armed again as the app
+      starts.
+    - LIVE said it waited for its name while its service was gone, once, after the recovery, the role dialog and
+      TalkBack's prompts; switched off and on, it listened again. Not caused by the day's changes (the service's stop
+      paths logged nothing); not seen again.

@@ -1281,5 +1281,12 @@
   "admin.whatsapp.intro": "WhatsApp allows no other programs. UCAP connects like WhatsApp Web, with Baileys. Meta can ban a person's number for it, even if they write little. Allow it only if the people on this server know that. Each of them hears the risk again before connecting.",
   "admin.whatsapp.allow": "Allow WhatsApp on this server",
   "admin.whatsapp.allowed": "WhatsApp is allowed.",
-  "admin.whatsapp.forbidden": "WhatsApp is not allowed."
+  "admin.whatsapp.forbidden": "WhatsApp is not allowed.",
+  "sms.compose.title": "Text message to {name}",
+  "sms.compose.intro": "A text message to {name}.",
+  "sms.compose.area.dictate": "Dictate the message",
+  "sms.compose.hint": "Say your text message to {name} now.",
+  "sms.compose.notConnected": "Text messages on this phone are not connected to your account yet. That is in Settings, Messaging services, SMS.",
+  "sms.compose.area.setup": "Set up text messages",
+  "sms.compose.failed": "I can't prepare a text message to {number} right now."
 }

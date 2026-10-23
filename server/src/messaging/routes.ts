@@ -141,8 +141,8 @@ export function registerMessagingRoutes(
       const b = req.body as { connectionId: string; events: unknown[] };
       const events = b.events.map(deviceEvent);
       if (events.some((e) => e === null)) throw new AppError('bad_request', { params: { reason: 'event' } });
-      await m.deviceEvents(s.userId, s.deviceId, b.connectionId, events as NonNullable<(typeof events)[number]>[]);
-      return { ok: true };
+      const r = await m.deviceEvents(s.userId, s.deviceId, b.connectionId, events as NonNullable<(typeof events)[number]>[]);
+      return { ok: true, ...r };
     },
   );
   // What waits for the phone to send: taken, the phone sends it and reports how it went (send.result).

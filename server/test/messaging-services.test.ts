@@ -299,7 +299,9 @@ describe('messaging across services', () => {
       { t: 'user.upsert', user: { externalId: '+4917012345', name: 'Mama', isContact: true, isBot: false } },
       { t: 'msg.upsert', msg: { chatId: '12', externalId: '301', fromId: '+4917012345', outgoing: false, date: now() - 10, editDate: null, kind: 'text', text: 'Ruf mich bitte an.', file: null, fileName: null }, live: true },
     ]);
-    expect(r.json()).toEqual({ ok: true });
+    // The conversations it named come back with their ids here.
+    const conversation = (await sql<{ id: string }>`select id from messaging_conversations where connection_id = ${smsId} and external_id = '12'`.execute(db)).rows[0]!.id;
+    expect(r.json()).toEqual({ ok: true, conversations: { '12': conversation } });
     const q = (await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { items: { service: string; from: string; text: string; unread: boolean }[] };
     expect(q.items.find((i) => i.service === 'sms')).toMatchObject({ from: 'Mama', text: 'Ruf mich bitte an.', unread: true });
     expect((await events('messaging.message')).at(-1)).toMatchObject({ incoming: true, announce: true });
@@ -310,6 +312,26 @@ describe('messaging across services', () => {
     expect((await forward(anna, [{ t: 'chat.upsert', chat: { externalId: '12', title: 'Kanal', kind: 'channel', userId: null, muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } }])).json()).toEqual({ error: { code: 'bad_request', params: { reason: 'event' } } });
     expect((await forward(anna, [{ t: 'msg.upsert', msg: { chatId: '12', externalId: '302', fromId: null, outgoing: false, date: now(), editDate: null, kind: 'photo', text: '', file: { fileId: 1, mime: null, size: 1, durationS: null }, fileName: null } }])).statusCode).toBe(400);
     expect((await sql<{ state: string }>`select state from messaging_connections where id = ${smsId}`.execute(db)).rows[0]!.state).toBe('ready');
+  });
+
+  it('another app\'s "write an SMS": the phone makes the conversation for the number, gets its id, and the text is asked about (C1) and sent by the phone as a reply is', async () => {
+    // The phone's thread for a number nobody wrote with yet: a conversation without messages.
+    const r = await forward(anna, [
+      { t: 'user.upsert', user: { externalId: '+4915112345678', name: 'Bernd Beispiel', isContact: true, isBot: false } },
+      { t: 'chat.upsert', chat: { externalId: '40', title: 'Bernd Beispiel', kind: 'private', userId: '+4915112345678', muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } },
+    ]);
+    const id = (r.json() as { conversations: Record<string, string> }).conversations['40']!;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    // Not in the overview before a message is in it.
+    expect(((await as(anna, 'GET', '/api/v1/messaging/conversations')).json() as { conversations: { id: string }[] }).conversations.some((c) => c.id === id)).toBe(false);
+    // The text another app gave: the same question as a reply's, answered on the phone.
+    const w = ((await as(anna, 'POST', `/api/v1/messaging/conversations/${id}/messages`, { text: 'Bin gleich da.', lang: 'de' })).json() as { action: { id: string; contentHash: string; prompt: string } }).action;
+    expect(w.prompt).toBe('SMS an Bernd Beispiel: „Bin gleich da.“. Senden?');
+    const said = ((await as(anna, 'POST', `/api/v1/assistant/actions/${w.id}/confirm`, { contentHash: w.contentHash, via: 'touch' })).json() as { say: string }).say;
+    expect(said).toBe('Bestätigt. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist.');
+    const o = await outbound(w.id);
+    expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([{ id: o.id, connectionId: smsId, chatId: '40', text: 'Bin gleich da.' }]);
+    await forward(anna, [{ t: 'send.result', requestId: o.id, state: 'failed', error: 'no_service' }]);
   });
 
   it('a reply by SMS waits for the phone, which is told and woken, takes it once and reports it: pending, then sent (C3), then delivered; what was heard, the phone marks read', async () => {

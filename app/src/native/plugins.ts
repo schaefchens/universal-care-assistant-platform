@@ -223,6 +223,8 @@ export interface SmsPlugin {
   take(): Promise<void>;
   /** SMS the person heard: read in the store. */
   markRead(o: { connectionId: string; externalIds: string[] }): Promise<void>;
+  /** Another app's "write an SMS": Android's thread for the number, and the events that tell the server of it. */
+  compose(o: { to: string }): Promise<{ thread: string; name: string; events: Record<string, unknown>[] }>;
   /** What the app was opened for: a conversation (a notification) or an SMS to write (another app); once. */
   launched(): Promise<{ thread?: string; compose?: string; body?: string | null }>;
   addListener(event: 'opened', fn: (e: { thread?: string; compose?: string; body?: string | null }) => void): Promise<PluginListenerHandle>;

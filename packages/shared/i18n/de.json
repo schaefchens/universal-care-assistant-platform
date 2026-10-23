@@ -1517,5 +1517,14 @@
   "admin.whatsapp.intro": "WhatsApp erlaubt keine fremden Programme. UCAP verbindet sich wie WhatsApp Web, mit Baileys. Meta kann die Nummer eines Menschen dafür sperren, auch wenn er wenig schreibt. Erlaube es nur, wenn die Menschen auf diesem Server das wissen. Jeder hört die Gefahr noch einmal, bevor er verbindet.",
   "admin.whatsapp.allow": "WhatsApp auf diesem Server erlauben",
   "admin.whatsapp.allowed": "WhatsApp ist erlaubt.",
-  "admin.whatsapp.forbidden": "WhatsApp ist nicht erlaubt."
+  "admin.whatsapp.forbidden": "WhatsApp ist nicht erlaubt.",
+  "sms.compose.title": "SMS an {name}",
+  "sms.compose.intro": "Eine SMS an {name}.",
+  "sms.compose.area.dictate": "SMS diktieren",
+  "sms.compose.hint": "Sag jetzt deine SMS an {name}.",
+  "sms.compose.hint@Sie": "Sagen Sie jetzt Ihre SMS an {name}.",
+  "sms.compose.notConnected": "SMS sind auf diesem Telefon noch nicht mit deinem Konto verbunden. Das geht in den Einstellungen, Nachrichtendienste, SMS.",
+  "sms.compose.notConnected@Sie": "SMS sind auf diesem Telefon noch nicht mit Ihrem Konto verbunden. Das geht in den Einstellungen, Nachrichtendienste, SMS.",
+  "sms.compose.area.setup": "SMS einrichten",
+  "sms.compose.failed": "Eine SMS an {number} kann ich gerade nicht vorbereiten."
 }

@@ -724,10 +724,16 @@ export function createMessaging(d: {
 
     // —— From the person's phone (SMS, previews): signed by the phone that runs the connection ——
     /** What a phone reports about one of its own connections; nobody else's, and never a server-side one. */
-    async deviceEvents(userId: string, deviceId: string, connectionId: string, events: DeviceEvent[]) {
+    /**
+     * What a phone reports of its own connection, in order. Answers with the conversations the events named, by their
+     * ids on the phone: the app needs one it just made (a new SMS to a number) to send into it.
+     */
+    async deviceEvents(userId: string, deviceId: string, connectionId: string, events: DeviceEvent[]): Promise<{ conversations: Record<string, string> }> {
       let c = await connRow({ id: connectionId });
       if (!c || c.user_id !== userId || c.device_id !== deviceId || isServerService(c.service)) throw new AppError('not_found');
+      const named = new Set<string>();
       for (const ev of events) {
+        if (ev.t === 'chat.upsert') named.add(ev.chat.externalId);
         if (ev.t === 'conn.state') {
           if (ev.state !== c.state) await setState(c, ev.state, ev.error ? { error: ev.error } : {});
           // It can no longer send (the SMS role went back): what waited for it is not sent, and kept as a draft.
@@ -743,6 +749,10 @@ export function createMessaging(d: {
         if (ev.t === 'msg.upsert') await apply(c, { t: 'msg.upsert', id: c.id, msg: { ...ev.msg, file: null }, ...(ev.live ? { live: true } : {}) });
         else await apply(c, { ...ev, id: c.id } as FromConnectors);
       }
+      if (!named.size) return { conversations: {} };
+      const r = await sql<{ id: string; external_id: string }>`
+        select id, external_id from messaging_conversations where connection_id = ${c.id} and external_id = any(${[...named]}::text[])`.execute(d.db);
+      return { conversations: Object.fromEntries(r.rows.map((x) => [x.external_id, x.id])) };
     },
 
     /** The sends waiting for this phone, taken: from now on the phone is sending them (C6 if it never says how it went). */

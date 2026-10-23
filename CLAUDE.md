@@ -179,8 +179,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   takes the press (`check()` hits the hidden input): `setChoice`/`choose`. Moving the servers' clock moves the messaging
   stand-in too (a message stamped with the real time looks hours old and is not announced). Enter on the twelfth
   recovery word submits the words. Speech in a server voice is in the debug record as the device voice's is.
-- TalkBack gestures on the emulator: `adb emu event mouse <x> <y> 0 1|0` is a real finger to TalkBack; `sendevent` is
-  refused on this image.
+- TalkBack gestures on the emulator: `adb emu event mouse <x> <y> 0 1|0` (screen pixels) is a real finger to TalkBack;
+  a double tap needs both taps on one console connection (`tools/android/finger.ts`): separate `adb emu` calls are too
+  slow. `sendevent` is refused on this image. TalkBack's speech is not in the log.
 - LIVE mode on the emulator: its microphone is the Mac's, so `adb emu avd hostmicoff` first, and recordings are played
   into the running capture (`node tools/live/drive.ts`, a debug build); afterwards LIVE off and the host microphone as
   it was. Keyword measurements: `tools/live/corpus.ts` and `tools/live/bench.ts` (docs/spikes/m2.md).
@@ -203,6 +204,8 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   answers OK and delivers nothing); the shell may read the store (`adb shell content query --uri content://sms`), only
   the SMS app writes it. Its network sends sent and delivery reports. Android shows an app the SMS app there is only
   with a `<queries>` entry (`smsto:`); without one it says there is none.
+- **An update of the app or a force stop cancels all its jobs** (JobScheduler; persisted ones too): arm them again as
+  the app starts. On Android 16 the dialler sends a call's quick reply itself; the SMS app is not asked.
 - **MMS on the emulator:** none arrives, and its carrier configuration disables MMS (Android's MMS service answers 12),
   unchangeable on this image. `node tools/dev/mms-centre.ts send --from 5551234 --text … [--image dot] [--to 5550002]
   [--repeat]` hands the notification and the fetched MMS to the debug build's `DebugMmsReceiver`. The emulator's own
