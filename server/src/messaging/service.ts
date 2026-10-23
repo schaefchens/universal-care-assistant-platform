@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { type AddressForm, type DeviceEvent, type DeviceSend, type FromConnectors, type Lang, type MailServer, quoteHeader, type ServerService, t, type ToConnectors, uuidv7, type WireFile } from '@ucap/shared';
 import { judgeTranscript } from '@ucap/speech-text';
 import { sql } from 'kysely';
+import { parsePhoneNumberFromString } from 'libphonenumber-js/max';
 import type { Stt } from '../ai/stt/service.ts';
 import { audit } from '../lib/audit.ts';
 import type { Clock } from '../lib/clock.ts';
@@ -32,7 +33,7 @@ import { enqueue } from '../lib/jobs.ts';
 import { emit } from '../lib/outbox.ts';
 import type { Sealer } from '../lib/sealed.ts';
 import { chunks, toPcm } from './audio.ts';
-import type { ContactService, HandleInput } from '../domain/contacts/service.ts';
+import { type ContactService, displayOf, type Handle, type HandleInput } from '../domain/contacts/service.ts';
 import { CAPABILITIES, type Capabilities, HISTORY_DAYS, isServerService, type Service } from './services.ts';
 import { createMessageStore } from './store.ts';
 
@@ -147,9 +148,10 @@ export type ConnectInput =
   /** Previews of one app's notifications on the phone that asks (K5). */
   | { service: 'notifications'; app: { package: string; name: string } };
 
-/** A conversation found by its name or ref. */
+/** A conversation found by its name or ref; for sending, also a contact to write to anew (K6). */
 export interface Found {
-  conversationId: string;
+  /** null for a new message: there is no conversation with that contact on its service yet (`to`). */
+  conversationId: string | null;
   name: string;
   service: Service;
   label: string | null;
@@ -157,6 +159,21 @@ export interface Found {
   subject: string | null;
   /** Whether the other side is in the person's contacts (private chats). */
   contact: boolean | null;
+  /** A new message's connection and the number (E.164) or email address it goes to. */
+  to: { connectionId: string; address: string } | null;
+}
+
+/** One of the person's contacts with no conversation on a service that can write to them anew (K6): SMS or email. */
+interface NewTarget {
+  contactId: string;
+  name: string;
+  service: Service;
+  label: string | null;
+  connectionId: string;
+  /** Their numbers (SMS) or addresses (email), in their order. */
+  handles: Handle[];
+  /** They have a conversation on another service: a message goes there unless the person names this one. */
+  elsewhere: boolean;
 }
 
 /** "Where they last wrote" counts when it was this recent; older, UCAP asks which service. */
@@ -289,9 +306,9 @@ export function createMessaging(d: {
   // —— Sending ——————————————————————————————————————————————————————————————————————————————————————————————————————
 
   async function attempt(outboundId: string): Promise<SendOutcome> {
-    const r = await sql<{ connection_id: string; chat: string; text: string; subject: string | null; state: string; conn_state: string; service: Service; user_id: string; device_id: string | null }>`
-      select o.connection_id, v.external_id as chat, o.text, o.subject, o.state, k.state as conn_state, k.service, k.user_id, k.device_id
-      from messaging_outbound o join messaging_conversations v on v.id = o.conversation_id join messaging_connections k on k.id = o.connection_id
+    const r = await sql<{ connection_id: string; chat: string | null; to_address: string | null; text: string; subject: string | null; state: string; conn_state: string; service: Service; user_id: string; device_id: string | null }>`
+      select o.connection_id, v.external_id as chat, o.to_address, o.text, o.subject, o.state, k.state as conn_state, k.service, k.user_id, k.device_id
+      from messaging_outbound o left join messaging_conversations v on v.id = o.conversation_id join messaging_connections k on k.id = o.connection_id
       where o.id = ${outboundId}`.execute(d.db);
     const o = r.rows[0];
     if (!o || o.state !== 'queued') return 'queued';
@@ -309,12 +326,15 @@ export function createMessaging(d: {
     // Written before the connectors are asked: a crash after this leaves it uncertain, never sent twice (AS-07).
     const taken = await sql`update messaging_outbound set state = 'attempting', attempted_at = ${now()}, updated_at = ${now()} where id = ${outboundId} and state = 'queued' returning id`.execute(d.db);
     if (!taken.rows.length) return 'queued';
-    if (h.send(o.service, { t: 'send', id: o.connection_id, requestId: outboundId, chatId: o.chat, text: o.text, ...(o.subject ? { subject: o.subject } : {}) })) return 'attempting';
+    // A new message (K6) has no conversation yet: it goes to its address.
+    const where = o.chat !== null ? { chatId: o.chat } : { chatId: '', to: o.to_address ?? '' };
+    if (h.send(o.service, { t: 'send', id: o.connection_id, requestId: outboundId, ...where, text: o.text, ...(o.subject ? { subject: o.subject } : {}) })) return 'attempting';
     // Not handed over (the socket closed just now): still waiting, nothing went out.
     await sql`update messaging_outbound set state = 'queued', attempted_at = null, updated_at = ${now()} where id = ${outboundId} and state = 'attempting'`.execute(d.db);
     return 'queued';
   }
 
+  /** Kept as its conversation's draft; a new message (K6) has none to keep it in. */
   async function saveDraft(outboundId: string) {
     await sql`
       update messaging_conversations v set draft = o.text, draft_at = ${now()} from messaging_outbound o
@@ -327,6 +347,32 @@ export function createMessaging(d: {
       select service, label from messaging_connections where user_id = ${userId} and ready_at is not null
       group by service, label order by min(created_at)`.execute(d.db);
     return [...new Set(r.rows.map((x) => serviceName(x.service, x.label, lang)))];
+  }
+
+  /**
+   * The person's contacts a new message can go to (K6): by SMS to their numbers, by email to their addresses, on the
+   * first ready connection of that service, where they have no conversation there (`conversations`: those one can
+   * write in).
+   */
+  async function newTargets(userId: string, conversations: { contact_id: string | null; service: Service }[]): Promise<NewTarget[]> {
+    const k = await sql<{ id: string; service: Service; label: string | null }>`
+      select distinct on (service) id, service, label from messaging_connections
+      where user_id = ${userId} and state = 'ready' and service in ('sms', 'email') order by service, created_at`.execute(d.db);
+    if (!k.rows.length) return [];
+    const h = await sql<{ contact_id: string; name: string; kind: 'phone' | 'email'; value: string; label: string | null }>`
+      select c.id as contact_id, c.name, h.kind, h.value, h.label from contacts c join contact_handles h on h.contact_id = c.id
+      where c.person_id = ${userId} and c.deleted_at is null and h.kind in ('phone', 'email') order by c.created_at, c.id, h.position`.execute(d.db);
+    const out = new Map<string, NewTarget>();
+    for (const x of h.rows) {
+      const conn = k.rows.find((c) => c.service === (x.kind === 'phone' ? 'sms' : 'email'));
+      // A conversation with them on this service: a message goes there.
+      if (!conn || conversations.some((v) => v.contact_id === x.contact_id && v.service === conn.service)) continue;
+      const key = `${x.contact_id}|${conn.service}`;
+      const t = out.get(key) ?? { contactId: x.contact_id, name: x.name, service: conn.service, label: conn.label, connectionId: conn.id, handles: [], elsewhere: conversations.some((v) => v.contact_id === x.contact_id) };
+      t.handles.push({ kind: x.kind, value: x.value, label: x.label });
+      out.set(key, t);
+    }
+    return [...out.values()];
   }
 
   /** A phone's connection can no longer send: what waited for it is not sent (C4), and kept as a draft. */
@@ -767,12 +813,13 @@ export function createMessaging(d: {
 
     /** The sends waiting for this phone, taken: from now on the phone is sending them (C6 if it never says how it went). */
     async deviceTake(userId: string, deviceId: string): Promise<DeviceSend[]> {
-      const r = await sql<{ id: string; connection_id: string; chat: string; text: string }>`
+      const r = await sql<{ id: string; connection_id: string; chat: string | null; to_address: string | null; text: string }>`
         update messaging_outbound o set state = 'attempting', attempted_at = ${now()}, updated_at = ${now()}
-        from messaging_connections k, messaging_conversations v
-        where o.connection_id = k.id and v.id = o.conversation_id and k.user_id = ${userId} and k.device_id = ${deviceId} and k.state = 'ready' and o.state = 'queued'
-        returning o.id, o.connection_id, v.external_id as chat, o.text`.execute(d.db);
-      return r.rows.map((x) => ({ id: x.id, connectionId: x.connection_id, chatId: x.chat, text: x.text }));
+        from messaging_connections k
+        where o.connection_id = k.id and k.user_id = ${userId} and k.device_id = ${deviceId} and k.state = 'ready' and o.state = 'queued'
+        returning o.id, o.connection_id, (select v.external_id from messaging_conversations v where v.id = o.conversation_id) as chat, o.to_address, o.text`.execute(d.db);
+      // A new SMS (K6) has no thread yet: the phone finds or makes the one for its number.
+      return r.rows.map((x) => ({ id: x.id, connectionId: x.connection_id, ...(x.chat !== null ? { chatId: x.chat } : { chatId: '', to: x.to_address ?? '' }), text: x.text }));
     },
 
     // —— Reading ——
@@ -987,25 +1034,46 @@ export function createMessaging(d: {
     // —— Sending ——
     /**
      * One conversation, by its ref or by a name, never a guess: several that fit are named back. For sending: only
-     * chats one can write in, on a connection that is ready.
+     * chats one can write in, on a connection that is ready, and the person's contacts with none yet (K6): a new SMS to
+     * their number, a new email to their address, where they have no conversation on any service or the person named
+     * that one. Of a contact's several numbers or addresses, `address` says which; else they are named back.
      */
-    async find(userId: string, to: string, o: { forSending: boolean; service?: string | null }): Promise<Found | { ambiguous: string[] } | { services: string[] } | null> {
+    async find(
+      userId: string,
+      to: string,
+      o: { forSending: boolean; service?: string | null; address?: string | null },
+    ): Promise<Found | { ambiguous: string[] } | { services: string[] } | { addresses: string[] } | null> {
       // A conversation's id wherever it stands ("chat:<id>", the id alone, "Anna Beispiel (chat:<id>)").
       const ref = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/.exec(to);
-      const r = await sql<{ id: string; title: string; kind: string; subject: string | null; is_contact: boolean | null; service: Service; label: string | null; last_in: Date | null }>`
-        select v.id, ${TITLE} as title, v.kind, v.subject, (p.contact_id is not null or p.is_contact) as is_contact, k.service, k.label,
+      const r = await sql<{ id: string; title: string; kind: string; subject: string | null; contact_id: string | null; is_contact: boolean | null; service: Service; label: string | null; last_in: Date | null }>`
+        select v.id, ${TITLE} as title, v.kind, v.subject, p.contact_id, (p.contact_id is not null or p.is_contact) as is_contact, k.service, k.label,
           (select max(m.sent_at) from messaging_messages m where m.conversation_id = v.id and m.direction = 'in') as last_in
         from messaging_conversations v join messaging_connections k on k.id = v.connection_id
         left join messaging_people p on p.connection_id = k.id and p.external_id = v.peer_external_id
         where k.user_id = ${userId} and v.title <> '' ${o.forSending ? sql`and k.state = 'ready' and v.kind in ('private', 'group')` : sql``}
         order by v.last_message_at desc nulls last`.execute(d.db);
-      const out = (x: (typeof r.rows)[number]): Found => ({ conversationId: x.id, name: x.title, service: x.service, label: x.label, subject: x.subject, contact: x.kind === 'private' ? x.is_contact === true : null });
+      /** A conversation, or a contact to write to anew (`fresh`). */
+      type Candidate = Omit<(typeof r.rows)[number], 'id'> & { id: string | null; fresh: NewTarget | null };
+      const out = (x: Candidate): Found | { addresses: string[] } => {
+        if (!x.fresh) return { conversationId: x.id, name: x.title, service: x.service, label: x.label, subject: x.subject, contact: x.kind === 'private' ? x.is_contact === true : null, to: null };
+        const h = chooseHandle(x.fresh.handles, x.service, o.address ?? null);
+        if (Array.isArray(h)) return { addresses: h };
+        // Said with the number or address it goes to, where the contact has more than one.
+        const name = x.fresh.handles.length > 1 ? `${x.title} (${h.label ?? displayOf(h)})` : x.title;
+        return { conversationId: null, name, service: x.service, label: x.label, subject: null, contact: true, to: { connectionId: x.fresh.connectionId, address: h.value } };
+      };
+      const conversations: Candidate[] = r.rows.map((x) => ({ ...x, fresh: null }));
       if (ref) {
-        const x = r.rows.find((y) => y.id === ref[1]);
+        const x = conversations.find((y) => y.id === ref[1]);
         return x ? out(x) : null;
       }
-      // A service the person named ("auf WhatsApp", "per SMS"): only its conversations.
-      const rows = o.service?.trim() ? r.rows.filter((x) => serviceMatches(o.service!, x.service, x.label)) : r.rows;
+      // A service the person named ("auf WhatsApp", "per SMS"): only its conversations, and its new messages.
+      const named = o.service?.trim() ? o.service : null;
+      const fits = (x: { service: Service; label: string | null }) => named === null || serviceMatches(named, x.service, x.label);
+      const fresh: Candidate[] = (o.forSending ? await newTargets(userId, r.rows) : [])
+        .filter((t) => (named === null ? !t.elsewhere : fits(t)))
+        .map((t) => ({ title: t.name, kind: 'private', subject: null, contact_id: t.contactId, is_contact: true, service: t.service, label: t.label, last_in: null, id: null, fresh: t }));
+      const rows = [...conversations.filter(fits), ...fresh];
       /** Several that fit: one name on several services goes where they last wrote lately, else the service is asked. */
       const pick = (list: typeof rows) => {
         if (list.length === 1) return out(list[0]!);
@@ -1027,21 +1095,44 @@ export function createMessaging(d: {
       return null;
     },
 
-    /** The confirmed message, written before the service is asked; said back as C2 or, without a connection, C9. */
-    async send(o: { userId: string; deviceId: string; actionId: string | null; conversationId: string; text: string; subject?: string | null }): Promise<SendOutcome> {
+    /**
+     * The confirmed message, written before the service is asked; said back as C2 or, without a connection, C9. In a
+     * conversation, or new (K6): to a number or address of one of the person's contacts, on their SMS or email.
+     */
+    async send(o: {
+      userId: string;
+      deviceId: string;
+      actionId: string | null;
+      conversationId: string | null;
+      /** A new message's connection, address and the contact's name as C1 said it. */
+      to?: { connectionId: string; address: string; recipient: string } | null;
+      text: string;
+      subject?: string | null;
+    }): Promise<SendOutcome> {
       const id = uuidv7(d.clock());
-      const r = await sql<{ id: string }>`
-        insert into messaging_outbound (id, connection_id, conversation_id, user_id, action_id, device_id, text, subject, state, created_at, updated_at)
-        select ${id}, v.connection_id, v.id, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, 'queued', ${now()}, ${now()}
-        from messaging_conversations v join messaging_connections k on k.id = v.connection_id where v.id = ${o.conversationId} and k.user_id = ${o.userId}
-        on conflict (action_id) do nothing returning id`.execute(d.db);
+      const r = o.conversationId
+        ? await sql<{ id: string }>`
+            insert into messaging_outbound (id, connection_id, conversation_id, user_id, action_id, device_id, text, subject, state, created_at, updated_at)
+            select ${id}, v.connection_id, v.id, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, 'queued', ${now()}, ${now()}
+            from messaging_conversations v join messaging_connections k on k.id = v.connection_id where v.id = ${o.conversationId} and k.user_id = ${o.userId}
+            on conflict (action_id) do nothing returning id`.execute(d.db)
+        : o.to
+          ? // Only to a number or address the person keeps with a contact.
+            await sql<{ id: string }>`
+            insert into messaging_outbound (id, connection_id, conversation_id, to_address, recipient, user_id, action_id, device_id, text, subject, state, created_at, updated_at)
+            select ${id}, k.id, null, ${o.to.address}, ${o.to.recipient}, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, 'queued', ${now()}, ${now()}
+            from messaging_connections k where k.id = ${o.to.connectionId} and k.user_id = ${o.userId} and k.service in ('sms', 'email')
+              and exists (select 1 from contact_handles h join contacts c on c.id = h.contact_id
+                where h.person_id = ${o.userId} and c.deleted_at is null and h.value = ${o.to.address} and h.kind = case k.service when 'sms' then 'phone' else 'email' end)
+            on conflict (action_id) do nothing returning id`.execute(d.db)
+          : { rows: [] };
       if (!r.rows[0]) {
         const again = await sql<{ id: string; state: string }>`select id, state from messaging_outbound where action_id = ${o.actionId}`.execute(d.db);
         if (!again.rows[0]) throw new AppError('not_found');
         return again.rows[0].state === 'queued' ? 'queued' : 'attempting';
       }
       // The draft is now this message.
-      await sql`update messaging_conversations set draft = null, draft_at = null where id = ${o.conversationId}`.execute(d.db);
+      if (o.conversationId) await sql`update messaging_conversations set draft = null, draft_at = null where id = ${o.conversationId}`.execute(d.db);
       return attempt(id);
     },
 
@@ -1101,8 +1192,10 @@ export function createMessaging(d: {
 
     /** What to tell the person about a message they sent (C3–C6), in their words. */
     async outbound(userId: string, id: string, lang?: Lang): Promise<{ state: string; told: Told[]; say: string | null } | null> {
-      const r = await sql<{ state: string; told: Told[]; error: string | null; title: string; service: Service; label: string | null }>`
-        select o.state, o.told, o.error, ${TITLE} as title, k.service, k.label from messaging_outbound o join messaging_conversations v on v.id = o.conversation_id
+      // A new message (K6) is named by the contact it was confirmed with.
+      const r = await sql<{ state: string; told: Told[]; error: string | null; title: string; service: Service; label: string | null; fresh: boolean }>`
+        select o.state, o.told, o.error, coalesce(o.recipient, ${TITLE}) as title, k.service, k.label, o.conversation_id is null as fresh
+        from messaging_outbound o left join messaging_conversations v on v.id = o.conversation_id
         join messaging_connections k on k.id = o.connection_id where o.id = ${id} and o.user_id = ${userId}`.execute(d.db);
       const o = r.rows[0];
       if (!o) return null;
@@ -1115,7 +1208,8 @@ export function createMessaging(d: {
       const key = o.state === 'sent' ? 'C3' : o.state === 'failed' ? 'C4' : o.state === 'uncertain' ? 'C6' : o.state === 'bounced' ? 'C13' : last === 'C5' ? 'C5' : null;
       // "Slow" says what the service has not done yet: confirmed it, accepted it (a mail server), sent it (the phone), shown it (another app).
       const sent = CAPABILITIES[o.service].sent;
-      const variant = key === 'C5' && sent !== 'service' ? `C5.${sent}` : key;
+      // Not sent, and nowhere to keep a draft (a new message): C4 without the draft.
+      const variant = key === 'C5' && sent !== 'service' ? `C5.${sent}` : key === 'C4' && o.fresh ? 'C4.noDraft' : key;
       return { state: o.state, told: o.told, say: variant ? t(L, `messages.${variant}`, params, p.form) : null };
     },
 
@@ -1207,6 +1301,29 @@ function handleOf(p: { service: Service; external_id: string; address: string | 
   if (p.service === 'telegram') return /^user:\d{1,20}$/.test(p.external_id) ? { kind: 'telegram', value: p.external_id.slice(5) } : null;
   if (!p.address) return null;
   return p.address.includes('@') ? { kind: 'email', value: p.address } : { kind: 'phone', value: p.address };
+}
+
+/**
+ * Which of a contact's numbers or addresses a new message goes to (K6): the only one; by SMS, the only one that is no
+ * landline; the one the person named (its label, its last digits, the address itself); else all of them, as they are
+ * named back to the person ("Handy", "Arbeit"; a number or address without a label as it is written).
+ */
+export function chooseHandle(handles: Handle[], service: Service, said: string | null): Handle | string[] {
+  let list = handles;
+  if (service === 'sms' && list.length > 1) {
+    const mobile = list.filter((h) => !h.value.startsWith('+') || parsePhoneNumberFromString(h.value)?.getType() !== 'FIXED_LINE');
+    if (mobile.length) list = mobile;
+  }
+  if (list.length === 1) return list[0]!;
+  const n = fold(said ?? '');
+  const digits = (said ?? '').replace(/\D/g, '');
+  const named = n
+    ? list.filter((h) => (h.label && ` ${n} `.includes(` ${fold(h.label)} `)) || (digits.length >= 4 && h.value.replace(/\D/g, '').endsWith(digits.slice(-6))) || h.value === said!.trim().toLowerCase())
+    : [];
+  if (named.length === 1) return named[0]!;
+  const names = list.map((h) => h.label ?? displayOf(h));
+  // Two with the same label ("Mobil", "Mobil") are told apart by their numbers.
+  return names.map((x, i) => (names.indexOf(x) === names.lastIndexOf(x) ? x : `${x} ${displayOf(list[i]!)}`));
 }
 
 /** Names that may be one person: the same, or one of them a first name the other begins with ("Anna", "Anna Beispiel"). */

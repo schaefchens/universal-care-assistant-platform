@@ -23,8 +23,11 @@ export interface Capabilities {
    * that came since; nothing older), or only what notifications showed (CONCEPT §3: never a conversation's history).
    */
   history: 'since' | 'previews';
-  /** Whom it sends to: anyone by address or number, into conversations there are, only as a reply to a notification, nobody. */
-  send: 'any' | 'conversations' | 'replies' | 'none';
+  /**
+   * Whom it sends to: anyone by address or number; into conversations there are and anew to the person's contacts (K6:
+   * by their number or address); into conversations there are; only as a reply to a notification; nobody.
+   */
+  send: 'any' | 'contacts' | 'conversations' | 'replies' | 'none';
   /**
    * What "gesendet" means for it: the service confirmed the message; the mail server accepted it (its 250); the
    * network accepted it (Android's sent report); the other app showed it as the person's own.
@@ -44,9 +47,9 @@ export interface Capabilities {
 export const CAPABILITIES: Record<Service, Capabilities> = {
   telegram: { history: 'since', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
   whatsapp: { history: 'since', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
-  // Email answers in its threads; a new mail to an address comes with the contacts it is taken from (K6).
-  email: { history: 'since', send: 'conversations', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false },
-  // Replies in the threads there are; a new SMS to a number comes with the contacts it is taken from (K6).
-  sms: { history: 'since', send: 'conversations', sent: 'network', voice: false, readState: true, groups: true, subject: false, delivery: true },
+  // Email answers in its threads, and writes a new mail to a contact's address (K6).
+  email: { history: 'since', send: 'contacts', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false },
+  // Replies in the threads there are, and writes a new SMS to a contact's number (K6).
+  sms: { history: 'since', send: 'contacts', sent: 'network', voice: false, readState: true, groups: true, subject: false, delivery: true },
   notifications: { history: 'previews', send: 'replies', sent: 'app', voice: false, readState: true, groups: true, subject: false, delivery: false },
 };

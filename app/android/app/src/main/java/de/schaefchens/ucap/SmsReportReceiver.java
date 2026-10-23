@@ -51,9 +51,13 @@ public class SmsReportReceiver extends BroadcastReceiver {
             if (s.failed == 0) {
                 SmsStore.setType(ctx, id, SmsStore.SENT);
                 if (s.requestId != null) events.put(SmsEvents.result(s.requestId, "sent", SmsEvents.smsId(id), null));
-                // The message in its thread, as the store now has it.
+                // The message in its thread, as the store now has it, with the thread and its people: a new SMS (K6)
+                // made the thread, which the store's own forwarding may have passed while it was on its way.
                 SmsStore.Row r = SmsStore.one(ctx, id);
-                if (r != null) events.put(SmsEvents.message(s.thread, SmsEvents.smsId(id), null, true, r.date, "text", r.body, false));
+                if (r != null) {
+                    for (org.json.JSONObject ev : SmsSync.describe(ctx, r.thread, SmsEvents.smsId(id), r.address, true, r.date, "text", r.body, false, SmsStore.country(ctx),
+                            new java.util.HashMap<>(), new java.util.HashMap<>(), new java.util.HashSet<>(), new java.util.HashSet<>())) events.put(ev);
+                }
                 // Kept until the delivery reports came (or a week passed: SmsDb.forgetOldSends).
             } else {
                 SmsStore.setType(ctx, id, SmsStore.FAILED);

@@ -100,8 +100,11 @@ export type ToConnectors =
   | { t: 'login'; id: string; step: 'phone' | 'code' | 'password' | 'qr' | 'resend'; value?: string }
   /** The person disconnected: log out where it is logged in, then delete everything of it (TDLib's database too). */
   | { t: 'remove'; id: string }
-  /** `subject`: an email's, as the person confirmed it. */
-  | { t: 'send'; id: string; requestId: string; chatId: string; text: string; subject?: string }
+  /**
+   * `subject`: an email's, as the person confirmed it. `to`: a new mail's address (K6: one of the person's contacts),
+   * where there is no conversation yet; `chatId` is then ''.
+   */
+  | { t: 'send'; id: string; requestId: string; chatId: string; text: string; subject?: string; to?: string }
   | { t: 'download'; id: string; requestId: string; fileId: number; dest: string }
   | { t: 'history'; id: string; chatId: string; limit: number }
   | { t: 'mark_read'; id: string; chatId: string; externalIds: string[] };
@@ -160,7 +163,9 @@ export type DeviceEvent =
 export interface DeviceSend {
   id: string;
   connectionId: string;
-  /** The conversation as the phone knows it (an SMS thread, a notification's conversation). */
+  /** The conversation as the phone knows it (an SMS thread, a notification's conversation); '' for a new SMS. */
   chatId: string;
+  /** A new SMS's number (K6: one of the person's contacts), where there is no thread yet. */
+  to?: string;
   text: string;
 }

@@ -97,7 +97,7 @@ function handle(cmd: ToConnectors) {
       emit({ t: 'login.error', id: cmd.id, error: 'login_state' });
       return;
     case 'send':
-      void conn.send(cmd.requestId, cmd.chatId, cmd.text, cmd.subject);
+      void conn.send(cmd.requestId, cmd.chatId, cmd.text, cmd.subject, cmd.to);
       return;
     case 'download':
       // Email has no voice messages to fetch; attachments are named, never opened.

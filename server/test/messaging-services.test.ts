@@ -115,7 +115,7 @@ describe('messaging across services', () => {
     const c = (r.json() as { connection: View }).connection;
     emailId = c.id;
     expect(c).toMatchObject({ service: 'email', account: 'anna.beispiel@example.org', name: 'E-Mail', deviceId: null, state: 'starting', running: true });
-    expect(c.capabilities).toEqual({ history: 'since', send: 'conversations', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false });
+    expect(c.capabilities).toEqual({ history: 'since', send: 'contacts', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false });
     // Its messages start 30 days before it was linked: never "the whole history" (CONCEPT §3).
     const back = clock() - Date.parse(c.historySince!);
     expect(back).toBeGreaterThanOrEqual(30 * 86_400_000);
@@ -176,7 +176,7 @@ describe('messaging across services', () => {
   it("a phone's own connections: SMS for the phone that asks, previews per app, each with what it can do; one goes, the others stay", async () => {
     const sms = ((await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'sms' })).json() as { connection: View }).connection;
     expect(sms).toMatchObject({ service: 'sms', name: 'SMS', deviceId: anna.deviceId, state: 'ready', running: true });
-    expect(sms.capabilities).toMatchObject({ history: 'since', send: 'conversations', sent: 'network', delivery: true });
+    expect(sms.capabilities).toMatchObject({ history: 'since', send: 'contacts', sent: 'network', delivery: true });
     const signal = { service: 'notifications', app: { package: 'org.thoughtcrime.securesms', name: 'Signal' } };
     const prev = ((await as(anna, 'POST', '/api/v1/messaging/connections', signal)).json() as { connection: View }).connection;
     expect(prev).toMatchObject({ service: 'notifications', account: 'org.thoughtcrime.securesms', name: 'Signal', deviceId: anna.deviceId, state: 'ready' });
@@ -552,6 +552,78 @@ describe('messaging across services', () => {
     expect((await suggestions()).map((x) => x.name)).not.toContain('Clara Beispiel');
     expect((await suggestions()).map((x) => x.name)).not.toContain('Mama');
     for (const c of [mama, clara]) await contacts('DELETE', `/${c}`);
+  });
+
+  it('a new message to a contact with no conversation (K6): an SMS to their mobile number, an email to their address with a subject the model proposes; several numbers asked about; named by the contact; no draft claimed', async () => {
+    const contacts = (method: 'POST' | 'DELETE', path: string, body?: unknown) =>
+      core.app.inject({ method, url: `/api/v1/people/${anna.userId}/contacts${path}`, payload: body as Record<string, unknown>, headers: { authorization: `Bearer ${anna.token}` } });
+    const physio = ((await contacts('POST', '', {
+      name: 'Physiotherapie',
+      handles: [
+        { kind: 'phone', value: '+49301234567', label: 'Praxis' },
+        { kind: 'phone', value: '+491707654321', label: 'Handy' },
+        { kind: 'email', value: 'info@physio.example' },
+      ],
+    })).json() as { id: string }).id;
+    const tom = ((await contacts('POST', '', { name: 'Tom Neu', handles: [{ kind: 'phone', value: '+491511112222', label: 'Handy' }, { kind: 'phone', value: '+491513334444', label: 'Arbeit' }] })).json() as { id: string }).id;
+    const find = (to: string, service: string | null = null, address: string | null = null) => assistant.messaging.find(anna.userId, to, { forSending: true, service, address });
+    // No conversation anywhere: SMS and email both could, so the service is asked; named, it is that one.
+    expect(await find('Physiotherapie')).toEqual({ services: ['SMS', 'E-Mail'] });
+    // By SMS to the mobile number, never the practice's landline; said with which one it is.
+    expect(await find('Physiotherapie', 'per SMS')).toEqual({ conversationId: null, name: 'Physiotherapie (Handy)', service: 'sms', label: null, subject: null, contact: true, to: { connectionId: smsId, address: '+491707654321' } });
+    // Two mobile numbers: named back, and the one the person said is taken.
+    expect(await find('Tom', 'SMS')).toEqual({ addresses: ['Handy', 'Arbeit'] });
+    expect(await find('Tom', 'SMS', 'die Arbeit')).toMatchObject({ name: 'Tom Neu (Arbeit)', to: { address: '+491513334444' } });
+    expect(await find('Tom', 'SMS', '0151 3334444')).toMatchObject({ to: { address: '+491513334444' } });
+    // Not on a service that cannot write to anyone new, nor for reading.
+    expect(await find('Tom', 'Telegram')).toBeNull();
+    expect(await assistant.messaging.find(anna.userId, 'Tom', { forSending: false })).toBeNull();
+
+    // The SMS: asked as any SMS, taken by the phone with the number, and sent there in a new thread.
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', service: 'SMS', text: 'Ich komme zehn Minuten später.' }], help: false });
+    const a = (await turn(anna, 'Schreib der Physiotherapie per SMS, dass ich zehn Minuten später komme')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string; prompt: string };
+    expect(a.prompt).toBe('SMS an Physiotherapie (Handy): „Ich komme zehn Minuten später.“. Senden?');
+    expect(((await as(anna, 'POST', `/api/v1/assistant/actions/${a.id}/confirm`, { contentHash: a.contentHash, via: 'voice' })).json() as { say: string }).say).toBe('Bestätigt. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist.');
+    const o = await outbound(a.id);
+    expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([{ id: o.id, connectionId: smsId, chatId: '', to: '+491707654321', text: 'Ich komme zehn Minuten später.' }]);
+    await forward(anna, [{ t: 'send.result', requestId: o.id, state: 'pending_service' }]);
+    await forward(anna, [
+      { t: 'send.result', requestId: o.id, state: 'sent', externalId: 's900' },
+      { t: 'user.upsert', user: { externalId: '+491707654321', name: '+49 170 7654321', isContact: false, isBot: false } },
+      { t: 'chat.upsert', chat: { externalId: '77', title: '+49 170 7654321', kind: 'private', userId: '+491707654321', muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } },
+      { t: 'msg.upsert', msg: { chatId: '77', externalId: 's900', fromId: null, outgoing: true, date: now(), editDate: null, kind: 'text', text: 'Ich komme zehn Minuten später.', file: null, fileName: null } },
+    ]);
+    expect(await outbound(a.id)).toMatchObject({ state: 'sent', told: ['C3'] });
+    expect((await assistant.messaging.outbound(anna.userId, o.id, 'de'))?.say).toBe('Gesendet an Physiotherapie (Handy).');
+    // From now on there is a conversation, named by the contact: a message without a service goes there.
+    expect(await find('Physiotherapie')).toMatchObject({ name: 'Physiotherapie', service: 'sms', to: null, conversationId: expect.any(String) });
+
+    // The email: a new one needs a subject, which the model proposes when UCAP asks for it.
+    let round = 0;
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', service: 'E-Mail', text: 'Haben Sie am Freitag einen Termin frei?', subject: ++round === 1 ? null : 'Termin am Freitag' }], help: false });
+    seen.length = 0;
+    const e = (await turn(anna, 'Schreib der Physiotherapie eine E-Mail: Haben Sie am Freitag einen Termin frei?')).find((x) => x.t === 'action') as unknown as { id: string; contentHash: string; prompt: string };
+    expect(seen[1]!.messages.at(-1)!.content).toContain('subject_missing');
+    expect(e.prompt).toBe('E-Mail an Physiotherapie, Betreff „Termin am Freitag“: „Haben Sie am Freitag einen Termin frei?“. Senden?');
+    const n = mail.got.length;
+    await as(anna, 'POST', `/api/v1/assistant/actions/${e.id}/confirm`, { contentHash: e.contentHash, via: 'voice' });
+    const cmd = await mail.next('send', n);
+    expect(cmd).toMatchObject({ chatId: '', to: 'info@physio.example', subject: 'Termin am Freitag', text: 'Haben Sie am Freitag einen Termin frei?' });
+    // Refused: not sent, and no draft is promised, since there is no conversation to keep one in.
+    mail.emit({ t: 'send.result', id: emailId, requestId: cmd.requestId, state: 'failed', error: 'smtp_550' });
+    await until(async () => (await outbound(e.id)).state === 'failed', 'failed');
+    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'de'))?.say).toBe('Nicht gesendet: der Mailserver hat sie abgelehnt.');
+    // Declined or unanswered: nothing sent, and no draft promised either.
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Tom', service: 'SMS', address: 'Handy', text: 'Hallo Tom.' }], help: false });
+    const t1 = (await turn(anna, 'Schreib Tom per SMS aufs Handy: Hallo Tom.')).find((x) => x.t === 'action') as unknown as { id: string; prompt: string };
+    expect(t1.prompt).toBe('SMS an Tom Neu (Handy): „Hallo Tom.“. Senden?');
+    expect((await as(anna, 'POST', `/api/v1/assistant/actions/${t1.id}/cancel`, { why: 'no' })).json()).toEqual({ ok: true, say: 'Nicht gesendet.' });
+    // Only to a number the person keeps with a contact: deleted meanwhile, nothing is written.
+    const t2 = (await turn(anna, 'Schreib Tom per SMS aufs Handy: Hallo Tom.')).find((x) => x.t === 'action') as unknown as { id: string; contentHash: string };
+    await contacts('DELETE', `/${tom}`);
+    await as(anna, 'POST', `/api/v1/assistant/actions/${t2.id}/confirm`, { contentHash: t2.contentHash, via: 'voice' });
+    expect((await sql`select 1 from messaging_outbound where action_id = ${t2.id}`.execute(db)).rows).toHaveLength(0);
+    await contacts('DELETE', `/${physio}`);
   });
 
   it('says what each connection can do, as data for the model', async () => {

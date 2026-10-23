@@ -10,8 +10,10 @@
  *
  * A reply goes back on the service its conversation is on. A name found on several services goes where that person
  * last wrote lately; otherwise UCAP says which services, and the model asks the person (CONCEPT §2: "a focused
- * clarification rather than a guess"). A message is marked read on its service only when the person heard its
- * original, never because the model read it. The model never confirms: the person's yes comes from their device.
+ * clarification rather than a guess"). Someone in the person's contacts with no conversation gets a new SMS or email
+ * (K6), to their number or address: a new email with a subject the model proposes, read back in C1. A message is
+ * marked read on its service only when the person heard its original, never because the model read it. The model
+ * never confirms: the person's yes comes from their device.
  */
 import { quoteHeader, t } from '@ucap/shared';
 import type { JsonSchema } from '../ai/llm/reply.ts';
@@ -78,13 +80,18 @@ function asData(ctx: ToolContext, i: Item) {
   };
 }
 
-/** One conversation, never a guess: several people who fit are named back, one person on several services is asked about. */
-async function conversationOf(ctx: ToolContext, to: unknown, o: { forSending: boolean; service?: unknown }): Promise<Found> {
+/**
+ * One conversation, never a guess: several people who fit are named back, one person on several services is asked
+ * about. For sending, also a contact with no conversation yet (K6), whose numbers or addresses are asked about when
+ * there are several.
+ */
+async function conversationOf(ctx: ToolContext, to: unknown, o: { forSending: boolean; service?: unknown; address?: unknown }): Promise<Found> {
   if (typeof to !== 'string' || !to.trim()) throw new ToolError('chat_missing');
-  const r = await messaging(ctx).find(ctx.userId, to, { forSending: o.forSending, service: typeof o.service === 'string' ? o.service : null });
+  const r = await messaging(ctx).find(ctx.userId, to, { forSending: o.forSending, service: typeof o.service === 'string' ? o.service : null, address: typeof o.address === 'string' ? o.address : null });
   if (!r) throw new ToolError(typeof o.service === 'string' && o.service.trim() ? 'chat_unknown_on_service' : 'chat_unknown');
   if ('ambiguous' in r) throw new ToolError(`chat_ambiguous: ${r.ambiguous.join(', ')}`);
   if ('services' in r) throw new ToolError(`service_ambiguous: ${r.services.join(', ')}`);
+  if ('addresses' in r) throw new ToolError(`address_ambiguous: ${r.addresses.join(', ')}`);
   return r;
 }
 
@@ -133,6 +140,7 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
         return { data: { messages: list.map((i) => asData(ctx, i)) } };
       }
       const c = await conversationOf(ctx, args.chat, { forSending: false, service: args.service });
+      if (!c.conversationId) throw new ToolError('chat_unknown');
       const list = await messaging(ctx).conversation(ctx.userId, c.conversationId, { limit: unreadOnly ? 20 : 10, unreadOnly });
       return {
         data: { chat: { ref: `chat:${c.conversationId}`, name: c.name, service: serviceName(c.service, c.label) }, messages: list.map((i) => asData(ctx, i)) },
@@ -158,7 +166,7 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     kind: 'read',
     name: 'messages.connections',
     description:
-      'The person\'s messaging connections and what each can do: its service; whether it is connected now; how much history UCAP has (since: messages from historySince on, fetched when it was linked, and all that came after, nothing older; previews: only what the app\'s notifications showed, no history); whom it sends to (any: any address or number; conversations: the conversations there are; replies: only as a reply to a notification that came; none); what "sent" means (service: the service confirmed it; server: the mail server accepted it; network: the phone network accepted it; app: the other app shows it as sent). For "Was kann WhatsApp hier?", "Kannst du auch SMS schicken?".',
+      'The person\'s messaging connections and what each can do: its service; whether it is connected now; how much history UCAP has (since: messages from historySince on, fetched when it was linked, and all that came after, nothing older; previews: only what the app\'s notifications showed, no history); whom it sends to (any: any address or number; contacts: the conversations there are, and anew to anyone in the person\'s contacts with a number or address; conversations: the conversations there are; replies: only as a reply to a notification that came; none); what "sent" means (service: the service confirmed it; server: the mail server accepted it; network: the phone network accepted it; app: the other app shows it as sent). For "Was kann WhatsApp hier?", "Kannst du auch SMS schicken?".',
     args: {},
     async run(ctx) {
       const list = await messaging(ctx).connections(ctx.userId, ctx.lang);
@@ -182,40 +190,49 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     kind: 'act',
     name: 'messages.send',
     description:
-      'Sends a message in a conversation, on the service the conversation is on: the words the person dictated or agreed to, exactly as they should arrive. UCAP reads the whole message back with its recipient and service and asks the person before sending; it says itself when the service confirmed it.',
+      'Sends a message in a conversation, on the service the conversation is on, or a new one to someone in the person\'s contacts (by SMS to their number, by email to their address): the words the person dictated or agreed to, exactly as they should arrive. UCAP reads the whole message back with its recipient and service and asks the person before sending; it says itself when the service confirmed it.',
     args: {
       chat: str('The conversation, as "chat:<id>", or the name of the person or group.'),
       text: str('The message, as it should be sent.'),
       service: nullableStr('The service, when the person named one ("auf WhatsApp", "per SMS", "per E-Mail"); else null.'),
-      subject: nullableStr("An email's subject, when the person wants their own; null takes the thread's (\"Re: …\")."),
+      subject: nullableStr("An email's subject: for a new email (UCAP answers subject_missing), a short one you propose from the message; in a thread only when the person wants their own, else null for the thread's (\"Re: …\")."),
+      address: nullableStr('Which of the contact\'s numbers or addresses, when UCAP asked (address_ambiguous): as UCAP named it ("Handy"); else null.'),
     },
     async prepare(ctx, args) {
-      const r = await conversationOf(ctx, args.chat, { forSending: true, service: args.service });
+      const r = await conversationOf(ctx, args.chat, { forSending: true, service: args.service, address: args.address });
       const text = cleanText(typeof args.text === 'string' ? args.text : '');
       if (!text) throw new ToolError('text_missing');
       if (text.length > MAX_TEXT) throw new ToolError('text_too_long');
-      const subject = r.service === 'email' ? replySubject(r.subject, typeof args.subject === 'string' ? args.subject : null) : null;
+      const written = typeof args.subject === 'string' ? args.subject : null;
+      // A new email (K6; plan-m3.md, K3: "a new mail gets a subject (proposed by the model, read back in C1)").
+      const subject = r.service !== 'email' ? null : r.conversationId ? replySubject(r.subject, written) : cleanText(written ?? '').slice(0, MAX_SUBJECT);
+      if (subject === '') throw new ToolError('subject_missing');
       const ask = tr(ctx, C1[r.service] ?? 'messages.C1', { recipient: r.name, service: serviceName(r.service, r.label), text, subject: subject ?? '' });
       // Someone renamed "Maria (Tochter)" is still not Maria: a stranger's chat is named as such (Appendix E).
       const confirm = r.contact === false ? `${tr(ctx, 'messages.C1.notContact', { name: r.name })} ${ask}` : ask;
-      return { args: { conversationId: r.conversationId, recipient: r.name, text, service: r.service, ...(subject ? { subject } : {}) }, confirm };
+      const to = r.to ? { connectionId: r.to.connectionId, to: r.to.address } : {};
+      return { args: { conversationId: r.conversationId, ...to, recipient: r.name, text, service: r.service, ...(subject ? { subject } : {}) }, confirm };
     },
     async run(ctx, args) {
       const service = String(args.service ?? 'telegram') as Service;
+      const conversationId = typeof args.conversationId === 'string' ? args.conversationId : null;
       const out = await messaging(ctx).send({
         userId: ctx.userId,
         deviceId: ctx.deviceId,
         actionId: ctx.actionId ?? null,
-        conversationId: String(args.conversationId),
+        conversationId,
+        to: typeof args.to === 'string' ? { connectionId: String(args.connectionId), address: args.to, recipient: String(args.recipient) } : null,
         text: String(args.text),
         subject: typeof args.subject === 'string' ? args.subject : null,
       });
       // Waiting: for its connection to come back, or for the phone that sends it.
       const waiting = isServerService(service) ? 'messages.C9' : 'messages.C9.device';
-      return { say: tr(ctx, out === 'attempting' ? 'messages.C2' : waiting), focus: { chat: { id: String(args.conversationId), title: String(args.recipient) } } };
+      return { say: tr(ctx, out === 'attempting' ? 'messages.C2' : waiting), ...(conversationId ? { focus: { chat: { id: conversationId, title: String(args.recipient) } } } : {}) };
     },
     async cancelled(ctx, args, why) {
-      await ctx.messaging?.keepDraft(ctx.userId, String(args.conversationId), String(args.text));
+      // A new message (K6) has no conversation to keep its draft in.
+      if (typeof args.conversationId !== 'string') return tr(ctx, why === 'silence' ? 'messages.C8.noDraft' : 'messages.C7.noDraft');
+      await ctx.messaging?.keepDraft(ctx.userId, args.conversationId, String(args.text));
       return tr(ctx, why === 'silence' ? 'messages.C8' : 'messages.C7');
     },
   },

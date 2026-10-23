@@ -322,6 +322,30 @@ describe('an email account, connected', () => {
     await t.conn.stop();
   });
 
+  it('a new mail to an address (K6): one recipient, its subject, no thread it answers; it starts its own, whose other side is known', async () => {
+    const t = setup();
+    await t.conn.start();
+    await until(() => t.of('conn.state').some((e) => e.state === 'ready'));
+    // Without a subject, or anything that is not one address, nothing goes out.
+    for (const to of ['praxis@example.org', 'praxis@example.org, eve@example.net', 'Praxis <praxis@example.org>', 'praxis@example.org\r\nBcc: eve@example.net'])
+      await t.conn.send('r0', '', 'Hallo', to === 'praxis@example.org' ? undefined : 'Termin', to);
+    expect(t.of('send.result').map((e) => e.error)).toEqual(['no_recipient', 'no_recipient', 'no_recipient', 'no_recipient']);
+    await t.conn.send('r1', '', 'Kann ich den Termin verschieben?', 'Termin am Dienstag', 'Praxis@Example.org');
+    const results = t.of('send.result').filter((e) => e.requestId === 'r1');
+    expect(results.map((e) => e.state)).toEqual(['pending_service', 'sent']);
+    const messageId = results[1]!.externalId!;
+    expect(t.server.sent.at(-1)!.envelope).toEqual({ from: ME, to: ['praxis@example.org'] });
+    const p = await simpleParser(t.server.sent.at(-1)!.raw);
+    expect(p.subject).toBe('Termin am Dienstag');
+    expect(p.inReplyTo).toBeUndefined();
+    expect(p.references).toBeUndefined();
+    // Its own thread, named by the address (UCAP names it by the contact), with the person who wrote to it known.
+    expect(t.of('chat.upsert').at(-1)!.chat).toMatchObject({ externalId: `thread:${messageId}`, title: 'praxis@example.org', kind: 'private', subject: 'Termin am Dienstag', userId: 'mail:praxis@example.org' });
+    expect(t.of('user.upsert').at(-1)!.user).toMatchObject({ externalId: 'mail:praxis@example.org', isContact: true });
+    expect(t.msgs().at(-1)!.msg).toMatchObject({ externalId: messageId, chatId: `thread:${messageId}`, outgoing: true, text: 'Kann ich den Termin verschieben?' });
+    await t.conn.stop();
+  });
+
   it("a send the server refuses fails with its code; a report that a sent mail came back is told as that, matched by Message-ID", async () => {
     const t = setup();
     t.server.deliver('INBOX', await compose({ from: ANNA, to: ME, subject: 'Frage', messageId: '<f1@example.org>', text: 'Und?', date: new Date(NOW - DAY) }), { at: NOW - DAY });

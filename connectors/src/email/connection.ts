@@ -154,6 +154,8 @@ const T = {
 
 const lower = (a: string) => a.trim().toLowerCase();
 const userId = (address: string) => `mail:${lower(address)}`;
+/** One address, as a new mail's recipient: nothing that could add another or a header. */
+const ADDRESS = /^[^\s@<>,;:"()[\]\\]+@[^\s@<>,;:"()[\]\\]+\.[^\s@<>,;:"()[\]\\]+$/;
 /** An error's code for the log: a short word, never its message (a server's answer can carry the login name). */
 const codeOf = (e: unknown) => String((e as { code?: unknown }).code ?? (e as Error).name ?? 'error').replace(/[^\w.-]/g, '').slice(0, 30);
 const addressOf = (a: EnvelopeAddress | undefined): Address | null => (a?.address ? { address: lower(a.address), name: (a.name ?? '').trim() } : null);
@@ -631,25 +633,30 @@ export class EmailConnection {
 
   // —— Sending ——————————————————————————————————————————————————————————————————————————————————————————————————————
 
-  /** A reply in its thread; "sent" at the server's 250, then its copy in the Sent folder. */
-  async send(requestId: string, chatId: string, text: string, subject?: string) {
+  /**
+   * A reply in its thread, or a new mail to an address (`to`, K6: one of the person's contacts; its thread is made by
+   * the mail itself); "sent" at the server's 250, then its copy in the Sent folder.
+   */
+  async send(requestId: string, chatId: string, text: string, subject?: string, address?: string) {
     const id = this.o.id;
+    const fresh = !chatId && address !== undefined;
+    if (fresh && !(ADDRESS.test(address) && subject)) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: 'no_recipient' });
     // Started just now: the threads are read first (they say who a reply goes to).
-    await Promise.race([this.synced, new Promise((r) => this.later(this.o.syncWaitMs ?? 30_000, () => r(null)))]);
-    const t = this.threads.get(chatId.replace(/^thread:/, ''));
-    if (!t || !t.replyAll.length) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: t || this.open ? 'no_recipient' : 'offline' });
+    if (!fresh) await Promise.race([this.synced, new Promise((r) => this.later(this.o.syncWaitMs ?? 30_000, () => r(null)))]);
+    const t = fresh ? null : this.threads.get(chatId.replace(/^thread:/, ''));
+    if (!fresh && (!t || !t.replyAll.length)) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: t || this.open ? 'no_recipient' : 'offline' });
     const messageId = `${randomUUID()}@${this.self.split('@')[1] ?? 'ucap.invalid'}`;
-    const to = t.replyAll;
+    const to = t ? t.replyAll : [address!.toLowerCase()];
     let raw: Buffer;
     try {
       raw = await this.o.compose({
         from: this.self,
         to: to.join(', '),
-        subject: subject || (t.topic ? `Re: ${t.topic}` : ''),
+        subject: subject || (t?.topic ? `Re: ${t.topic}` : ''),
         text,
         messageId: `<${messageId}>`,
         date: new Date(this.now() * 1000),
-        ...(t.last ? { inReplyTo: `<${t.last.id}>`, references: t.ids.slice(-20).map((x) => `<${x}>`).join(' ') } : {}),
+        ...(t?.last ? { inReplyTo: `<${t.last.id}>`, references: t.ids.slice(-20).map((x) => `<${x}>`).join(' ') } : {}),
       });
     } catch {
       return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: 'compose' });

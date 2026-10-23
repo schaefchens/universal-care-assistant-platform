@@ -201,12 +201,30 @@ export async function smsPhone(name: string, words: readonly string[], origin = 
       ]);
       return externalId;
     },
-    /** What waits for this phone to send: taken once, handed to the network (pending), then its sent report. */
+    /**
+     * What waits for this phone to send: taken once, handed to the network (pending), then its sent report. A new SMS
+     * to a number (K6) makes its thread, which comes with the sent report, as the native code reports it.
+     */
     async sendWaiting(outcome: 'sent' | 'failed' = 'sent'): Promise<DeviceSend[]> {
       const { sends } = await signed<{ sends: DeviceSend[] }>('POST', '/api/v1/messaging/device/outbound', {});
       for (const s of sends) {
         await forward([{ t: 'send.result', requestId: s.id, state: 'pending_service' }]);
-        await forward([outcome === 'sent' ? { t: 'send.result', requestId: s.id, state: 'sent', externalId: String(++nextId) } : { t: 'send.result', requestId: s.id, state: 'failed', error: 'network' }]);
+        if (outcome === 'failed') {
+          await forward([{ t: 'send.result', requestId: s.id, state: 'failed', error: 'network' }]);
+          continue;
+        }
+        const externalId = String(++nextId);
+        const made: DeviceEvent[] = [];
+        if (s.to) {
+          const thread = threads.get(s.to) ?? String(threads.size + 1);
+          threads.set(s.to, thread);
+          made.push(
+            { t: 'user.upsert', user: { externalId: s.to, name: s.to, isContact: false, isBot: false } },
+            { t: 'chat.upsert', chat: { externalId: thread, title: s.to, kind: 'private', userId: s.to, muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } },
+            { t: 'msg.upsert', msg: { chatId: thread, externalId, fromId: null, outgoing: true, date: Math.floor(Date.now() / 1000), editDate: null, kind: 'text', text: s.text, file: null, fileName: null } },
+          );
+        }
+        await forward([{ t: 'send.result', requestId: s.id, state: 'sent', externalId }, ...made]);
       }
       return sends;
     },

@@ -14,7 +14,7 @@ import { useUi } from '../ui.tsx';
 
 interface Capabilities {
   history: 'since' | 'previews';
-  send: 'any' | 'conversations' | 'replies' | 'none';
+  send: 'any' | 'contacts' | 'conversations' | 'replies' | 'none';
   sent: 'service' | 'server' | 'network' | 'app';
 }
 interface Connection {

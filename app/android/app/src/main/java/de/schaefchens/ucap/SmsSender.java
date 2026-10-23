@@ -14,8 +14,8 @@ import org.json.JSONObject;
 
 /**
  * Sending SMS as the SMS app (docs/plan-m3.md, K4): the replies the person confirmed on any of their devices, taken
- * from the server (signed: what waits for this phone), and SMS the phone itself is asked to send (a quick reply to a
- * call). In the SMS process.
+ * from the server (signed: what waits for this phone), new SMS to a number of one of the person's contacts (K6), and
+ * SMS the phone itself is asked to send (a quick reply to a call). In the SMS process.
  * - Written to Android's store as outgoing first, then handed to the network: "pending" for the server.
  * - "Sent" at the network's report on every part (a long SMS goes in parts); "failed" with the network's code. The
  *   delivery report, where the network sends one, is kept too (SmsReportReceiver).
@@ -41,7 +41,10 @@ final class SmsSender {
         for (int i = 0; i < sends.length(); i++) {
             JSONObject s = sends.optJSONObject(i);
             if (s == null) continue;
-            send(ctx, s.optString("id"), s.optString("chatId"), s.optString("text"));
+            String to = s.optString("to");
+            // A new SMS (K6): no thread yet; Android finds or makes the one for its number.
+            if (s.optString("chatId").isEmpty() && !to.isEmpty()) sendNew(ctx, s.optString("id"), to, s.optString("text"));
+            else send(ctx, s.optString("id"), s.optString("chatId"), s.optString("text"));
         }
         return true;
     }
@@ -62,6 +65,15 @@ final class SmsSender {
             return;
         }
         sendTo(ctx, requestId, to.get(0), text, thread);
+    }
+
+    /** A new SMS to a number the server took from the person's contacts: one number (E.164) or a short number. */
+    static void sendNew(Context ctx, String requestId, String to, String text) {
+        if (!to.matches("^(\\+[0-9]{6,15}|[1-9][0-9]{2,5})$") || text == null || text.isEmpty()) {
+            SmsDb.get(ctx).queue(new JSONArray().put(SmsEvents.result(requestId, "failed", null, "no_recipient")));
+            return;
+        }
+        sendTo(ctx, requestId, to, text, 0);
     }
 
     /** An SMS to a number, its thread found or made by Android; `requestId` null when the server did not ask for it. */

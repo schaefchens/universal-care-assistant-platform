@@ -924,6 +924,9 @@ The plan: [plan-m3.md](plan-m3.md).
    the model, read back in C1)". A new mail needs an address, which by voice is hard to say and to check; with K6 it
    comes from a contact. Until then UCAP replies in the threads there are, and email's capabilities say so ("antwortet
    in den Unterhaltungen, die es gibt"); they said "any address" until the emulator check showed it.
+   - **Built with K6:** a new email goes to the address of one of the person's contacts, with a subject the model
+     proposes and C1 reads back ("E-Mail an Physiotherapie, Betreff „Termin am Freitag“: …"). The capabilities say
+     "antwortet in den Unterhaltungen, die es gibt, und schreibt an deine Kontakte".
 8. **A mail UCAP sends carries the person's address alone as its sender**, no name: UCAP has no setting for how a
    person signs their mail, and their display name in UCAP is what helpers see. The other choice: the display name.
 9. **A mail that comes back is told once, on the device it was confirmed on**, as a new template: C13, "Die E-Mail an
@@ -938,9 +941,24 @@ The plan: [plan-m3.md](plan-m3.md).
     number, which by voice is hard to say and check; with K6 it comes from a contact. Another app's "write an SMS"
     (`smsto:`) opens UCAP with the number. A reply into a group thread fails with its reason ("in eine Gruppen-SMS kann
     UCAP noch nicht antworten"), as plan-m3.md says for group MMS.
+    - **Built with K6:** a new SMS goes to the number of one of the person's contacts, from any of their devices: the
+      phone takes it with the number, and Android finds or makes its thread. C1: "SMS an Physiotherapie (Handy): …".
 11. **UCAP's notification for a new SMS says who wrote, never what**: "Neue SMS von Anna Beispiel", private on the lock
     screen, gone once the SMS was heard. UCAP announces messages the same way. The other choice: the text in the
     notification, as most SMS apps show it.
+
+12. **A new message goes by SMS or email; on WhatsApp and Telegram UCAP replies in the conversations there are.**
+    plan-m3.md, Principles: "whom it can send to: anyone, or only into conversations that wrote"; K6: "recipients
+    across services".
+    - WhatsApp restricts an account that starts conversations (its 463, docs/spikes/m3.md, A), the more so from an
+      unofficial client: UCAP never starts one there.
+    - On Telegram a contact's id comes from a conversation; writing to a number would add it to the person's Telegram
+      contacts first.
+    - The other choice: new conversations on WhatsApp (to a number) and Telegram (to a known id) too.
+13. **A new message keeps no draft**, and is never said to: "Nicht gesendet: {reason}.", "Nicht gesendet.", "Keine
+    Antwort, deshalb habe ich nichts gesendet." Appendix F's C4, C7 and C8 end with "Der Entwurf ist gespeichert.",
+    which is kept for replies; a new message has no conversation to keep its draft in. The other choice: a draft per
+    contact and service, offered when the person writes to them again.
 
 ### Decided (within the plan)
 
@@ -1119,6 +1137,14 @@ The plan: [plan-m3.md](plan-m3.md).
   dieselbe Person" keeps that way to reach them with the contact (a Telegram user's id, an address, a number), so they
   are named by it there too; "Nein" is never asked again. Drawn from conversations, so the assistant offers them and a
   helper who keeps the contacts never sees them. A Telegram id is shown as "Telegram" alone.
+- **A new message to a contact** (K6; to confirm 7, 10, 12): someone in the person's contacts with no conversation gets
+  a new SMS to their number or a new email to their address, where they have no conversation on any service, or the
+  person names that service; otherwise it goes to the conversation there is ("goes where they last wrote"). With no
+  conversation and both possible, the service is asked ("Per SMS oder per E-Mail?"). An SMS goes to a mobile number
+  before a landline; several numbers or addresses are named back and asked about ("Handy oder Arbeit?"; plan-m3.md
+  says it for calls: "which number, when she has several"), and C1 names the one taken. The server sends only to a
+  number or address the person keeps with a contact, checked again as it is confirmed. What is said of it (C3–C6)
+  names the contact as C1 did; its conversation comes as the phone or the mail server makes it.
 - **`contacts.manage` comes with K6, `agenda.manage` with K7**, each with what it manages. K6's tests name "the
   permission matrix with both new scopes"; K7's matrix test adds the second.
 
@@ -1291,3 +1317,12 @@ The plan: [plan-m3.md](plan-m3.md).
     it, Telegram and email are asked ("„Anna Beispiel“ auf Telegram: dieselbe Person wie dein Kontakt „Anna“?") and
     taken; her next messages on WhatsApp and Telegram are said as Anna's. Suggestions were not tried on the emulator:
     there they would come from the owner's real WhatsApp.
+- **K6 part 2d (2026-10-23), a new SMS and a new email to a contact:**
+  - The browser walk (7e): "Schreib der Physiotherapie, dass ich zehn Minuten später komme" (Maria saved the practice
+    in 7d): "SMS an Physiotherapie: …", the phone takes it with the number, "Gesendet an Physiotherapie."; Clara saves
+    Bernd with his address alone, the model proposes the subject UCAP asks for, and the mail goes ("Gesendet an Bernd.").
+  - On the emulator, with UCAP the SMS app again: a new SMS to a test contact's number (+1 555-123-0099), queued on the
+    server as a confirmed one is (the voice path is the browser walk's and the tests'), was taken by the phone with the
+    number at its next look; Android made a thread for it (8), the network's report came, the device said "Gesendet an
+    K6 Testkontakt." once, and the server named the new thread by the contact. The test contact was deleted and the
+    role went back to Google Messages; the test SMS stays in Android's store, which UCAP never deletes from.

@@ -11,7 +11,7 @@ import { type Browser, type BrowserContext, expect, type Page, test } from '@pla
 import { fromWords, toWords } from '@ucap/identity';
 import { choose, clocks, heading, home, invitation, listen, mark, ORIGIN, said, setChoice, signUp, spoken, sql, talk, MESSAGING } from './app.ts';
 import { type ChatRequest, type Engines, reply, startEngines } from './engines.ts';
-import { type Phone, phone, smsPhone } from './phone.ts';
+import { type Phone, phone, type SmsPhone, smsPhone } from './phone.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -22,6 +22,8 @@ const contexts: BrowserContext[] = [];
 let maria: Page;
 let clara: Page;
 let tom: Phone;
+/** Clara's phone, UCAP its SMS app (from 7b on). */
+let ph: SmsPhone;
 /** Each account's twelve words, in memory only: the recovery on a new device, and the phrase canary. */
 const words = new Map<string, string[]>();
 
@@ -370,7 +372,7 @@ test('7b · across services (docs/plan-m3.md, K1): WhatsApp linked and UCAP the 
   await home(clara);
   // Clara's phone joins her account with her words; UCAP is its SMS app.
   let from = await mark(clara);
-  const ph = await smsPhone('Clara', words.get('Clara')!);
+  ph = await smsPhone('Clara', words.get('Clara')!);
   await said(clara, /^Mit deinen Wiederherstellungswörtern wurde ein neues Gerät hinzugefügt: Telefon von Clara\.$/, from);
   // WhatsApp, on its own page (K2): the risk said first and agreed to, the number, then the pairing code, shown and said
   // character by character, "typed on the phone" (the stand-in's /pair).
@@ -539,7 +541,7 @@ test('7d · contacts (docs/plan-m3.md, K6): Clara lets Maria manage her contacts
   await home(maria);
 });
 
-test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Clara saves Anna’s number; WhatsApp is hers by it, Telegram and email are asked and taken; her messages there are said as Anna’s', async () => {
+test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Clara saves Anna’s number; WhatsApp is hers by it, Telegram and email are asked and taken; her messages there are said as Anna’s; a new SMS and a new email to contacts with no conversation', async () => {
   await home(clara);
   await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await clara.getByRole('button', { name: 'Kontakte', exact: true }).click();
@@ -566,6 +568,33 @@ test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Cla
   from = await mark(clara);
   expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ chat: 'anna', text: 'Und Kuchen?' }) })).ok).toBe(true);
   await said(clara, /^Neue Nachricht von Anna auf Telegram\.$/, from);
+
+  // A new SMS to the practice Maria saved (7d), with no conversation yet: the phone takes it with the number.
+  engines.model = asked(/Physiotherapie/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', text: 'Ich komme zehn Minuten später.' }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Schreib der Physiotherapie, dass ich zehn Minuten später komme');
+  await said(clara, /^SMS an Physiotherapie: „Ich komme zehn Minuten später\.“\. Senden\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Bestätigt\. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist\.$/, from);
+  expect((await ph.sendWaiting()).map((x) => [x.chatId, x.to, x.text])).toEqual([['', '+49301234567', 'Ich komme zehn Minuten später.']]);
+  await said(clara, /^Gesendet an Physiotherapie\.$/, from);
+  // A new email to Bernd, saved with his address alone: the model proposes the subject UCAP asks for.
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Kontakte', exact: true }).click();
+  await clara.getByRole('button', { name: 'Kontakt hinzufügen' }).click();
+  await clara.getByLabel('Name', { exact: true }).fill('Bernd');
+  await clara.getByLabel('E-Mail-Adresse', { exact: true }).fill('bernd@example.org');
+  await clara.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(clara.getByText(/^E-Mail: bernd@example\.org$/)).toBeVisible();
+  await home(clara);
+  const mail = (subject: string | null) => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Bernd', text: 'Kommst du am Sonntag zum Kaffee?', subject }], help: false });
+  engines.model = asked(/Bernd/, () => mail(null), () => mail('Kaffee am Sonntag'));
+  from = await mark(clara);
+  await talk(clara, engines, 'Schreib Bernd eine E-Mail, ob er am Sonntag zum Kaffee kommt');
+  await said(clara, /^E-Mail an Bernd, Betreff „Kaffee am Sonntag“: „Kommst du am Sonntag zum Kaffee\?“\. Senden\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Gesendet an Bernd\.$/, from);
+  engines.model = () => reply('In Ordnung.');
 });
 
 test('8 · a remote change: Maria moves Messages and switches the device to high contrast; it waits while the person uses it, then is applied, announced with undo; Maria’s page says "angewendet"', async () => {
