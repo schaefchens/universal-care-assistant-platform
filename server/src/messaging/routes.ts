@@ -185,6 +185,19 @@ export function registerMessagingRoutes(
     },
   );
 
+  // —— Suggestions for the person's contacts (K6): their own only, drawn from their conversations ——
+  const Suggestion = Type.Object({ connectionId: Type.String({ format: 'uuid' }), externalId: Type.String({ maxLength: 200 }), contactId: Type.String({ format: 'uuid' }) }, { additionalProperties: false });
+  app.get('/api/v1/messaging/contact-suggestions', { preHandler: requireAuth, schema: { querystring: LangQuery } }, async (req) =>
+    m.contactSuggestions(auth(req).userId, (req.query as { lang?: 'de' | 'en' }).lang),
+  );
+  app.post('/api/v1/messaging/contact-suggestions/accept', { preHandler: requireAuth, schema: { body: Suggestion } }, async (req) =>
+    m.acceptSuggestion(auth(req).userId, req.body as { connectionId: string; externalId: string; contactId: string }),
+  );
+  app.post('/api/v1/messaging/contact-suggestions/dismiss', { preHandler: requireAuth, schema: { body: Suggestion } }, async (req, reply) => {
+    await m.dismissSuggestion(auth(req).userId, req.body as { connectionId: string; externalId: string; contactId: string });
+    return reply.code(204).send();
+  });
+
   // —— Sending ——
   app.get('/api/v1/messaging/outbound/:id', { preHandler: requireAuth, schema: { params: Id, querystring: LangQuery } }, async (req) => {
     const r = await m.outbound(auth(req).userId, (req.params as { id: string }).id, (req.query as { lang?: 'de' | 'en' }).lang);

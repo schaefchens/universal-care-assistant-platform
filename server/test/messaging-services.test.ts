@@ -519,6 +519,41 @@ describe('messaging across services', () => {
     expect(await ask('Praxis Dr. Klein', 'Danke.')).toMatch(/^Achtung: Praxis Dr\. Klein ist nicht in deinen Kontakten\. /);
   });
 
+  it('suggests, never merges by name alone (K6): Telegram\'s „Mama" fits the contact „Mama Beispiel"; yes keeps her Telegram id with it, and her chat is named by it; no is never asked again', async () => {
+    const contacts = (method: 'POST' | 'DELETE' | 'GET', path: string, body?: unknown) =>
+      core.app.inject({ method, url: `/api/v1/people/${anna.userId}/contacts${path}`, payload: body as Record<string, unknown>, headers: { authorization: `Bearer ${anna.token}` } });
+    type Suggestion = { connectionId: string; externalId: string; name: string; where: string; contactId: string; contactName: string };
+    const suggestions = async () => ((await as(anna, 'GET', '/api/v1/messaging/contact-suggestions?lang=de')).json() as { suggestions: Suggestion[] }).suggestions;
+    // Clara on Telegram, as the connector tells every user it sees.
+    tg.emit({ t: 'user.upsert', id: telegramId, user: { externalId: 'user:42', name: 'Clara Beispiel', isContact: true, isBot: false } });
+    await until(async () => (await sql`select 1 from messaging_participants where external_id = 'user:42'`.execute(db)).rows.length > 0, 'told');
+    const mama = ((await contacts('POST', '', { name: 'Mama Beispiel', handles: [{ kind: 'phone', value: '+4917012345' }] })).json() as { id: string }).id;
+    const clara = ((await contacts('POST', '', { name: 'Clara', handles: [] })).json() as { id: string }).id;
+    // By her number her SMS is the contact already; on Telegram she has none, so only her name fits: asked.
+    const s = await suggestions();
+    expect(s.map((x) => [x.name, x.where, x.contactName])).toEqual(
+      expect.arrayContaining([
+        ['Mama', 'auf Telegram', 'Mama Beispiel'],
+        ['Clara Beispiel', 'auf Telegram', 'Clara'],
+      ]),
+    );
+    expect(s.some((x) => x.where === 'per SMS')).toBe(false);
+    // Yes: her Telegram id is kept with the contact, and her Telegram messages are named by it.
+    const yes = s.find((x) => x.name === 'Mama')!;
+    const accepted = (await as(anna, 'POST', '/api/v1/messaging/contact-suggestions/accept', { connectionId: yes.connectionId, externalId: yes.externalId, contactId: yes.contactId })).json() as {
+      contact: { handles: { kind: string; value: string }[] };
+    };
+    expect(accepted.contact.handles).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'telegram', value: '55' })]));
+    const id = (await sql<{ id: string }>`select id from messaging_messages where text = 'Alles Gute!'`.execute(db)).rows[0]!.id;
+    expect(((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { say: { frame: string } }).say.frame).toMatch(/^Mama Beispiel schrieb .+ auf Telegram:$/);
+    // No: never asked about that contact again.
+    const no = (await suggestions()).find((x) => x.name === 'Clara Beispiel')!;
+    expect((await as(anna, 'POST', '/api/v1/messaging/contact-suggestions/dismiss', { connectionId: no.connectionId, externalId: no.externalId, contactId: no.contactId })).statusCode).toBe(204);
+    expect((await suggestions()).map((x) => x.name)).not.toContain('Clara Beispiel');
+    expect((await suggestions()).map((x) => x.name)).not.toContain('Mama');
+    for (const c of [mama, clara]) await contacts('DELETE', `/${c}`);
+  });
+
   it('says what each connection can do, as data for the model', async () => {
     let round = 0;
     script = () => (++round === 1 ? { say: [], calls: [{ tool: 'messages.connections' }], help: false } : { say: [{ kind: 'reply', text: 'WhatsApp ist noch nicht verbunden.', ref: null }], calls: [], help: false });

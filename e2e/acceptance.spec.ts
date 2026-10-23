@@ -539,6 +539,35 @@ test('7d · contacts (docs/plan-m3.md, K6): Clara lets Maria manage her contacts
   await home(maria);
 });
 
+test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Clara saves Anna’s number; WhatsApp is hers by it, Telegram and email are asked and taken; her messages there are said as Anna’s', async () => {
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Kontakte', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Kontakte');
+  await clara.getByRole('button', { name: 'Kontakt hinzufügen' }).click();
+  await clara.getByLabel('Name', { exact: true }).fill('Anna');
+  await clara.getByLabel('Telefonnummer', { exact: true }).fill('0151 12345678');
+  await clara.getByRole('button', { name: 'Speichern', exact: true }).click();
+  // Her number is hers on WhatsApp and by SMS; on Telegram and by email only her name fits: asked, never merged by it.
+  const ask = (where: string) => clara.getByText(`„Anna Beispiel“ ${where}: dieselbe Person wie dein Kontakt „Anna“?`);
+  for (const where of ['auf Telegram', 'per E-Mail']) {
+    await expect(ask(where)).toBeVisible();
+    const item = clara.locator('li.device').filter({ has: ask(where) });
+    const from = await mark(clara);
+    await item.getByRole('button', { name: 'Ja, dieselbe Person' }).click();
+    await said(clara, new RegExp(`^„Anna Beispiel“ ${where} gehört jetzt zum Kontakt „Anna“\\.$`), from);
+  }
+  await expect(clara.getByText(/^E-Mail: anna@example\.org$/)).toBeVisible();
+  await home(clara);
+  // From now on she is Anna on each of them.
+  let from = await mark(clara);
+  expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ service: 'whatsapp', chat: 'anna', text: 'Bis Samstag!' }) })).ok).toBe(true);
+  await said(clara, /^Neue Nachricht von Anna auf WhatsApp\.$/, from);
+  from = await mark(clara);
+  expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ chat: 'anna', text: 'Und Kuchen?' }) })).ok).toBe(true);
+  await said(clara, /^Neue Nachricht von Anna auf Telegram\.$/, from);
+});
+
 test('8 · a remote change: Maria moves Messages and switches the device to high contrast; it waits while the person uses it, then is applied, announced with undo; Maria’s page says "angewendet"', async () => {
   await home(clara);
   await home(maria);

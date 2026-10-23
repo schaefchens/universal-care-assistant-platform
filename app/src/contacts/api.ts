@@ -30,6 +30,24 @@ export interface ContactFields {
   handles: { kind: HandleKind; value: string; label?: string | null }[];
 }
 
+/** Someone the person writes with whose name fits a contact (K6): asked, never merged by name alone. */
+export interface Suggestion {
+  connectionId: string;
+  externalId: string;
+  name: string;
+  /** "auf Telegram", "per SMS". */
+  where: string;
+  contactId: string;
+  contactName: string;
+}
+
+/** The person's own suggestions, drawn from their conversations (the assistant's; never a helper's). */
+export const suggestions = (s: Session, lang: string) => ({
+  list: () => s.call<{ suggestions: Suggestion[] }>(`/api/v1/messaging/contact-suggestions?lang=${lang}`),
+  accept: (x: Suggestion) => s.call<unknown>('/api/v1/messaging/contact-suggestions/accept', { body: { connectionId: x.connectionId, externalId: x.externalId, contactId: x.contactId } }),
+  dismiss: (x: Suggestion) => s.call<void>('/api/v1/messaging/contact-suggestions/dismiss', { body: { connectionId: x.connectionId, externalId: x.externalId, contactId: x.contactId } }),
+});
+
 export const contacts = (s: Session, personId: string) => {
   const base = `/api/v1/people/${personId}/contacts`;
   return {

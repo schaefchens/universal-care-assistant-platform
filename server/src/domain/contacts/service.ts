@@ -56,10 +56,10 @@ interface ContactRow {
   deleted_at: Date | null;
 }
 
-/** A handle as people write it: "+49 30 1234567"; a short number, an address, an id as they are. */
+/** A handle as people write it: "+49 30 1234567"; a short number and an address as they are; a Telegram id is nothing to say. */
 export function displayOf(h: Handle): string {
   if ((h.kind === 'phone' || h.kind === 'whatsapp') && h.value.startsWith('+')) return parsePhoneNumberFromString(h.value)?.formatInternational() ?? h.value;
-  return h.value;
+  return h.kind === 'telegram' ? '' : h.value;
 }
 
 export const MAX_NAME = 80;
@@ -284,6 +284,23 @@ export function createContactService(d: { db: Db; clock: Clock; people: PeopleSe
         await sql`update contacts set name = ${was.name}, deleted_at = null, version = version + 1, updated_by = ${actorId}, updated_at = ${now()} where id = ${id}`.execute(trx);
         await versioned(trx, actorId, personId, id, cur.version + 1, { ...was, deleted: false }, 'restored');
         return { contact: (await view(trx, [await lock(trx, personId, id)]))[0]! };
+      });
+    },
+
+    /** One more way to reach a contact (a suggestion the person said yes to): refused when it is another contact's. */
+    async addHandle(actorId: string, personId: string, id: string, h: HandleInput) {
+      if (!(await allowed(actorId, personId))) throw new AppError('not_found');
+      return d.db.transaction().execute(async (trx) => {
+        const cur = await lock(trx, personId, id);
+        const n = normalHandle(h, await personRegion(trx, personId));
+        const existing = (await handlesOf(trx, [id])).get(id) ?? [];
+        if (existing.some((x) => x.kind === n.kind && x.value === n.value)) return (await view(trx, [cur]))[0]!;
+        if (existing.length >= MAX_HANDLES) throw new AppError('bad_request', { params: { reason: 'handles' } });
+        const all = [...existing, n];
+        await putHandles(trx, personId, id, all);
+        await sql`update contacts set version = version + 1, updated_by = ${actorId}, updated_at = ${now()} where id = ${id}`.execute(trx);
+        await versioned(trx, actorId, personId, id, cur.version + 1, { name: cur.name, handles: all, deleted: false }, 'updated');
+        return (await view(trx, [await lock(trx, personId, id)]))[0]!;
       });
     },
 

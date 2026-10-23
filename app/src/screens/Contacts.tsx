@@ -6,7 +6,7 @@
  */
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Form, Heading, Input, Label, TextField } from 'react-aria-components';
-import { type Contact, type ContactFields, type ContactHandle, contacts } from '../contacts/api.ts';
+import { type Contact, type ContactFields, type ContactHandle, contacts, type Suggestion, suggestions } from '../contacts/api.ts';
 import type { Session } from '../identity/account.ts';
 import { has, PhoneContacts } from '../native/plugins.ts';
 import { ApiError } from '../net/api.ts';
@@ -109,10 +109,11 @@ function Editor(p: { initial: Contact | null; onSave: (f: ContactFields) => Prom
   );
 }
 
-/** One handle as it is said and shown: "Telefon (Praxis): +49 30 1234567". */
+/** One handle as it is said and shown: "Telefon (Praxis): +49 30 1234567"; "Telegram" alone (its id is nothing to say). */
 function handleText(tr: Tr, h: ContactHandle): string {
   const kind = tr(`contacts.kind.${h.kind}`);
-  return `${h.label ? `${kind} (${h.label})` : kind}: ${h.display}`;
+  const named = h.label ? `${kind} (${h.label})` : kind;
+  return h.display ? `${named}: ${h.display}` : named;
 }
 
 export function ContactsPage(p: { session: Session; personId: string; personName: string | null; refresh: number; onClose: () => void }) {
@@ -133,12 +134,15 @@ export function ContactsPage(p: { session: Session; personId: string; personName
     void PhoneContacts.status().then((s) => setPhoneBook(s.all ? 'all' : 'pick'), () => {});
   }, [own]);
 
+  /** The person's own only: drawn from their conversations. Without the assistant there are none, and that is all. */
+  const [offered, setOffered] = useState<Suggestion[]>([]);
   const load = async () => {
     try {
       setList((await api.list()).contacts);
     } catch (e) {
       setStatus(errorText(tr, e));
     }
+    if (own) setOffered(await suggestions(p.session, ui.lang).list().then((r) => r.suggestions, () => []));
   };
   useEffect(() => {
     void load();
@@ -197,6 +201,21 @@ export function ContactsPage(p: { session: Session; personId: string; personName
         tell(done.created || done.merged ? tr('contacts.phone.picked', { name: r.contact.name }) : tr('contacts.phone.none'));
       }
       setLast(null);
+    } catch (e) {
+      tell(errorText(tr, e));
+    }
+    await load();
+  }
+
+  async function answer(x: Suggestion, same: boolean) {
+    try {
+      if (same) {
+        await suggestions(p.session, ui.lang).accept(x);
+        tell(tr('contacts.suggest.merged', { name: x.name, where: x.where, contact: x.contactName }));
+      } else {
+        await suggestions(p.session, ui.lang).dismiss(x);
+        tell(tr('contacts.suggest.dismissed'));
+      }
     } catch (e) {
       tell(errorText(tr, e));
     }
@@ -286,6 +305,26 @@ export function ContactsPage(p: { session: Session; personId: string; personName
               {tr(phoneBook === 'all' ? 'contacts.phone.all' : 'contacts.phone.pick')}
             </Button>
           )}
+        </section>
+      )}
+      {!editing && offered.length > 0 && (
+        <section className="settings-section">
+          <h2>{tr('contacts.suggest.title')}</h2>
+          <ul className="device-list">
+            {offered.map((x) => (
+              <li key={`${x.connectionId}|${x.externalId}|${x.contactId}`} className="device">
+                <p>{tr('contacts.suggest.question', { name: x.name, where: x.where, contact: x.contactName })}</p>
+                <div className="row">
+                  <Button className="button" onPress={() => void answer(x, true)}>
+                    {tr('contacts.suggest.yes')}
+                  </Button>
+                  <Button className="button" onPress={() => void answer(x, false)}>
+                    {tr('contacts.suggest.no')}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </main>

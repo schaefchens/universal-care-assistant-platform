@@ -1113,6 +1113,12 @@ The plan: [plan-m3.md](plan-m3.md).
   with its contact's name. A number or address already saved merges by itself, its contact keeping the person's own
   name and gaining what it lacked; anything else is new. Only the person, on their own phone: a helper never brings
   in someone's address book. One event for the lot, and nothing of it is said on other devices.
+- **Suggestions are the person's own, on their contacts page** (plan-m3.md: "other matches are suggested to the
+  person … never merged by name alone"): someone they write with privately, no contact by number, address or id,
+  whose name fits one (the same, or one of them a first name the other begins with: "Anna Beispiel" and "Anna"). "Ja,
+  dieselbe Person" keeps that way to reach them with the contact (a Telegram user's id, an address, a number), so they
+  are named by it there too; "Nein" is never asked again. Drawn from conversations, so the assistant offers them and a
+  helper who keeps the contacts never sees them. A Telegram id is shown as "Telegram" alone.
 - **`contacts.manage` comes with K6, `agenda.manage` with K7**, each with what it manages. K6's tests name "the
   permission matrix with both new scopes"; K7's matrix test adds the second.
 
@@ -1281,3 +1287,7 @@ The plan: [plan-m3.md](plan-m3.md).
     was). axe found nothing on the page with three contacts.
   - Afterwards the test contacts were deleted in UCAP and in the address book, and the role went back to Google
     Messages.
+  - The browser walk (7e, plan-m3.md's acceptance 9): Clara saves "Anna" with her number; WhatsApp and SMS are hers by
+    it, Telegram and email are asked ("„Anna Beispiel“ auf Telegram: dieselbe Person wie dein Kontakt „Anna“?") and
+    taken; her next messages on WhatsApp and Telegram are said as Anna's. Suggestions were not tried on the emulator:
+    there they would come from the owner's real WhatsApp.

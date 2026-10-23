@@ -32,6 +32,7 @@ import { enqueue } from '../lib/jobs.ts';
 import { emit } from '../lib/outbox.ts';
 import type { Sealer } from '../lib/sealed.ts';
 import { chunks, toPcm } from './audio.ts';
+import type { ContactService, HandleInput } from '../domain/contacts/service.ts';
 import { CAPABILITIES, type Capabilities, HISTORY_DAYS, isServerService, type Service } from './services.ts';
 import { createMessageStore } from './store.ts';
 
@@ -187,6 +188,8 @@ export function createMessaging(d: {
   /** Set once the connector hub is registered. */
   hub?: Hub;
   ffmpeg?: string;
+  /** Core's contacts (K6): a suggestion the person said yes to adds a way to reach one. */
+  contacts?: ContactService;
 }) {
   const store = createMessageStore({ db: d.db, clock: d.clock });
   const now = () => new Date(d.clock());
@@ -1049,6 +1052,53 @@ export function createMessaging(d: {
         where v.id = ${conversationId} and k.id = v.connection_id and k.user_id = ${userId}`.execute(d.db);
     },
 
+    /**
+     * Suggestions for the person (K6; plan-m3.md: "other matches are suggested to the person … never merged by name
+     * alone"): someone they write with privately who is no contact by number, address or id, whose name fits one ("Anna
+     * Beispiel" on Telegram, "Anna" among the contacts). Drawn from conversations, so the person's own only: a helper
+     * who keeps their contacts never sees them.
+     */
+    async contactSuggestions(userId: string, lang?: Lang) {
+      const L = lang ?? (await langOf(userId)).lang;
+      const people = await sql<{ connection_id: string; external_id: string; name: string; service: Service; label: string | null; address: string | null }>`
+        select distinct p.connection_id, p.external_id, p.name, k.service, k.label, p.address
+        from messaging_conversations v join messaging_connections k on k.id = v.connection_id
+        join messaging_people p on p.connection_id = k.id and p.external_id = v.peer_external_id
+        where k.user_id = ${userId} and v.kind = 'private' and p.contact_id is null and not p.is_bot and k.service <> 'notifications'
+          and v.peer_external_id is distinct from k.me_external_id`.execute(d.db);
+      const contacts = await sql<{ id: string; name: string }>`select id, name from contacts where person_id = ${userId} and deleted_at is null`.execute(d.db);
+      const no = await sql<{ connection_id: string; external_id: string; contact_id: string }>`
+        select connection_id, external_id, contact_id from contact_suggestions_dismissed where person_id = ${userId}`.execute(d.db);
+      const said = new Set(no.rows.map((x) => `${x.connection_id}|${x.external_id}|${x.contact_id}`));
+      const out: { connectionId: string; externalId: string; name: string; where: string; contactId: string; contactName: string }[] = [];
+      for (const p of people.rows) {
+        if (!handleOf(p)) continue;
+        for (const c of contacts.rows)
+          if (namesFit(p.name, c.name) && !said.has(`${p.connection_id}|${p.external_id}|${c.id}`))
+            out.push({ connectionId: p.connection_id, externalId: p.external_id, name: p.name, where: via(L, p.service, p.label), contactId: c.id, contactName: c.name });
+      }
+      return { suggestions: out.slice(0, 20) };
+    },
+
+    /** "Ja, dieselbe Person": the way to reach them becomes the contact's (their Telegram id, address or number). */
+    async acceptSuggestion(userId: string, o: { connectionId: string; externalId: string; contactId: string }) {
+      const r = await sql<{ connection_id: string; external_id: string; service: Service; address: string | null }>`
+        select p.connection_id, p.external_id, k.service, p.address from messaging_participants p join messaging_connections k on k.id = p.connection_id
+        where p.connection_id = ${o.connectionId} and p.external_id = ${o.externalId} and k.user_id = ${userId}`.execute(d.db);
+      const h = r.rows[0] && handleOf(r.rows[0]);
+      if (!h || !d.contacts) throw new AppError('not_found');
+      return { contact: await d.contacts.addHandle(userId, userId, o.contactId, h) };
+    },
+
+    /** "Nein": never asked about that contact again. */
+    async dismissSuggestion(userId: string, o: { connectionId: string; externalId: string; contactId: string }) {
+      await sql`
+        insert into contact_suggestions_dismissed (person_id, connection_id, external_id, contact_id, at)
+        select ${userId}, k.id, ${o.externalId}, c.id, ${now()} from messaging_connections k join contacts c on c.id = ${o.contactId}
+        where k.id = ${o.connectionId} and k.user_id = ${userId} and c.person_id = ${userId}
+        on conflict do nothing`.execute(d.db);
+    },
+
     /** What to tell the person about a message they sent (C3–C6), in their words. */
     async outbound(userId: string, id: string, lang?: Lang): Promise<{ state: string; told: Told[]; say: string | null } | null> {
       const r = await sql<{ state: string; told: Told[]; error: string | null; title: string; service: Service; label: string | null }>`
@@ -1152,6 +1202,23 @@ export function fold(s: string): string {
 }
 
 /** How a service is named in a frame: "auf Telegram", "per E-Mail", "per SMS", "auf Signal". */
+/** How a participant can be kept with a contact: a Telegram user's id, else their address (a number, an email address). */
+function handleOf(p: { service: Service; external_id: string; address: string | null }): HandleInput | null {
+  if (p.service === 'telegram') return /^user:\d{1,20}$/.test(p.external_id) ? { kind: 'telegram', value: p.external_id.slice(5) } : null;
+  if (!p.address) return null;
+  return p.address.includes('@') ? { kind: 'email', value: p.address } : { kind: 'phone', value: p.address };
+}
+
+/** Names that may be one person: the same, or one of them a first name the other begins with ("Anna", "Anna Beispiel"). */
+export function namesFit(a: string, b: string): boolean {
+  const words = (s: string) => fold(s).split(' ').filter(Boolean);
+  const x = words(a);
+  const y = words(b);
+  if (!x.length || !y.length) return false;
+  if (x.join(' ') === y.join(' ')) return true;
+  return (x.length === 1 && x[0] === y[0]) || (y.length === 1 && y[0] === x[0]);
+}
+
 export function via(lang: Lang, service: Service, label: string | null): string {
   if (service === 'email') return t(lang, 'messages.via.email');
   if (service === 'sms') return t(lang, 'messages.via.sms');

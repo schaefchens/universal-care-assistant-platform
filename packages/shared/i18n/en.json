@@ -1336,5 +1336,11 @@
   "contacts.phone.pick": "Choose a contact from the phone",
   "contacts.phone.done": "From the phone: {created, plural, one {one new contact} other {# new contacts}}, {merged, plural, one {one completed} other {# completed}}.",
   "contacts.phone.none": "Nothing new came from the phone.",
-  "contacts.phone.picked": "Contact “{name}” taken from the phone."
+  "contacts.phone.picked": "Contact “{name}” taken from the phone.",
+  "contacts.suggest.title": "Suggestions",
+  "contacts.suggest.question": "“{name}” {where}: the same person as your contact “{contact}”?",
+  "contacts.suggest.yes": "Yes, the same person",
+  "contacts.suggest.no": "No, someone else",
+  "contacts.suggest.merged": "“{name}” {where} now belongs to the contact “{contact}”.",
+  "contacts.suggest.dismissed": "Fine, I won't ask about it again."
 }

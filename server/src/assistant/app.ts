@@ -29,6 +29,7 @@ import { createSealer } from '../lib/sealed.ts';
 import { deriveKey, type Secrets } from '../lib/secrets.ts';
 import { registerConnectorHub } from '../messaging/hub.ts';
 import { registerMessagingRoutes } from '../messaging/routes.ts';
+import { createContactService } from '../domain/contacts/service.ts';
 import { createMessaging } from '../messaging/service.ts';
 import { createActions } from './actions.ts';
 import { createAssistant } from './loop.ts';
@@ -113,7 +114,8 @@ export async function buildAssistant(o: {
   const actions = createActions({ db: o.db, clock: o.clock, log });
   // The person's messaging (S10, docs/plan-m3.md): a connectors process per service dials in; without their token there
   // is no messaging.
-  const messaging = createMessaging({ db: o.db, clock: o.clock, sealer, files, filesDir: o.config.filesDir, stt, log, ffmpeg: o.ffmpeg });
+  const contacts = createContactService({ db: o.db, clock: o.clock, people });
+  const messaging = createMessaging({ db: o.db, clock: o.clock, sealer, files, filesDir: o.config.filesDir, stt, log, ffmpeg: o.ffmpeg, contacts });
   if (o.secrets.connectorsToken)
     messaging.attach(
       await registerConnectorHub(app, {

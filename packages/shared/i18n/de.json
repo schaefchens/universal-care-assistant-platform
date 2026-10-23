@@ -1575,5 +1575,12 @@
   "contacts.phone.pick": "Einen Kontakt vom Telefon wählen",
   "contacts.phone.done": "Vom Telefon übernommen: {created, plural, one {ein neuer Kontakt} other {# neue Kontakte}}, {merged, plural, one {einer ergänzt} other {# ergänzt}}.",
   "contacts.phone.none": "Vom Telefon kam nichts Neues.",
-  "contacts.phone.picked": "Kontakt „{name}“ vom Telefon übernommen."
+  "contacts.phone.picked": "Kontakt „{name}“ vom Telefon übernommen.",
+  "contacts.suggest.title": "Vorschläge",
+  "contacts.suggest.question": "„{name}“ {where}: dieselbe Person wie dein Kontakt „{contact}“?",
+  "contacts.suggest.question@Sie": "„{name}“ {where}: dieselbe Person wie Ihr Kontakt „{contact}“?",
+  "contacts.suggest.yes": "Ja, dieselbe Person",
+  "contacts.suggest.no": "Nein, jemand anderes",
+  "contacts.suggest.merged": "„{name}“ {where} gehört jetzt zum Kontakt „{contact}“.",
+  "contacts.suggest.dismissed": "Gut, danach frage ich nicht mehr."
 }
