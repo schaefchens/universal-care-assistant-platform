@@ -3,7 +3,7 @@
  * The sentences use the helper's name, never a pronoun (nobody's pronouns are guessed), and always say what the
  * helper may not do: read messages or notes (CONCEPT §3: personal communication stays apart from care).
  */
-import { ALWAYS_NAMED_DENIED, M1_SCOPES, type Scope } from '@ucap/shared';
+import { ALWAYS_NAMED_DENIED, SCOPES, type Scope } from '@ucap/shared';
 
 type Tr = (key: string, params?: Record<string, string | number | Date>) => string;
 
@@ -11,7 +11,7 @@ const list = (lang: string, items: string[], type: 'conjunction' | 'disjunction'
 
 /** "{name} darf: … {name} darf nicht: …" for the person who is asked or who listens to the overview. */
 export function scopeSentences(o: { name: string; scopes: readonly Scope[]; lang: string; tr: Tr }): string {
-  const allowed = M1_SCOPES.filter((s) => o.scopes.includes(s)).map((s) => o.tr(`scope.${s}.self`));
+  const allowed = SCOPES.filter((s) => o.scopes.includes(s)).map((s) => o.tr(`scope.${s}.self`));
   // What matters most and is easy to follow by ear: messages and notes (docs/plan.md: "sie darf nicht: deine
   // Nachrichten lesen"). Every other permission not given is simply not named.
   const denied = ALWAYS_NAMED_DENIED.map((s) => o.tr(`scope.${s}.self`));
@@ -30,7 +30,7 @@ export function overviewSummary(o: { helpers: { name: string; scopes: readonly S
   const parts: string[] = [];
   if (o.helpers.length === 0) parts.push(o.tr('people.overview.none'));
   for (const h of o.helpers) {
-    const allowed = M1_SCOPES.filter((s) => h.scopes.includes(s)).map((s) => o.tr(`scope.${s}.self`));
+    const allowed = SCOPES.filter((s) => h.scopes.includes(s)).map((s) => o.tr(`scope.${s}.self`));
     parts.push(o.tr('people.may', { name: h.name, list: list(o.lang, allowed, 'conjunction') }));
   }
   for (const name of o.pending) parts.push(o.tr('people.overview.pending', { name }));

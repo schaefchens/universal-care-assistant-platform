@@ -23,4 +23,16 @@ describe('what a helper may do, said the same way every time', () => {
     );
     expect(overviewSummary({ helpers: [], pending: [], lang: 'de', tr: tr('de') })).toBe('Noch hilft dir niemand. Niemand darf deine Nachrichten lesen oder deine Notizen lesen.');
   });
+
+  it('names "Kontakte verwalten" (K6) among what a helper may do, and still that nobody reads messages', () => {
+    expect(approvalSummary({ name: 'Maria', scopes: ['contacts.manage', 'care.respond'], lang: 'de', tr: tr('de') })).toBe(
+      'Maria möchte dir helfen. Maria darf auf deine Hilferufe antworten und deine Kontakte anlegen und ändern. Maria darf nicht deine Nachrichten lesen oder deine Notizen lesen.',
+    );
+    expect(approvalSummary({ name: 'Maria', scopes: ['contacts.manage'], lang: 'de', tr: tr('de', 'Sie') })).toBe(
+      'Maria möchte Ihnen helfen. Maria darf Ihre Kontakte anlegen und ändern. Maria darf nicht Ihre Nachrichten lesen oder Ihre Notizen lesen.',
+    );
+    expect(overviewSummary({ helpers: [{ name: 'Maria', scopes: ['contacts.manage'] }], pending: [], lang: 'en', tr: tr('en') })).toBe(
+      'Maria may create and change your contacts. Nobody may read your messages or read your notes.',
+    );
+  });
 });

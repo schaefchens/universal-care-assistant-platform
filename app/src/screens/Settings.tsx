@@ -56,6 +56,7 @@ export function Settings(p: {
   onDevices: () => void;
   onPeople: () => void;
   onReminders: () => void;
+  onContacts: () => void;
   onVoices: () => void;
   /** The person's own messaging services (docs/plan-m3.md): Telegram, and more to come. */
   onMessaging: () => void;
@@ -117,6 +118,9 @@ export function Settings(p: {
         </Button>
         <Button className="button" onPress={p.onReminders}>
           {tr('reminder.page.own')}
+        </Button>
+        <Button className="button" onPress={p.onContacts}>
+          {tr('contacts.page.own')}
         </Button>
         <Button className="button" onPress={p.onDevices}>
           {tr('settings.devices')}

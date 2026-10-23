@@ -17,6 +17,7 @@ import { createPeopleService } from '../domain/people/service.ts';
 import { createHeartbeats, type Soak } from '../domain/care/heartbeat.ts';
 import { createPush } from '../domain/care/push.ts';
 import { createCareService } from '../domain/care/service.ts';
+import { createContactService } from '../domain/contacts/service.ts';
 import { createReminderService } from '../domain/reminders/service.ts';
 import { createSealer } from '../lib/sealed.ts';
 import { pruneLimits } from '../lib/rate-limit.ts';
@@ -27,6 +28,7 @@ import { registerIdentityRoutes } from './routes/identity.ts';
 import { registerPeopleRoutes } from './routes/people.ts';
 import { registerCareRoutes } from './routes/care.ts';
 import { registerNoteRoutes } from './routes/notes.ts';
+import { registerContactRoutes } from './routes/contacts.ts';
 import { registerReminderRoutes } from './routes/reminders.ts';
 import { registerConfigRoutes } from './routes/configs.ts';
 import { registerAdminRoutes } from './routes/admin.ts';
@@ -83,6 +85,7 @@ export async function buildCore(o: {
   });
   const heartbeats = createHeartbeats({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, nonceFor: care.nonceFor });
   const reminders = createReminderService({ db: o.db, clock: o.clock, pepper: o.secrets.pepper, people, nonceFor: care.nonceFor, wake: () => jobsRef?.wake() });
+  const contacts = createContactService({ db: o.db, clock: o.clock, people });
   care.setHeartbeatHook((exec, deviceId) => heartbeats.answered(exec, deviceId));
   const hub = await registerRealtime(app, {
     db: o.db,
@@ -141,6 +144,7 @@ export async function buildCore(o: {
   registerPeopleRoutes(app, { people });
   registerCareRoutes(app, { db: o.db, clock: o.clock, pepper: o.secrets.pepper, care, people, push, heartbeats, reminders, requireSigned, log });
   registerReminderRoutes(app, { reminders, requireSigned });
+  registerContactRoutes(app, { contacts });
   const notes = createNotes({ db: o.db, clock: o.clock });
   registerNoteRoutes(app, { notes });
   const configs = createConfigs({ db: o.db, clock: o.clock, people });

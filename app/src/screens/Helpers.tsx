@@ -6,7 +6,7 @@
  * - as a helper: accept an invitation, see the people one helps and what one may do for them, end a connection;
  * - the history of changes to this account (the audit log, without content).
  */
-import { DEFAULT_HELPER_SCOPES, hasMessage, M1_SCOPES, type Scope } from '@ucap/shared';
+import { DEFAULT_HELPER_SCOPES, hasMessage, SCOPES, type Scope } from '@ucap/shared';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
@@ -31,7 +31,7 @@ function ScopeChoice(p: { label: string; value: Scope[]; onChange: (s: Scope[]) 
   return (
     <CheckboxGroup className="choice" value={p.value} onChange={(v) => p.onChange(v as Scope[])}>
       <Label className="choice-label">{p.label}</Label>
-      {M1_SCOPES.map((s) => (
+      {SCOPES.map((s) => (
         <Checkbox key={s} value={s} className="choice-option checkbox">
           {scopeLabel(s, tr)}
         </Checkbox>
@@ -71,6 +71,7 @@ export function Helpers(p: {
   onReminders?: (person: { id: string; displayName: string }, canManage: boolean, canRead: boolean) => void;
   /** Setting up the person's device (device.configure, S11). */
   onConfigure?: (person: { id: string; displayName: string }) => void;
+  onContacts?: (person: { id: string; displayName: string }) => void;
 }) {
   const ui = useUi();
   const { tr, say } = ui;
@@ -179,8 +180,10 @@ export function Helpers(p: {
   /** One sentence per entry; one's own actions have their own sentence ("Du hast …", not "Du hat …"). */
   const historyText = (e: AuditEvent) => {
     const key = `audit.${e.action}`;
-    if (e.actor?.self && hasMessage(ui.lang, `${key}.self`)) return tr(`${key}.self`);
-    return hasMessage(ui.lang, key) ? tr(key, { actor: e.actor?.displayName ?? '' }) : e.action;
+    // What the entry names, as the server read it from the person's own data (a contact's name: never in the log).
+    const named: Record<string, string> = typeof e.detail.name === 'string' ? { name: e.detail.name } : {};
+    if (e.actor?.self && hasMessage(ui.lang, `${key}.self`)) return tr(`${key}.self`, named);
+    return hasMessage(ui.lang, key) ? tr(key, { actor: e.actor?.displayName ?? '', ...named }) : e.action;
   };
 
   return (
@@ -337,6 +340,11 @@ export function Helpers(p: {
                   {r.state === 'active' && r.scopes.includes('device.configure') && (
                     <Button className="button" onPress={() => p.onConfigure?.(r.person)}>
                       {tr('config.editor.open')}
+                    </Button>
+                  )}
+                  {r.state === 'active' && r.scopes.includes('contacts.manage') && (
+                    <Button className="button" onPress={() => p.onContacts?.(r.person)}>
+                      {tr('contacts.page.of', { name: r.person.displayName })}
                     </Button>
                   )}
                   {r.state === 'active' && (r.scopes.includes('reminders.manage') || r.scopes.includes('reminders.responses.read')) && (

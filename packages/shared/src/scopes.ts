@@ -5,15 +5,19 @@
  * notes, and the access overview always says so.
  */
 export const M1_SCOPES = ['care.respond', 'care.configure', 'reminders.manage', 'reminders.responses.read', 'device.configure'] as const;
-export type Scope = (typeof M1_SCOPES)[number];
+/** M3 (docs/plan-m3.md): "Kontakte verwalten", the saved contacts and never anything of messages (K6). */
+export const M3_SCOPES = ['contacts.manage'] as const;
+/** Every scope a person can grant, in the order they are named. */
+export const SCOPES = [...M1_SCOPES, ...M3_SCOPES] as const;
+export type Scope = (typeof SCOPES)[number];
 
-/** Built into the data model, not grantable in M1. */
+/** Built into the data model, not grantable. */
 export const RESERVED_SCOPES = ['access.manage', 'messaging.read', 'notes.read', 'recovery.trustee'] as const;
 
 /** Named in every summary as what a helper may not do, unless granted (not possible in M1). */
 export const ALWAYS_NAMED_DENIED = ['messaging.read', 'notes.read'] as const;
 
-export const isScope = (s: unknown): s is Scope => typeof s === 'string' && (M1_SCOPES as readonly string[]).includes(s);
+export const isScope = (s: unknown): s is Scope => typeof s === 'string' && (SCOPES as readonly string[]).includes(s);
 
 /** What a helper invitation proposes unless the person chooses otherwise. */
 export const DEFAULT_HELPER_SCOPES: Scope[] = ['care.respond'];

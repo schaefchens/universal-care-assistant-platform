@@ -12,7 +12,7 @@
  * - `can(actor, scope, person)`: the person always, a helper only through an active grant. Admin rights grant
  *   nothing here (CONCEPT §7).
  */
-import { isScope, M1_SCOPES, type Scope, uuidv7 } from '@ucap/shared';
+import { isScope, SCOPES, type Scope, uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import { audit } from '../../lib/audit.ts';
 import type { Clock } from '../../lib/clock.ts';
@@ -42,7 +42,7 @@ export interface RelationshipView {
   approvedAt: string | null;
 }
 
-const onlyScopes = (list: readonly unknown[]): Scope[] => [...new Set(list.filter(isScope))].sort((a, b) => M1_SCOPES.indexOf(a) - M1_SCOPES.indexOf(b));
+const onlyScopes = (list: readonly unknown[]): Scope[] => [...new Set(list.filter(isScope))].sort((a, b) => SCOPES.indexOf(a) - SCOPES.indexOf(b));
 
 export function createPeopleService(d: PeopleDeps) {
   const now = () => new Date(d.clock());
@@ -273,18 +273,22 @@ export function createPeopleService(d: PeopleDeps) {
       };
     },
 
-    /** What happened to this person's account and permissions, newest first, as ids and action names. */
+    /**
+     * What happened to this person's account and permissions, newest first, as ids and action names. A contact's name
+     * is not in the log (no text a person wrote is): it is read from that version of the contact, the person's own.
+     */
     async auditFor(personId: string, limit = 50) {
-      const r = await sql<{ at: Date; action: string; actor_user: string | null; actor_name: string | null; target_type: string | null; detail: Record<string, unknown> }>`
-        select a.at, a.action, a.actor_user, u.display_name as actor_name, a.target_type, a.detail
+      const r = await sql<{ at: Date; action: string; actor_user: string | null; actor_name: string | null; target_type: string | null; detail: Record<string, unknown>; contact_name: string | null }>`
+        select a.at, a.action, a.actor_user, u.display_name as actor_name, a.target_type, a.detail, cv.data->>'name' as contact_name
         from audit_events a left join users u on u.id = a.actor_user
+        left join contact_versions cv on a.target_type = 'contact' and cv.contact_id::text = a.target_id and cv.version::text = a.detail->>'version'
         where a.subject_user = ${personId} order by a.at desc, a.id desc limit ${Math.min(Math.max(limit, 1), 200)}`.execute(d.db);
       return r.rows.map((x) => ({
         at: x.at.toISOString(),
         action: x.action,
         actor: x.actor_user ? { id: x.actor_user, displayName: x.actor_name, self: x.actor_user === personId } : null,
         targetType: x.target_type,
-        detail: x.detail,
+        detail: x.contact_name === null ? x.detail : { ...x.detail, name: x.contact_name },
       }));
     },
   };

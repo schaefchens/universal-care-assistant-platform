@@ -42,6 +42,7 @@ import { type Change, ConfigSync } from './config/sync.ts';
 import { record } from './debug.ts';
 import { ceremony } from './identity/ceremony.ts';
 import { HelpQuestion } from './screens/HelpQuestion.tsx';
+import { contacts } from './contacts/api.ts';
 import { MessagesScreen } from './screens/MessagesScreen.tsx';
 import { SmsCompose } from './screens/SmsCompose.tsx';
 import { MessagingServices } from './screens/MessagingServices.tsx';
@@ -61,6 +62,7 @@ import { ReminderScreen } from './screens/ReminderScreen.tsx';
 import { NameIntro } from './screens/NameIntro.tsx';
 import { VoiceIntro, VoicesPage } from './screens/Voices.tsx';
 import { RemindersPage } from './screens/Reminders.tsx';
+import { ContactsPage } from './screens/Contacts.tsx';
 import { reminders as reminderApi } from './reminders/api.ts';
 import { syncDeviceAlarms as syncAlarms } from './reminders/sync.ts';
 import { promptOf, titleOf } from './reminders/words.ts';
@@ -120,6 +122,9 @@ type Page =
   | { alert: string }
   | { reminder: string }
   | { remindersOf: RemindersOf }
+  /** The person's own contacts, or those of someone a helper supports with contacts.manage (K6). */
+  | 'contacts'
+  | { contactsOf: { id: string; displayName: string } }
   /** A change someone else made took effect: said, with keep or undo (S11). */
   | { configChanged: Change }
   /** A helper setting up a person's device (S11). */
@@ -166,6 +171,7 @@ export function App() {
   const [peopleRev, setPeopleRev] = useState(0);
   const [careRev, setCareRev] = useState(0);
   const [reminderRev, setReminderRev] = useState(0);
+  const [contactsRev, setContactsRev] = useState(0);
   const [messagingRev, setMessagingRev] = useState(0);
   const [configRev, setConfigRev] = useState(0);
   const [careState, setCareState] = useState<CareState>({ pending: false, request: null });
@@ -268,6 +274,8 @@ export function App() {
           void careNews(e.type, e.data);
         } else if (e.type === 'push.test') {
           emitAppEvent(e.type, e.data);
+        } else if (e.type === 'contact.changed') {
+          void contactNews(e.data);
         } else if (e.type.startsWith('reminder.')) {
           void reminderNews(e.type, e.data);
         } else if (e.type.startsWith('messaging.')) {
@@ -701,9 +709,9 @@ export function App() {
 
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
-    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
+    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'contacts' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
     else if (page === 'telegram' || page === 'whatsapp' || page === 'sms' || (typeof page === 'object' && 'email' in page)) setPage('messagingServices');
-    else if (typeof page === 'object' && ('remindersOf' in page || 'configOf' in page)) setPage('helpers');
+    else if (typeof page === 'object' && ('remindersOf' in page || 'contactsOf' in page || 'configOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
     else if (stack.length > 1) setStack((s) => s.slice(0, -1));
@@ -885,6 +893,19 @@ export function App() {
   }
 
   /** Reminder events: the person's own (a question is due, answered elsewhere, changed) and a helper's follow-ups. */
+  /** A contact changed (K6): the pages fetch again; a helper's change is said on the person's devices, by whom and which. */
+  async function contactNews(data: Record<string, unknown>) {
+    if (!session) return;
+    setContactsRev((n) => n + 1);
+    if (data.personId !== session.ref.userId || data.by === session.ref.userId) return;
+    const v = await contacts(session, session.ref.userId)
+      .version(String(data.contactId), Number(data.version))
+      .catch(() => null);
+    if (!v) return;
+    const u = uiRef.current;
+    u.say(u.tr(`contact.news.${String(data.action)}`, { actor: v.changedBy.displayName, name: v.name }), 'notice');
+  }
+
   async function reminderNews(type: string, data: Record<string, unknown>) {
     if (!session) return;
     const u = uiRef.current;
@@ -1030,6 +1051,7 @@ export function App() {
         refresh={peopleRev}
         onApprove={(id) => setPage({ approve: id })}
         onReminders={(person, canManage, canRead) => setPage({ remindersOf: { ...person, canManage, canRead } })}
+        onContacts={(person) => setPage({ contactsOf: person })}
         onConfigure={(person) => setPage({ configOf: person })}
         onClose={() => setPage('settings')}
       />
@@ -1161,6 +1183,9 @@ export function App() {
         />
       </main>
     );
+  else if (page === 'contacts') content = <ContactsPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} refresh={contactsRev} onClose={() => setPage('settings')} />;
+  else if (typeof page === 'object' && 'contactsOf' in page)
+    content = <ContactsPage session={session} personId={page.contactsOf.id} personName={page.contactsOf.displayName} refresh={contactsRev} onClose={() => setPage('helpers')} />;
   else if (page === 'reminders')
     content = <RemindersPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} canManage canRead refresh={reminderRev} onClose={() => setPage('settings')} />;
   else if (typeof page === 'object' && 'remindersOf' in page)
@@ -1241,6 +1266,7 @@ export function App() {
         onDevices={() => setPage('devices')}
         onPeople={() => setPage('helpers')}
         onReminders={() => setPage('reminders')}
+        onContacts={() => setPage('contacts')}
         onVoices={() => setPage('voices')}
         onMessaging={() => setPage('messagingServices')}
         onAiAdmin={me?.isAdmin ? () => setPage('aiAdmin') : undefined}

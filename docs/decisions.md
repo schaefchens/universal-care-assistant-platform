@@ -1087,6 +1087,21 @@ The plan: [plan-m3.md](plan-m3.md).
   from a blocked number is never fetched.
 - **Dual SIM:** an SMS goes out on the SIM Android uses for SMS (the person chooses it in Android's settings), and an
   MMS is fetched on the SIM it came in on. The emulator has one SIM: open until a phone with two.
+- **Contacts live in core** (plan-m3.md, Data): a name, numbers in E.164, addresses in lower case, the handles on
+  Telegram and WhatsApp, and every version, for undo. A number without its country code is read by the person's time
+  zone (UCAP keeps no country; Europe/Berlin is Germany); a short number ("112", "22456": three to six digits, without
+  the 0 or + a whole number is written with) is kept as it is. Numbers are shown as people write them
+  ("+49 30 1234567").
+- **One number or address is one contact.** One a helper or the person types that is another contact's is refused with
+  whose it is ("+49301234567 gehört schon zum Kontakt „Physiotherapie"."), never taken over: plan-m3.md's "the same
+  number or address merges by itself" is for what UCAP gathers from the address book and the services (K6's part 2).
+- **A helper's change to a contact is audited by ids and its version only** (the audit log never holds text a person
+  wrote); the history reads the contact's name from that version, the person's own data. The person's devices say it
+  ("Maria hat den Kontakt „Physiotherapie" hinzugefügt."), fetching that version, as reminders' events carry ids
+  only. The page offers "Rückgängig" right after each change; undo puts the version before back, a deleted contact
+  included, and undoing a creation deletes it.
+- **`contacts.manage` comes with K6, `agenda.manage` with K7**, each with what it manages. K6's tests name "the
+  permission matrix with both new scopes"; K7's matrix test adds the second.
 
 ### Measured
 
@@ -1236,3 +1251,10 @@ The plan: [plan-m3.md](plan-m3.md).
     - LIVE said it waited for its name while its service was gone, once, after the recovery, the role dialog and
       TalkBack's prompts; switched off and on, it listened again. Not caused by the day's changes (the service's stop
       paths logged nothing); not seen again. The owner switched LIVE on afterwards and found no fault (2026-10-23).
+- **K6 part 1 (2026-10-23), contacts in core and "Kontakte verwalten":**
+  - The browser walk (7d): Clara allows Maria "Kontakte verwalten"; Maria adds "Physiotherapie" (030 1234567, "Praxis")
+    from her device; Clara's tablet says "Maria hat den Kontakt „Physiotherapie" hinzugefügt." and her history names
+    it; Maria's "Rückgängig" deletes it, and Clara hears that too.
+  - On the emulator, Wanda Test's own contacts page: axe found nothing at any impact (empty, the editor, the list with
+    a contact and its undo); nor on the SMS compose screen (K4) as it says SMS is not connected. A contact added and
+    deleted from the phone.

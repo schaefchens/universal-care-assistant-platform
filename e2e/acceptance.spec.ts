@@ -498,6 +498,47 @@ test('7c · email (docs/plan-m3.md, K3): connected on its own page with the serv
   expect(await sql(`select subject from messaging_outbound where text = 'Wunderbar, danke!'`)).toBe('Re: Besuch am Sonntag');
 });
 
+test('7d · contacts (docs/plan-m3.md, K6): Clara lets Maria manage her contacts; Maria adds "Physiotherapie" from her device, and Clara’s tablet says so and her history names it; undone, said too', async () => {
+  // Clara allows "Kontakte verwalten", as any permission.
+  await helpersPage(clara);
+  const mariaItem = clara.locator('li.device').filter({ has: clara.getByRole('heading', { name: 'Maria', exact: true }) });
+  await mariaItem.getByRole('button', { name: 'Ändern', exact: true }).click();
+  await setChoice(mariaItem.getByRole('checkbox', { name: 'Kontakte verwalten' }));
+  await mariaItem.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(mariaItem.getByText(/Kontakte verwalten/)).toBeVisible();
+  await home(clara);
+  // Maria adds the practice, its number as it is written in Germany.
+  await helpersPage(maria);
+  const claraItem = maria.locator('li.device').filter({ has: maria.getByRole('heading', { name: 'Clara', exact: true }) });
+  await claraItem.getByRole('button', { name: 'Kontakte von Clara' }).click();
+  const add = async () => {
+    await maria.getByRole('button', { name: 'Kontakt hinzufügen' }).click();
+    await maria.getByLabel('Name', { exact: true }).fill('Physiotherapie');
+    await maria.getByLabel('Telefonnummer', { exact: true }).fill('030 1234567');
+    await maria.getByLabel('Bezeichnung, etwa Handy').fill('Praxis');
+    const saved = await mark(maria);
+    await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await said(maria, /^Kontakt „Physiotherapie“ gespeichert\.$/, saved);
+  };
+  let from = await mark(clara);
+  await add();
+  await expect(maria.getByText('Telefon (Praxis): +49 30 1234567')).toBeVisible();
+  // Said on Clara's tablet, and kept in her history.
+  await said(clara, /^Maria hat den Kontakt „Physiotherapie“ hinzugefügt\.$/, from);
+  await helpersPage(clara);
+  await expect(clara.getByText('Maria hat den Kontakt „Physiotherapie“ hinzugefügt').first()).toBeVisible();
+  await home(clara);
+  // Undone: the contact goes, and Clara hears that too; added again for the call (K6, part 3).
+  from = await mark(clara);
+  const undone = await mark(maria);
+  await maria.getByRole('button', { name: 'Rückgängig', exact: true }).click();
+  await said(maria, /^Rückgängig gemacht\.$/, undone);
+  await expect(maria.getByText('Noch keine Kontakte.')).toBeVisible();
+  await said(clara, /^Maria hat den Kontakt „Physiotherapie“ gelöscht\.$/, from);
+  await add();
+  await home(maria);
+});
+
 test('8 · a remote change: Maria moves Messages and switches the device to high contrast; it waits while the person uses it, then is applied, announced with undo; Maria’s page says "angewendet"', async () => {
   await home(clara);
   await home(maria);
