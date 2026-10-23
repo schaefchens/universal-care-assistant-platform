@@ -1082,6 +1082,9 @@ The plan: [plan-m3.md](plan-m3.md).
   Android keeps it in the store. UCAP's own part for it (RESPOND_VIA_MESSAGE, which the role requires) stays for phones
   whose dialler still asks. Android's SMS store is watched (a job on its changes), so such an SMS, or one another app
   sent, reaches the server within seconds instead of at the next 15-minute look.
+- **Blocked numbers are respected by Android itself** for SMS: it drops one from a blocked number before the SMS app
+  gets it (measured). An MMS's notice is checked against the same list by UCAP, which as the SMS app may ask it: one
+  from a blocked number is never fetched.
 - **Dual SIM:** an SMS goes out on the SIM Android uses for SMS (the person chooses it in Android's settings), and an
   MMS is fetched on the SIM it came in on. The emulator has one SIM: open until a phone with two.
 
@@ -1224,6 +1227,9 @@ The plan: [plan-m3.md](plan-m3.md).
       deinen Kontakten. SMS an 555-0123: „Ich bin gleich da.“. Senden?"; "Ja": C9's "wird gesendet, sobald das Telefon
       erreichbar ist", then "Gesendet an 555-0123." and the delivery report kept. Dictating on that screen is the
       messages screen's reply turn (the server's tests); the emulator's microphone was off.
+    - **Blocked numbers** (a number added to Android's list from the shell): its SMS was in neither the store nor on
+      the server, and no notification came, while a control SMS arrived; its MMS notice (the stand-in) was not fetched.
+      The test number was taken off the list again.
     - **Found and fixed: an update of the app cancelled its SMS jobs** (Android drops an app's jobs at an update or a
       force stop; measured): the 15-minute look was gone until SMS was connected again. They are armed again as the app
       starts.

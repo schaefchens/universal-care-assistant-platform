@@ -39,10 +39,21 @@ final class MmsFetch {
         String location = new String(n.getContentLocation(), StandardCharsets.ISO_8859_1);
         String tx = n.getTransactionId() != null ? new String(n.getTransactionId(), StandardCharsets.ISO_8859_1) : location;
         String from = n.getFrom() != null ? n.getFrom().getString() : null;
+        // Blocked numbers are respected: Android drops their SMS itself (measured); an MMS's notice is checked here too.
+        if (from != null && blocked(ctx, from)) return;
         long expiry = n.getExpiry() > 0 ? n.getExpiry() : System.currentTimeMillis() / 1000 + 7 * 86_400;
         SmsDb db = SmsDb.get(ctx);
         if (!db.addMms(tx, location, from, expiry, sub)) return;
         start(ctx, db.mms(tx));
+    }
+
+    /** Whether the person blocked the number in Android (the list the SMS app may ask). */
+    private static boolean blocked(Context ctx, String number) {
+        try {
+            return android.provider.BlockedNumberContract.isBlocked(ctx, number);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** Fetches one MMS: Android's MMS service writes it to a file, and tells MmsFetchedReceiver. */
