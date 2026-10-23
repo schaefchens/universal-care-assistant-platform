@@ -118,6 +118,14 @@ describe('a change as the person hears it', () => {
     ]);
   });
 
+  it('an area that opens something else now (K6: the contacts) is said in one sentence', () => {
+    const a = base();
+    Object.assign(area(a, 'notes'), { action: { type: 'screen', screen: 'contacts' }, role: 'contacts', labelKey: 'area.contacts.label', descriptionKey: 'area.contacts.description' });
+    expect(checkConfig(a)).toEqual({ errors: [], warnings: [] });
+    expect(say(base(), a)).toEqual(['Maria hat aus dem Feld „Notizen“ das Feld „Kontakte“ gemacht.']);
+    expect(say(base(), a, 'en')).toEqual(['Maria turned the area “Notes” into “Contacts”.']);
+  });
+
   it('LIVE mode switched by someone else is said first; its other settings only while it is on', () => {
     const on = structuredClone(DEFAULT_DEVICE_CONFIG);
     on.live = { ...liveOf(on), enabled: true };

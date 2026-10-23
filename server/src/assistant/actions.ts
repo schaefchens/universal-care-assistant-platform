@@ -18,7 +18,7 @@ import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
 import { AppError } from '../lib/errors.ts';
 import { toolByName } from './registry.ts';
-import type { ActTool, Focus, ToolContext } from './tools.ts';
+import type { ActTool, DeviceAction, Focus, ToolContext } from './tools.ts';
 
 export const CONFIRM_MS = 120_000;
 export const UNDO_MS = 10 * 60_000;
@@ -32,7 +32,7 @@ export interface Waiting {
   expiresAt: string;
 }
 
-export type Outcome = { ok: true; say: string; focus?: Focus } | { ok: false; reason: 'not_found' | 'expired' | 'stale' | 'device' | 'failed' | 'done' };
+export type Outcome = { ok: true; say: string; focus?: Focus; device?: DeviceAction } | { ok: false; reason: 'not_found' | 'expired' | 'stale' | 'device' | 'failed' | 'done' };
 
 const hashOf = (tool: string, args: Record<string, unknown>, prompt: string) => createHash('sha256').update(jcs({ tool, args: args as Json, prompt })).digest('base64url');
 
@@ -46,7 +46,7 @@ export function createActions(d: { db: Db; clock: Clock; log: (m: string) => voi
       await sql`
         update assistant_actions set status = 'completed', result = ${JSON.stringify({ say: r.say })}::jsonb, undo = ${r.undo ? JSON.stringify(r.undo) : null}::jsonb, updated_at = ${now()}
         where id = ${id}`.execute(d.db);
-      return { ok: true, say: r.say, focus: r.focus };
+      return { ok: true, say: r.say, focus: r.focus, ...(r.device ? { device: r.device } : {}) };
     } catch (e) {
       const kind = e instanceof AppError ? e.code : (e as Error).name;
       d.log(`assistant action ${tool.name} failed: ${kind}`);

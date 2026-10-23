@@ -626,6 +626,29 @@ describe('messaging across services', () => {
     await contacts('DELETE', `/${physio}`);
   });
 
+  it('"Speichere diese Nummer als Tante Erna" after her SMS (K6): the number of whoever wrote, as the phone told it, read back digit by digit; her SMS is then hers; a Telegram user who hides theirs has none', async () => {
+    await forward(anna, [
+      { t: 'user.upsert', user: { externalId: '+4915199998888', name: '+49 1519 9998888', isContact: false, isBot: false } },
+      { t: 'chat.upsert', chat: { externalId: '91', title: '+49 1519 9998888', kind: 'private', userId: '+4915199998888', muted: false, unread: 1, readInboxMaxId: null, readOutboxMaxId: null } },
+      { t: 'msg.upsert', msg: { chatId: '91', externalId: 's910', fromId: '+4915199998888', outgoing: false, date: now() - 30, editDate: null, kind: 'text', text: 'Hier ist Erna, meine neue Nummer.', file: null, fileName: null } },
+    ]);
+    const msg = (await sql<{ id: string }>`select id from messaging_messages where external_id = 's910'`.execute(db)).rows[0]!.id;
+    script = () => ({ say: [], calls: [{ tool: 'contacts.save', name: 'Tante Erna', number: null, message: `msg:${msg}`, label: null }], help: false });
+    const a = (await turn(anna, 'Speichere diese Nummer als Tante Erna')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string; prompt: string };
+    expect(a.prompt).toBe('Die Nummer 0 1 5 1 9, 9 9 9 8 8 8 8 als neuen Kontakt „Tante Erna“ speichern?');
+    expect(((await as(anna, 'POST', `/api/v1/assistant/actions/${a.id}/confirm`, { contentHash: a.contentHash, via: 'voice' })).json() as { say: string }).say).toBe('Kontakt „Tante Erna“ gespeichert.');
+    expect(((await as(anna, 'GET', `/api/v1/messaging/messages/${msg}?lang=de`)).json() as { conversation: string }).conversation).toBe('Tante Erna');
+    // Telegram's Clara shows no number: there is none to save.
+    const tg = (await sql<{ id: string }>`select id from messaging_messages where text = 'Kommst du morgen?'`.execute(db)).rows[0]!.id;
+    let round = 0;
+    script = () => (++round === 1 ? { say: [], calls: [{ tool: 'contacts.save', name: 'Clara', number: null, message: `msg:${tg}`, label: null }], help: false } : { say: [{ kind: 'reply', text: 'Ihre Nummer kenne ich nicht.', ref: null }], calls: [], help: false });
+    seen.length = 0;
+    await turn(anna, 'Speichere diese Nummer als Clara');
+    expect(seen.at(-1)!.messages.at(-1)!.content).toContain('number_unknown');
+    const erna = ((await core.app.inject({ method: 'GET', url: `/api/v1/people/${anna.userId}/contacts`, headers: { authorization: `Bearer ${anna.token}` } })).json() as { contacts: { id: string; name: string }[] }).contacts.find((c) => c.name === 'Tante Erna')!;
+    await core.app.inject({ method: 'DELETE', url: `/api/v1/people/${anna.userId}/contacts/${erna.id}`, headers: { authorization: `Bearer ${anna.token}` } });
+  });
+
   it('says what each connection can do, as data for the model', async () => {
     let round = 0;
     script = () => (++round === 1 ? { say: [], calls: [{ tool: 'messages.connections' }], help: false } : { say: [{ kind: 'reply', text: 'WhatsApp ist noch nicht verbunden.', ref: null }], calls: [], help: false });

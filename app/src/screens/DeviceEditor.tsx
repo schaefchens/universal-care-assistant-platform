@@ -6,7 +6,7 @@
  * warnings (a colour hard to read on) are saved only when acknowledged. The page tells a version saved on the server
  * from one the device received and applied, and sets an earlier version again.
  */
-import { checkConfig, type ConfigIssue, describeChange, type DeviceConfig, THEME_IDS, type ThemeId, warningKey } from '@ucap/shared';
+import { type AreaDef, checkConfig, type ConfigIssue, describeChange, type DeviceConfig, THEME_IDS, type ThemeId, warningKey } from '@ucap/shared';
 import { position } from '@ucap/touch';
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Form, Heading, Input, Label, Radio, RadioGroup, Slider, SliderOutput, SliderThumb, SliderTrack, TextField } from 'react-aria-components';
@@ -17,6 +17,18 @@ import { customAreaColours, platformPrefs, themeVariables } from '../theme/apply
 import { resolveTheme } from '../theme/themes.ts';
 import { useUi } from '../ui.tsx';
 import { LiveSettings } from './LiveSettings.tsx';
+
+/**
+ * What a home area can open (K6 brings the contacts): its task, the colour of its kind, and its words. An area with any
+ * other task (help, back, where) keeps it.
+ */
+const FUNCTIONS: { id: string; action: AreaDef['action']; role: AreaDef['role'] }[] = [
+  { id: 'messages', action: { type: 'screen', screen: 'messages' }, role: 'messages' },
+  { id: 'notes', action: { type: 'screen', screen: 'notes' }, role: 'notes' },
+  { id: 'contacts', action: { type: 'screen', screen: 'contacts' }, role: 'contacts' },
+  { id: 'assistant', action: { type: 'assistant' }, role: 'assistant' },
+];
+const functionOf = (a: AreaDef) => FUNCTIONS.find((f) => JSON.stringify(f.action) === JSON.stringify(a.action))?.id ?? null;
 
 interface DeviceRow {
   id: string;
@@ -311,6 +323,24 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
                     <Label>{tr('config.editor.area.description')}</Label>
                     <Input />
                   </TextField>
+                  {functionOf(a) && (
+                    <RadioGroup
+                      className="choice"
+                      value={functionOf(a)!}
+                      onChange={(v) => {
+                        const f = FUNCTIONS.find((x) => x.id === v)!;
+                        // The new task's own words: the person's words for the old one would not fit.
+                        setArea(a.id, { action: f.action, role: f.role, labelKey: `area.${f.id}.label`, descriptionKey: `area.${f.id}.description`, label: undefined, description: undefined });
+                      }}
+                    >
+                      <Label className="choice-label">{tr('config.editor.area.function')}</Label>
+                      {FUNCTIONS.map((f) => (
+                        <Radio key={f.id} value={f.id} className="choice-option">
+                          {tr(`area.${f.id}.label`)}
+                        </Radio>
+                      ))}
+                    </RadioGroup>
+                  )}
                   <RadioGroup
                     className="choice"
                     value={`${a.cell.row},${a.cell.col}`}

@@ -63,6 +63,8 @@ export interface DeviceInfo {
   /** The system font scale (1 = normal). */
   fontScale: number;
   nightMode: boolean;
+  /** It can place phone calls (a tablet with mobile data alone cannot). */
+  voiceCapable?: boolean;
 }
 
 export interface InfoPlugin {

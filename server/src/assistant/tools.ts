@@ -21,6 +21,7 @@ import type { Db } from '../lib/db.ts';
 import { AppError } from '../lib/errors.ts';
 import { MAX_BODY, type Notes, titleFrom } from '../domain/notes/service.ts';
 import type { Category, ReminderService } from '../domain/reminders/service.ts';
+import type { ContactService } from '../domain/contacts/service.ts';
 import type { Messaging } from '../messaging/service.ts';
 
 export interface ToolContext {
@@ -35,6 +36,10 @@ export interface ToolContext {
   db: Db;
   /** The person's messaging (S10); absent where it is not set up. */
   messaging?: Messaging;
+  /** The person's contacts (docs/plan-m3.md, K6). */
+  contacts?: ContactService;
+  /** The device the person talks to can place a phone call (it said so with the turn). */
+  canCall?: boolean;
   /** The action being carried out (set while it runs): one confirmation, one message. */
   actionId?: string;
 }
@@ -53,6 +58,13 @@ export interface Focus {
   reminder?: { id: string; title: string };
   /** The conversation being read or answered (messages, S10). */
   chat?: { id: string; title: string };
+  /** The contact being talked about (K6). */
+  contact?: { id: string; title: string };
+}
+
+/** What the device that asked does once the person said yes: a call by phone (K6). */
+export interface DeviceAction {
+  call: { number: string; name: string };
 }
 
 export interface ReadTool {
@@ -76,7 +88,7 @@ export interface ActTool {
   args: Record<string, JsonSchema>;
   /** Checks and completes the arguments; `tainted`: untrusted text was read in this turn. */
   prepare(ctx: ToolContext, args: Record<string, unknown>, tainted: boolean): Promise<Prepared>;
-  run(ctx: ToolContext, args: Record<string, unknown>): Promise<{ say: string; undo?: Record<string, unknown>; focus?: Focus }>;
+  run(ctx: ToolContext, args: Record<string, unknown>): Promise<{ say: string; undo?: Record<string, unknown>; focus?: Focus; device?: DeviceAction }>;
   undo?(ctx: ToolContext, undo: Record<string, unknown>): Promise<string>;
   /** The person said no, or nothing (`silence`): what is said then, and what is kept (a message's draft). */
   cancelled?(ctx: ToolContext, args: Record<string, unknown>, why: 'no' | 'silence'): Promise<string | null>;

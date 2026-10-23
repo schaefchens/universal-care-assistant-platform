@@ -541,7 +541,7 @@ test('7d · contacts (docs/plan-m3.md, K6): Clara lets Maria manage her contacts
   await home(maria);
 });
 
-test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Clara saves Anna’s number; WhatsApp is hers by it, Telegram and email are asked and taken; her messages there are said as Anna’s; a new SMS and a new email to contacts with no conversation', async () => {
+test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Clara saves Anna’s number; WhatsApp is hers by it, Telegram and email are asked and taken; her messages there are said as Anna’s; a new SMS and a new email to contacts with no conversation; "Ruf die Physiotherapie an": asked, then dialled', async () => {
   await home(clara);
   await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await clara.getByRole('button', { name: 'Kontakte', exact: true }).click();
@@ -594,6 +594,15 @@ test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Cla
   await said(clara, /^E-Mail an Bernd, Betreff „Kaffee am Sonntag“: „Kommst du am Sonntag zum Kaffee\?“\. Senden\?$/, from);
   await talk(clara, engines, 'Ja');
   await said(clara, /^Gesendet an Bernd\.$/, from);
+  // "Ruf die Physiotherapie an" (acceptance 9): asked first, with which number; then dialled (a browser opens tel:).
+  engines.model = asked(/Ruf/, () => ({ say: [], calls: [{ tool: 'contacts.call', name: 'die Physiotherapie', number: null, service: null }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Ruf die Physiotherapie an');
+  await said(clara, /^Physiotherapie anrufen, Praxis\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^(Ich rufe Physiotherapie an\.|Ich öffne das Telefon mit der Nummer von Physiotherapie\. Tippe dort auf Anrufen\.)$/, from);
+  const calls = () => clara.evaluate(() => ((window as unknown as { __ucap?: { activations: { area: string; how: string }[] } }).__ucap?.activations ?? []).filter((a) => a.area === 'call').map((a) => a.how));
+  await expect.poll(calls).toEqual(['dialler']);
   engines.model = () => reply('In Ordnung.');
 });
 

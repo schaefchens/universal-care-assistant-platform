@@ -68,7 +68,7 @@ describe('contacts', () => {
     expect(p.name).toBe('Physiotherapie Weber');
     // The person's time zone (Berlin) says where a number without its country code is from; the same one is kept once.
     expect(p.handles).toEqual([
-      { kind: 'phone', value: '+49301234567', label: 'Praxis', display: '+49 30 1234567' },
+      { kind: 'phone', value: '+49301234567', label: 'Praxis', display: '+49 30 1234567', spoken: '0 3 0, 1 2 3 4 5 6 7' },
       { kind: 'email', value: 'praxis@example.org', label: null, display: 'praxis@example.org' },
     ]);
     const again = await create(anna, anna, 'Weber', [{ kind: 'phone', value: '+49301234567' }]);

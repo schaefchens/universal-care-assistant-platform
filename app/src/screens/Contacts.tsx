@@ -7,6 +7,7 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Form, Heading, Input, Label, TextField } from 'react-aria-components';
 import { type Contact, type ContactFields, type ContactHandle, contacts, type Suggestion, suggestions } from '../contacts/api.ts';
+import { canCall, placeCall } from '../contacts/call.ts';
 import type { Session } from '../identity/account.ts';
 import { has, PhoneContacts } from '../native/plugins.ts';
 import { ApiError } from '../net/api.ts';
@@ -267,7 +268,15 @@ export function ContactsPage(p: { session: Session; personId: string; personName
                 {c.handles.length > 0 && (
                   <ul>
                     {c.handles.map((h) => (
-                      <li key={`${h.kind}:${h.value}`}>{handleText(tr, h)}</li>
+                      <li key={`${h.kind}:${h.value}`}>
+                        {handleText(tr, h)}
+                        {/* The person's own numbers can be called from here, where this device can call (K6). */}
+                        {own && h.kind === 'phone' && canCall() && (
+                          <Button className="button" onPress={() => void placeCall(ui, { number: h.value, name: c.name })}>
+                            {tr('contacts.call.button', { name: c.name, which: h.label ?? h.display })}
+                          </Button>
+                        )}
+                      </li>
                     ))}
                   </ul>
                 )}

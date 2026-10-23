@@ -12,3 +12,4 @@ export * from './config-rules.ts';
 export * from './config-diff.ts';
 export * from './mail-providers.ts';
 export * from './mail-quote.ts';
+export * from './numbers.ts';

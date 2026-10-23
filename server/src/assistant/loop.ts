@@ -13,6 +13,7 @@ import { sql } from 'kysely';
 import type { LlmMessage } from '../ai/llm/adapters.ts';
 import { finishedSay, nothingHappens, parseReply, replySchema, type SayItem } from '../ai/llm/reply.ts';
 import type { Llm } from '../ai/llm/service.ts';
+import type { ContactService } from '../domain/contacts/service.ts';
 import type { Notes } from '../domain/notes/service.ts';
 import type { ReminderService } from '../domain/reminders/service.ts';
 import type { Clock } from '../lib/clock.ts';
@@ -21,6 +22,7 @@ import { CONVERSATION_MS } from '../lib/retention.ts';
 import { CAPTIONED, type Messaging } from '../messaging/service.ts';
 import type { Actions } from './actions.ts';
 import { type Answers, dataBlock, judgeInput, judgePrompt, systemPrompt } from './prompt.ts';
+import { contactAloud, contactById } from './contact-tools.ts';
 import { toolsFor } from './registry.ts';
 import { type Focus, type ToolContext, ToolError } from './tools.ts';
 
@@ -46,7 +48,7 @@ export type AssistantEvent =
 const PROMISE = /\b(kommt|kommen|unterwegs|gleich da|coming|on (?:the|her|his|their) way)\b/i;
 const ABOUT_HELP = /\b(hilfe|helfer|helferin|jemand|niemand|keiner|help|helper|someone|somebody|nobody|no one)\b/i;
 
-export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Actions; notes: Notes; reminders: ReminderService; messaging?: Messaging; log: (m: string) => void }) {
+export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Actions; notes: Notes; reminders: ReminderService; messaging?: Messaging; contacts?: ContactService; log: (m: string) => void }) {
   /** LIVE mode: whether what the open microphone heard was said to the assistant (docs/plan-m2.md), in a call of its own. */
   async function addressed(userId: string, pick: Extract<Awaited<ReturnType<Llm['pick']>>, { ok: true }>, who: { name: string; lang: Lang }, heard: string, lastSaid: string | null, called: boolean, signal: AbortSignal): Promise<boolean> {
     const r = await d.llm.complete(userId, pick.provider, pick.adapter, {
@@ -108,6 +110,8 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
          * whether it was said to the assistant at all; `onAddressed` once it was, before anything is said.
          */
         live?: { onAddressed: () => void; called?: boolean };
+        /** The device can place a phone call (K6): it said so with the turn. */
+        canCall?: boolean;
         signal: AbortSignal;
       },
       emit: (e: AssistantEvent) => void,
@@ -140,7 +144,20 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
         o.live.onAddressed();
       }
 
-      const ctx = (): ToolContext => ({ userId: o.userId, deviceId: o.deviceId, lang: who.lang, form: who.form, timezone: who.timezone, now: new Date(d.clock()), notes: d.notes, reminders: d.reminders, db: d.db, messaging });
+      const ctx = (): ToolContext => ({
+        userId: o.userId,
+        deviceId: o.deviceId,
+        lang: who.lang,
+        form: who.form,
+        timezone: who.timezone,
+        now: new Date(d.clock()),
+        notes: d.notes,
+        reminders: d.reminders,
+        db: d.db,
+        messaging,
+        contacts: d.contacts,
+        canCall: o.canCall === true,
+      });
       const messages: LlmMessage[] = [];
       for (const h of s.history) messages.push({ role: 'user', content: h.u }, { role: 'assistant', content: JSON.stringify({ say: [{ kind: 'reply', text: h.a, ref: null }], calls: [], help: false }) });
       messages.push({ role: 'user', content: o.text });
@@ -182,6 +199,16 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
       const speak = async (item: SayItem) => {
         if ((item.kind === 'original' || item.kind === 'transcript') && (await fromMessage(item))) return;
         if (item.kind === 'transcript') return;
+        if (item.kind === 'original' && /^contact:/.test(item.ref ?? '')) {
+          // A contact's numbers, digit by digit from what is stored (K6), never as the model would copy them.
+          const c = await contactById(ctx(), item.ref!.slice(8));
+          if (!c) return;
+          const text = contactAloud(who.lang, who.form, who.timezone, c);
+          emit({ t: 'segment', kind: 'original', text });
+          said.push(`[${c.name}]`);
+          focus = { ...focus, contact: { id: c.id, title: c.name } };
+          return;
+        }
         if (item.kind === 'original') {
           const ref = item.ref?.replace(/^note:/, '') ?? '';
           const n = /^[0-9a-f-]{36}$/.test(ref) ? await d.notes.get(o.userId, ref).catch(() => null) : null;

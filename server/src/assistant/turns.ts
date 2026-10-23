@@ -107,6 +107,8 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         via?: 'keyword' | 'named' | 'touch' | 'open';
         /** The device made a change by voice a moment ago ("Langsamer", "Schrift größer"): "Rückgängig" is its own. */
         undoHere?: boolean;
+        /** The device can place a phone call (K6). */
+        canCall?: boolean;
         signal: AbortSignal;
       },
       emit: (e: TurnEvent) => void,
@@ -226,7 +228,7 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         } else if (m.kind === 'none' && d.assistant) {
           outcome = 'assistant';
           const r = await d.assistant.run(
-            { userId: o.userId, deviceId: o.deviceId, turnId: o.id, text, lang: o.lang, suspicious: leak.kind === 'suspicious', live: meant ? undefined : { onAddressed: tell, called: o.via === 'named' }, signal: o.signal },
+            { userId: o.userId, deviceId: o.deviceId, turnId: o.id, text, lang: o.lang, suspicious: leak.kind === 'suspicious', live: meant ? undefined : { onAddressed: tell, called: o.via === 'named' }, canCall: o.canCall, signal: o.signal },
             emit,
           );
           detail = r;

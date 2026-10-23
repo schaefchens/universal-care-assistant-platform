@@ -63,10 +63,14 @@ export function describeChange(o: { lang: Lang; form: AddressForm; author: strin
       const moved = JSON.stringify(x.cell) !== JSON.stringify(y.cell) || JSON.stringify(a.grid) !== JSON.stringify(b.grid);
       if (moved && x.action.type === 'help') first.push(tr('config.change.helpMoved', { position: where(a, x) }));
       else if (moved && JSON.stringify(y.cell) !== JSON.stringify(x.cell)) rest.push(tr('config.change.moved', { label: label(x), position: where(a, x) }));
-      if (label(x) !== label(y)) rest.push(tr('config.change.renamed', { old: label(y), new: label(x) }));
+      const acts = JSON.stringify(x.action) !== JSON.stringify(y.action);
+      // An area that opens something else now, with its words: one sentence ("aus „Notizen" … „Kontakte" gemacht").
+      if (acts && label(x) !== label(y)) rest.push(tr('config.change.function', { old: label(y), new: label(x) }));
+      else if (label(x) !== label(y)) rest.push(tr('config.change.renamed', { old: label(y), new: label(x) }));
       if (x.color !== y.color) rest.push(tr('config.change.colour', { label: label(x) }));
-      if (JSON.stringify(x.action) !== JSON.stringify(y.action)) rest.push(tr('config.change.action', { label: label(x) }));
-      if (x.description !== y.description || x.descriptionKey !== y.descriptionKey || x.earcon !== y.earcon || x.activation !== y.activation || x.vibrate !== y.vibrate || x.symbol !== y.symbol)
+      if (acts && label(x) === label(y)) rest.push(tr('config.change.action', { label: label(x) }));
+      // A new function brings its own description: said with it.
+      if (x.description !== y.description || (!acts && x.descriptionKey !== y.descriptionKey) || x.earcon !== y.earcon || x.activation !== y.activation || x.vibrate !== y.vibrate || x.symbol !== y.symbol)
         other = true;
     }
     for (const y of was.values()) rest.push(tr('config.change.removed', { label: label(y) }));

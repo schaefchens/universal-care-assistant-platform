@@ -1056,7 +1056,7 @@ export function createMessaging(d: {
       type Candidate = Omit<(typeof r.rows)[number], 'id'> & { id: string | null; fresh: NewTarget | null };
       const out = (x: Candidate): Found | { addresses: string[] } => {
         if (!x.fresh) return { conversationId: x.id, name: x.title, service: x.service, label: x.label, subject: x.subject, contact: x.kind === 'private' ? x.is_contact === true : null, to: null };
-        const h = chooseHandle(x.fresh.handles, x.service, o.address ?? null);
+        const h = chooseHandle(x.fresh.handles, o.address ?? null, { mobileFirst: x.service === 'sms' });
         if (Array.isArray(h)) return { addresses: h };
         // Said with the number or address it goes to, where the contact has more than one.
         const name = x.fresh.handles.length > 1 ? `${x.title} (${h.label ?? displayOf(h)})` : x.title;
@@ -1134,6 +1134,19 @@ export function createMessaging(d: {
       // The draft is now this message.
       if (o.conversationId) await sql`update messaging_conversations set draft = null, draft_at = null where id = ${o.conversationId}`.execute(d.db);
       return attempt(id);
+    },
+
+    /**
+     * The number or address of whoever wrote a message (K6: "Speichere diese Nummer als Anna"), where the service tells
+     * it: an SMS's number, a WhatsApp number, a confirmed email address; none for a Telegram user who hides theirs.
+     */
+    async senderAddress(userId: string, messageId: string): Promise<string | null> {
+      const r = await sql<{ address: string | null }>`
+        select p.address from messaging_messages m join messaging_conversations v on v.id = m.conversation_id
+        join messaging_connections k on k.id = v.connection_id
+        join messaging_participants p on p.connection_id = k.id and p.external_id = m.sender_external_id
+        where m.id = ${messageId} and k.user_id = ${userId} and m.direction = 'in'`.execute(d.db);
+      return r.rows[0]?.address ?? null;
     },
 
     /** A message the person did not confirm: kept as the conversation's draft for a day (C7, C8). */
@@ -1304,13 +1317,13 @@ function handleOf(p: { service: Service; external_id: string; address: string | 
 }
 
 /**
- * Which of a contact's numbers or addresses a new message goes to (K6): the only one; by SMS, the only one that is no
- * landline; the one the person named (its label, its last digits, the address itself); else all of them, as they are
- * named back to the person ("Handy", "Arbeit"; a number or address without a label as it is written).
+ * Which of a contact's numbers or addresses a message or a call goes to (K6): the only one; with `mobileFirst` (an
+ * SMS), the only one that is no landline; the one the person named (its label, its last digits, the address itself);
+ * else all of them, as they are named back to the person ("Handy", "Arbeit"; one without a label as it is written).
  */
-export function chooseHandle(handles: Handle[], service: Service, said: string | null): Handle | string[] {
+export function chooseHandle(handles: Handle[], said: string | null, o: { mobileFirst?: boolean } = {}): Handle | string[] {
   let list = handles;
-  if (service === 'sms' && list.length > 1) {
+  if (o.mobileFirst && list.length > 1) {
     const mobile = list.filter((h) => !h.value.startsWith('+') || parsePhoneNumberFromString(h.value)?.getType() !== 'FIXED_LINE');
     if (mobile.length) list = mobile;
   }

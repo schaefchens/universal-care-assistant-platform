@@ -13,6 +13,8 @@ export interface ContactHandle {
   label: string | null;
   /** As people write it: "+49 30 1234567". */
   display: string;
+  /** A number as it is said, digit by digit ("0 3 0, 1 2 3 4 5 6 7"). */
+  spoken?: string;
 }
 
 export interface Contact {

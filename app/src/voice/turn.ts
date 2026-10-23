@@ -4,6 +4,7 @@
  */
 import type { CommandContext, Intent } from '@ucap/speech-text';
 import { uuidv7 } from '@ucap/shared';
+import { canCall } from '../contacts/call.ts';
 import type { Session } from '../identity/account.ts';
 
 export type TurnEvent =
@@ -46,7 +47,7 @@ export async function postTurn(
   onEvent: (e: TurnEvent) => void,
 ): Promise<void> {
   const id = uuidv7(Date.now());
-  const url = `${session.ref.serverUrl}/api/v1/assistant/turns?id=${id}&context=${o.context}&lang=${o.lang}${o.conversation ? `&conversation=${o.conversation}` : ''}${o.live ? `&mode=live&via=${o.live}` : ''}${o.undoHere ? '&undo=device' : ''}`;
+  const url = `${session.ref.serverUrl}/api/v1/assistant/turns?id=${id}&context=${o.context}&lang=${o.lang}${o.conversation ? `&conversation=${o.conversation}` : ''}${o.live ? `&mode=live&via=${o.live}` : ''}${o.undoHere ? '&undo=device' : ''}${canCall() ? '&calls=1' : ''}`;
   const send = async () =>
     fetch(url, {
       method: 'POST',

@@ -48,15 +48,19 @@ export async function refreshFallbacks(session: Session): Promise<Fallbacks> {
 }
 
 export async function call(number: string, direct = false): Promise<boolean> {
+  return (await dial(number, direct)) !== null;
+}
+
+/** A call placed directly, the dialler (or a browser's tel: link) opened with the number, or neither (null). */
+export async function dial(number: string, direct = false): Promise<'direct' | 'dialler' | null> {
   if (has('Alerts')) {
     try {
-      await Alerts.call({ number, direct });
-      return true;
+      return (await Alerts.call({ number, direct })).direct ? 'direct' : 'dialler';
     } catch {
-      return false;
+      return null;
     }
   }
-  if (typeof location === 'undefined') return false;
+  if (typeof location === 'undefined') return null;
   location.href = `tel:${encodeURIComponent(number)}`;
-  return true;
+  return 'dialler';
 }

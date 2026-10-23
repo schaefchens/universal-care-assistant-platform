@@ -125,7 +125,7 @@ export async function buildAssistant(o: {
         log,
       }),
     );
-  const assistant = createAssistant({ db: o.db, clock: o.clock, llm, actions, notes, reminders, messaging, log });
+  const assistant = createAssistant({ db: o.db, clock: o.clock, llm, actions, notes, reminders, messaging, contacts, log });
   const contextFor = async (userId: string, deviceId: string, lang?: 'de' | 'en') => {
     const r = await sql<{ locale: string; address_form: 'du' | 'Sie'; timezone: string }>`select locale, address_form, timezone from users where id = ${userId}`.execute(o.db);
     const u = r.rows[0]!;
@@ -140,6 +140,7 @@ export async function buildAssistant(o: {
       reminders,
       db: o.db,
       messaging,
+      contacts,
     };
   };
   const turns = createTurns({ db: o.db, clock: o.clock, stt, assistant, actions, contextFor });

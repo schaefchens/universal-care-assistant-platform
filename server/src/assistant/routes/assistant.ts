@@ -28,7 +28,8 @@ export function registerAssistantRoutes(app: AnyApp, o: { actions: Actions; llm:
       const a = auth(req);
       const b = req.body as { contentHash: string; via: 'touch' | 'voice'; lang?: 'de' | 'en' };
       const r = await o.actions.confirm(await o.contextFor(a.userId, a.deviceId, b.lang), (req.params as { id: string }).id, b.contentHash, b.via);
-      return r.ok ? { ok: true, say: r.say } : { ok: false, reason: r.reason };
+      // A call (K6) is placed by the device that asked, now that the person said yes.
+      return r.ok ? { ok: true, say: r.say, ...(r.device ? { device: r.device } : {}) } : { ok: false, reason: r.reason };
     },
   );
   app.post(

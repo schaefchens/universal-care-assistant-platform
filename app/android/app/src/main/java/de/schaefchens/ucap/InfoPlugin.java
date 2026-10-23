@@ -31,6 +31,10 @@ public class InfoPlugin extends Plugin {
         r.put("webViewVersion", wv != null ? wv.versionName : "");
         r.put("fontScale", c.fontScale);
         r.put("nightMode", (c.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES);
+        // Whether it can place a phone call at all (K6: "a device that cannot make calls says so"): a tablet with mobile
+        // data alone cannot.
+        android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getContext().getSystemService(android.content.Context.TELEPHONY_SERVICE);
+        r.put("voiceCapable", tm != null && tm.isVoiceCapable());
         call.resolve(r);
     }
 

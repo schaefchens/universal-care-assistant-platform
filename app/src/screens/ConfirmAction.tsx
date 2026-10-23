@@ -8,6 +8,7 @@
 import type { DeviceConfig } from '@ucap/shared';
 import { useEffect, useRef } from 'react';
 import { ChoiceGrid } from '../areas/ChoiceGrid.tsx';
+import { placeCall } from '../contacts/call.ts';
 import type { Session } from '../identity/account.ts';
 import { A11y, has } from '../native/plugins.ts';
 import { useUi } from '../ui.tsx';
@@ -44,11 +45,16 @@ export function ConfirmAction(p: { session: Session; config: DeviceConfig; actio
     if (over.current) return;
     finish();
     const r = await p.session
-      .call<{ ok: boolean; say?: string; reason?: string }>(`/api/v1/assistant/actions/${p.action.id}/confirm`, { method: 'POST', body: { contentHash: p.action.contentHash, via, lang: ui.lang } })
+      .call<{ ok: boolean; say?: string; reason?: string; device?: { call?: { number: string; name: string } } }>(`/api/v1/assistant/actions/${p.action.id}/confirm`, {
+        method: 'POST',
+        body: { contentHash: p.action.contentHash, via, lang: ui.lang },
+      })
       .catch(() => null);
     if (r?.ok && r.say) say(r.say, 'system');
-    else say(tr(r?.reason === 'expired' ? 'assistant.action.expired' : r ? 'assistant.action.gone' : 'assistant.failed'), 'system');
+    else if (!r?.ok) say(tr(r?.reason === 'expired' ? 'assistant.action.expired' : r ? 'assistant.action.gone' : 'assistant.failed'), 'system');
     p.onDone();
+    // A call (K6) is this device's to place, now that the person said yes.
+    if (r?.ok && r.device?.call) await placeCall(ui, r.device.call);
   }
   /** No, or silence: nothing happens; the action may say what it kept (a message's draft: C7, C8). */
   async function no(text: string, why: 'no' | 'silence' = 'no') {

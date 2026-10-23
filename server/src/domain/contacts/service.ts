@@ -9,7 +9,7 @@
  * - Every change is a version (CONCEPT §8: "previewable, traceable, and reversible"): undo puts the one before back,
  *   a deleted contact included; undoing its creation deletes it.
  */
-import { uuidv7 } from '@ucap/shared';
+import { digitsAloud, uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import { type CountryCode, parsePhoneNumberFromString } from 'libphonenumber-js';
 import { audit } from '../../lib/audit.ts';
@@ -60,6 +60,15 @@ interface ContactRow {
 export function displayOf(h: Handle): string {
   if ((h.kind === 'phone' || h.kind === 'whatsapp') && h.value.startsWith('+')) return parsePhoneNumberFromString(h.value)?.formatInternational() ?? h.value;
   return h.kind === 'telegram' ? '' : h.value;
+}
+
+/**
+ * How a number is said (K6: "with numbers read back digit by digit"): as it is dialled where the person lives
+ * ("0 3 0, 1 2 3 4 5 6 7"), with its country code otherwise ("plus 1, 5 5 5, …"); a short number as it is.
+ */
+export function spokenNumber(value: string, region: CountryCode): string {
+  const p = value.startsWith('+') ? parsePhoneNumberFromString(value) : undefined;
+  return digitsAloud(p ? (p.country === region && p.isValid() ? p.formatNational() : p.formatInternational()) : value);
 }
 
 export const MAX_NAME = 80;
@@ -209,10 +218,12 @@ export function createContactService(d: { db: Db; clock: Clock; people: PeopleSe
   async function view(exec: Exec, rows: ContactRow[]) {
     const hs = await handlesOf(exec, rows.map((r) => r.id));
     const who = await names(exec, rows.flatMap((r) => [r.created_by, r.updated_by]));
+    const region = rows[0] ? await personRegion(exec, rows[0].person_id) : 'DE';
     return rows.map((r) => ({
       id: r.id,
       name: r.name,
-      handles: (hs.get(r.id) ?? []).map((h) => ({ ...h, display: displayOf(h) })),
+      // A number also as it is said, digit by digit (the areas read it out; K6).
+      handles: (hs.get(r.id) ?? []).map((h) => ({ ...h, display: displayOf(h), ...(h.kind === 'phone' || h.kind === 'whatsapp' ? { spoken: spokenNumber(h.value, region) } : {}) })),
       version: r.version,
       createdBy: { id: r.created_by, displayName: who.get(r.created_by) ?? '' },
       updatedBy: { id: r.updated_by, displayName: who.get(r.updated_by) ?? '' },

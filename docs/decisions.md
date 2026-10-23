@@ -960,6 +960,17 @@ The plan: [plan-m3.md](plan-m3.md).
     which is kept for replies; a new message has no conversation to keep its draft in. The other choice: a draft per
     contact and service, offered when the person writes to them again.
 
+14. **A call from the contacts page is placed at the press**, without a question first: the page is for screen readers
+    and keyboards, and its button names whom and which number ("Physiotherapie anrufen (Praxis)"). plan-m3.md, K6:
+    "„Ruf Anna an": … asked first („Anna anrufen, Handy?")", said of the voice command; the areas ask first as the
+    voice does. The other choice: the page asks too.
+15. **The device editor sets what a home area opens** (Nachrichten, Notizen, Kontakte, Assistent), so the contacts screen
+    in areas can be put on the home screen. K7 names this for its screens ("the device editor offers them as areas
+    for the home screen"); M1's editor changed an area's look and place only (decision 4 above: adding and removing
+    areas come with M4). The task's own words and its kind's colour come with it, the person's words for the old task
+    go; it is said as "Maria hat aus dem Feld „Notizen“ das Feld „Kontakte“ gemacht." A screen the app draws itself
+    is no longer warned about when no area leads to it. The other choice: the contacts screen waits for K7's editor.
+
 ### Decided (within the plan)
 
 - **History is said from a day on.** plan-m3.md: "how much history it has: all of it, from a date, or previews only".
@@ -1145,6 +1156,23 @@ The plan: [plan-m3.md](plan-m3.md).
   says it for calls: "which number, when she has several"), and C1 names the one taken. The server sends only to a
   number or address the person keeps with a contact, checked again as it is confirmed. What is said of it (C3–C6)
   names the contact as C1 did; its conversation comes as the phone or the mail server makes it.
+- **A number is never in the language model's words** (K6: "„Wie ist Annas Nummer?"", "with numbers read back digit by
+  digit"): the model gets a contact's ref, name and labels ("Praxis", "Handy"), never its digits, and names the ref as
+  an original; UCAP then says the numbers digit by digit in groups, as they are dialled where the person lives
+  ("Physiotherapie. Praxis: 0 3 0, 1 2 3 4 5 6 7."). A model copying digits could misdial or mis-save.
+- **"Speichere diese Nummer als Anna"** takes the number of whoever wrote the message just read (as the service told
+  it; a Telegram user who hides theirs has none), or the number as said, digit words made figures ("null eins sieben
+  …"). It is read back digit by digit and asked ("Die Nummer 0 1 7 0, … als neuen Kontakt „Anna“ speichern?"), kept
+  with the contact of that name or a new one, and "Rückgängig" takes it back. A number already saved is named back
+  with whose it is.
+- **Calls** (K6): which number, when there are several (named back, the person's answer taken by its label or its last
+  digits); asked first with it ("Physiotherapie anrufen, Praxis?"); then the device that asked says what it does and
+  dials: directly where the person allowed calls (the phone fallback's setting, kept on the device), else in the
+  dialler. Whether a device can call is said with each turn (Android: a phone that can make voice calls; a browser
+  offers its tel: link, best effort): one that cannot says so, and its areas offer no call. Calls on WhatsApp and
+  Telegram are named as not possible.
+- **Contacts have a colour of their own** in every theme (a deep pink; white on black and black on yellow in high
+  contrast), so the area is told apart from Nachrichten and Notizen.
 - **`contacts.manage` comes with K6, `agenda.manage` with K7**, each with what it manages. K6's tests name "the
   permission matrix with both new scopes"; K7's matrix test adds the second.
 
@@ -1326,3 +1354,25 @@ The plan: [plan-m3.md](plan-m3.md).
     number at its next look; Android made a thread for it (8), the network's report came, the device said "Gesendet an
     K6 Testkontakt." once, and the server named the new thread by the contact. The test contact was deleted and the
     role went back to Google Messages; the test SMS stays in Android's store, which UCAP never deletes from.
+- **K6 part 3 (2026-10-23), contacts by voice, the areas and calls, on the emulator:**
+  - By voice, in LIVE mode (recordings played into the capture, the host microphone off meanwhile): "Alina, speichere
+    die Nummer null eins sieben null, eins zwei drei vier fünf sechs sieben als Erna Test." → "Die Nummer 0 1 7 0,
+    1 2 3 4 5 6 7 als neuen Kontakt „Erna-Test“ speichern?" (whisper wrote the hyphen); "Ja" → kept as +491701234567.
+    "Wie ist die Nummer von Erna Test?" → "Erna-Test. Telefon: 0 1 7 0, 1 2 3 4 5 6 7.", said by UCAP from the store.
+    "Ruf Erna Test an." → "Erna-Test anrufen?"; "Ja" → "Ich öffne das Telefon mit der Nummer von Erna-Test. …", and the
+    dialler showed +49 170 1234567 (Wanda allows no direct calls).
+  - A "Ja" after the question had been asked twice and dropped went to the assistant as a turn of its own, and the
+    model asked the same again: the answer belongs in the question's window.
+  - A helper in Chromium (Playwright's, a fresh profile: the Chrome on this Mac holds a UCAP session of its own, left
+    untouched): "Hanna Helferin" signed up with an account invitation and accepted Wanda's invitation for "Kontakte
+    verwalten"; the approval said "Hanna Helferin darf deine Kontakte anlegen und ändern."; she added "Hausarzt Test"
+    (030 5550123, "Praxis"), and the emulator said "Hanna Helferin hat den Kontakt „Hausarzt Test“ hinzugefügt." axe
+    found nothing on her view of the page.
+  - The editor (Hanna allowed "Bedienung der Geräte einstellen" for it): Wanda's "Notizen" area became "Kontakte", said
+    as "Neue Einstellungen. Hanna Helferin hat aus dem Feld „Notizen“ das Feld „Kontakte“ gemacht." The screen in
+    areas: "Kontakte. 2 Kontakte. 1 von 2: Erna-Test."; "Vorlesen" said the number digit by digit; "Anrufen" asked
+    "Hausarzt Test anrufen, Praxis?" ("Nein": "Nicht angerufen."; "Ja": the dialler with +49 30 5550123). The contacts
+    page's call buttons ("Hausarzt Test anrufen (Praxis)") open the dialler too. axe found nothing at any impact on the
+    screen, its question and the page.
+  - Afterwards version 3 was set again (said the same way), the test contacts deleted, Hanna's access ended (her account
+    stays on the development server), the recordings removed, and the host microphone on again, as it was.

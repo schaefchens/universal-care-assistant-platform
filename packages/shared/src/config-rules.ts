@@ -39,7 +39,7 @@ export interface ConfigIssue {
 }
 
 /** Screens the app draws itself: an area may lead there without the configuration describing them. */
-export const APP_SCREENS = ['notes', 'messages'] as const;
+export const APP_SCREENS = ['notes', 'messages', 'contacts'] as const;
 
 const HELP_WORD = /\b(hilfe|help)/i;
 const MIN_HELP_SHARE = 1 / 9;
@@ -88,8 +88,10 @@ export function checkConfig(c: DeviceConfig): { errors: ConfigIssue[]; warnings:
       const back = s.areas.some((a) => a.action.type === 'back' || a.action.type === 'home');
       if (!back) errors.push({ code: 'way_back', screen: id });
       const d = depth.get(id);
-      if (d === undefined) warnings.push({ code: 'unreachable', screen: id });
-      else if (d > 1 && !s.areas.some((a) => a.action.type === 'home')) errors.push({ code: 'home_far', screen: id });
+      // One the app draws itself (notes, messages, contacts) is described here only as a stand-in: none is missed.
+      if (d === undefined) {
+        if (!(APP_SCREENS as readonly string[]).includes(id)) warnings.push({ code: 'unreachable', screen: id });
+      } else if (d > 1 && !s.areas.some((a) => a.action.type === 'home')) errors.push({ code: 'home_far', screen: id });
     }
     const least = c.visual.theme === 'hc-light' || c.visual.theme === 'hc-dark' ? MIN_LABEL_CONTRAST_HIGH : MIN_LABEL_CONTRAST;
     for (const a of s.areas)
