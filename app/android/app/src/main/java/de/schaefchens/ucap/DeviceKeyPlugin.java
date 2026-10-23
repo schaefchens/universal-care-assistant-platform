@@ -37,7 +37,7 @@ public class DeviceKeyPlugin extends Plugin {
         KeyGenParameterSpec.Builder spec = new KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
             .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1"))
             .setDigests(KeyProperties.DIGEST_SHA256);
-        if (strongBox) spec.setIsStrongBoxBacked(true);
+        if (strongBox && Build.VERSION.SDK_INT >= 28) spec.setIsStrongBoxBacked(true);
         KeyPairGenerator g = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore");
         g.initialize(spec.build());
         g.generateKeyPair();

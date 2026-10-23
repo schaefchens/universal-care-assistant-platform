@@ -1,11 +1,13 @@
 package de.schaefchens.ucap;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
@@ -111,15 +113,9 @@ public class VoiceCaptureService extends Service {
     }
 
     private Notification notice(String title, String text) {
-        NotificationManager nm = getSystemService(NotificationManager.class);
-        if (nm.getNotificationChannel(CHANNEL) == null) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL, title == null ? "LIVE" : title, NotificationManager.IMPORTANCE_LOW);
-            ch.setShowBadge(false);
-            nm.createNotificationChannel(ch);
-        }
         Intent open = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Builder(this, CHANNEL)
+        return builder(title)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title == null ? "UCAP" : title)
             .setContentText(text == null ? "" : text)
@@ -127,6 +123,25 @@ public class VoiceCaptureService extends Service {
             .setContentIntent(pi)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build();
+    }
+
+    /** Its channel from Android 8 on; before that (Android 7: no channels, and no such classes) a low priority. */
+    private Notification.Builder builder(String title) {
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm.getNotificationChannel(CHANNEL) == null) {
+                NotificationChannel ch = new NotificationChannel(CHANNEL, title == null ? "LIVE" : title, NotificationManager.IMPORTANCE_LOW);
+                ch.setShowBadge(false);
+                nm.createNotificationChannel(ch);
+            }
+            return new Notification.Builder(this, CHANNEL);
+        }
+        return legacy();
+    }
+
+    @SuppressWarnings("deprecation")
+    private Notification.Builder legacy() {
+        return new Notification.Builder(this).setPriority(Notification.PRIORITY_LOW);
     }
 
     private void capture(List<String> keywords, List<String> grammar, String path, double threshold) {
@@ -166,6 +181,11 @@ public class VoiceCaptureService extends Service {
                     if (s != null) s.speech();
                 }
             });
+            // The permission can be taken back in Android's settings while LIVE is on.
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                reason = "unavailable";
+                return;
+            }
             int min = AudioRecord.getMinBufferSize(LiveListener.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, LiveListener.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, Math.max(min, 6400) * 2);
             if (rec.getState() != AudioRecord.STATE_INITIALIZED) {

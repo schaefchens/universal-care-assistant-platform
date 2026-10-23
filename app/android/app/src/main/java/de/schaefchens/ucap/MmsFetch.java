@@ -88,7 +88,7 @@ final class MmsFetch {
         }
         try {
             if (resultCode == Activity.RESULT_OK && f.length() > 0) {
-                GenericPdu pdu = new PduParser(readAll(f), true).parse();
+                GenericPdu pdu = new PduParser(Io.readAll(f), true).parse();
                 if (pdu instanceof RetrieveConf) {
                     RetrieveConf r = (RetrieveConf) pdu;
                     int status = r.getRetrieveStatus();
@@ -124,7 +124,7 @@ final class MmsFetch {
         try {
             File f = file(ctx, tx);
             f.getParentFile().mkdirs();
-            writeAll(f, pdu);
+            Io.writeAll(f, pdu);
             fetched(ctx, tx, Activity.RESULT_OK);
         } catch (Exception e) {
             android.util.Log.w("UCAP", "mms debug: " + e.getClass().getSimpleName());
@@ -139,7 +139,7 @@ final class MmsFetch {
     private static void retrieved(Context ctx, SmsDb.Mms m) {
         File f = new File(new File(ctx.getCacheDir(), "mms"), key(m.tx) + ".resp");
         try {
-            writeAll(f, notifyResp(m.tx));
+            Io.writeAll(f, notifyResp(m.tx));
             Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", f);
             Intent done = new Intent(ctx, MmsFetchedReceiver.class).setData(Uri.parse("ucap-mms://retrieved/" + key(m.tx))).putExtra("retrieved", key(m.tx));
             int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
@@ -231,22 +231,6 @@ final class MmsFetch {
             return null; // the role is gone
         } catch (RuntimeException e) {
             return null; // a phone without telephony
-        }
-    }
-
-    // Streams, not java.nio.file: the SMS role works from Android 7 (API 24) on, and java.nio.file needs API 26.
-    private static byte[] readAll(File f) throws java.io.IOException {
-        try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
-            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream((int) Math.max(0, Math.min(f.length(), Integer.MAX_VALUE)));
-            byte[] buf = new byte[16 * 1024];
-            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-            return out.toByteArray();
-        }
-    }
-
-    private static void writeAll(File f, byte[] data) throws java.io.IOException {
-        try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
-            out.write(data);
         }
     }
 

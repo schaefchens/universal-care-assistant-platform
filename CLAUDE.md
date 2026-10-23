@@ -145,6 +145,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
 - Play voice through `HTMLAudioElement`, never Web Audio.
 - The microphone needs `RECORD_AUDIO` + `MODIFY_AUDIO_SETTINGS`.
 - `CapacitorHttp` stays off. The native build uses a hash router.
+- The app runs from Android 7 (minSdk 24): `java.nio.file` and notification channels need Android 8 and end the
+  process there (an Error, past `catch (Exception)`). Files through `Io`, channels behind `SDK_INT >= 26`; lint's NewApi
+  check finds such calls (`./gradlew :app:lintDebug`, not part of the checks).
 - A `setTimeout` can fire early: tick at `Math.max(scheduled, performance.now())`.
 - Android 15 silences notification bursts: one alarm per request, updated in place, re-alerts at least 120 s apart.
 - JobScheduler refuses a job with a network constraint unless the app holds `ACCESS_NETWORK_STATE` (Android 14+), and

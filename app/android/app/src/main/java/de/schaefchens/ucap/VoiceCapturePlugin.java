@@ -30,7 +30,6 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -172,7 +171,7 @@ public class VoiceCapturePlugin extends Plugin {
     private boolean ready(String id, String sha256) {
         File marker = new File(getContext().getFilesDir(), "models/" + id + ".ok");
         try {
-            return marker.isFile() && new String(Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8).trim().equals(sha256);
+            return marker.isFile() && new String(Io.readAll(marker), StandardCharsets.UTF_8).trim().equals(sha256);
         } catch (Exception e) {
             return false;
         }
@@ -445,7 +444,7 @@ public class VoiceCapturePlugin extends Plugin {
 
     /** The samples of a 16-bit mono WAV: its data chunk, wherever it is. */
     private static short[] readWav(File f) throws Exception {
-        ByteBuffer b = ByteBuffer.wrap(Files.readAllBytes(f.toPath())).order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer b = ByteBuffer.wrap(Io.readAll(f)).order(ByteOrder.LITTLE_ENDIAN);
         int at = 12;
         while (at + 8 <= b.limit()) {
             String id = new String(new byte[] { b.get(at), b.get(at + 1), b.get(at + 2), b.get(at + 3) }, StandardCharsets.US_ASCII);
