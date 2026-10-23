@@ -54,11 +54,15 @@ export function createMessageStore(d: { db: Db; clock: Clock }) {
       });
     },
 
+    /** A participant, with the address that finds their contact: the one the service told, else the one its id holds. */
     async upsertUser(connectionId: string, u: WireUser): Promise<void> {
+      const told = typeof u.address === 'string' && /^\+[0-9]{6,15}$/.test(u.address) ? u.address : null;
       await sql`
-        insert into messaging_participants (connection_id, external_id, name, is_contact, is_bot, updated_at)
-        values (${connectionId}, ${u.externalId}, ${u.name}, ${u.isContact}, ${u.isBot}, ${now()})
-        on conflict (connection_id, external_id) do update set name = excluded.name, is_contact = excluded.is_contact, is_bot = excluded.is_bot, updated_at = excluded.updated_at`.execute(d.db);
+        insert into messaging_participants (connection_id, external_id, name, is_contact, is_bot, address, updated_at)
+        select ${connectionId}, ${u.externalId}, ${u.name}, ${u.isContact}, ${u.isBot}, coalesce(${told}::text, messaging_address(k.service, ${u.externalId})), ${now()}
+        from messaging_connections k where k.id = ${connectionId}
+        on conflict (connection_id, external_id) do update set name = excluded.name, is_contact = excluded.is_contact, is_bot = excluded.is_bot,
+          address = coalesce(excluded.address, messaging_participants.address), updated_at = excluded.updated_at`.execute(d.db);
     },
 
     /**

@@ -82,6 +82,11 @@ export interface WireUser {
   name: string;
   isContact: boolean;
   isBot: boolean;
+  /**
+   * Their number in E.164, where the service tells it and the id does not hold it (K6: to find the person's contact):
+   * a Telegram user's, a WhatsApp person known by a LID. SMS and email ids hold theirs.
+   */
+  address?: string | null;
 }
 
 /** From the assistant to the connectors process. `start` carries each service's own secrets. */

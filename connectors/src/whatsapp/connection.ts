@@ -475,7 +475,9 @@ export class WhatsappConnection {
     this.toldUsers.add(userId);
     // The person themselves counts as known: their own chat is never a stranger's.
     const known = this.ids.savedName(jid) !== null || this.ids.isSelf(jid);
-    this.emit({ t: 'user.upsert', id: this.o.id, user: { externalId: userId, name: this.ids.name(jid, unknownName(this.lang)), isContact: known, isBot: false } });
+    // Their number, where WhatsApp told it, finds the person's contact (K6), a person known by a LID too.
+    const digits = this.ids.number(jid);
+    this.emit({ t: 'user.upsert', id: this.o.id, user: { externalId: userId, name: this.ids.name(jid, unknownName(this.lang)), isContact: known, isBot: false, address: digits ? `+${digits}` : null } });
   }
 
   /** A group's name, asked of WhatsApp once when a group's message comes without it. */

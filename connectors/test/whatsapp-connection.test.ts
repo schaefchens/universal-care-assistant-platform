@@ -181,9 +181,9 @@ describe('a WhatsApp connection', () => {
     // One unread: read up to the incoming message before it.
     expect(of('chat.read')).toEqual([{ t: 'chat.read', id: 'c1', chatId: ANNA, inboxMaxId: String(NOW - 2 * DAY), outboxMaxId: null }]);
     expect(of('user.upsert').map((e) => e.user)).toEqual([
-      { externalId: 'user:4915112345678', name: 'Anna Beispiel', isContact: true, isBot: false },
+      { externalId: 'user:4915112345678', name: 'Anna Beispiel', isContact: true, isBot: false, address: '+4915112345678' },
       // Not in the address book: the name she gave herself, as a stranger (the owner, 2026-10-22).
-      { externalId: 'user:4917699999999', name: 'Maria (Tochter)', isContact: false, isBot: false },
+      { externalId: 'user:4917699999999', name: 'Maria (Tochter)', isContact: false, isBot: false, address: '+4917699999999' },
     ]);
     expect(of('msg.upsert').map((e) => [e.msg.externalId, e.msg.outgoing, e.live ?? false])).toEqual([
       ['A2', false, false],

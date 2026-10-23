@@ -41,6 +41,8 @@ export interface TdUser {
   first_name?: string;
   last_name?: string;
   is_contact?: boolean;
+  /** Digits, without "+"; empty where the user hides it. */
+  phone_number?: string;
   type?: { _: string };
 }
 
@@ -180,7 +182,9 @@ export function chat(c: TdChat): WireChat {
 }
 
 export function user(u: TdUser): WireUser {
-  return { externalId: `user:${u.id}`, name: [u.first_name, u.last_name].filter(Boolean).join(' ') || '?', isContact: u.is_contact === true, isBot: u.type?._ === 'userTypeBot' };
+  // The number, where Telegram shows it, finds the person's contact (K6).
+  const address = u.phone_number && /^\d{6,15}$/.test(u.phone_number) ? `+${u.phone_number}` : null;
+  return { externalId: `user:${u.id}`, name: [u.first_name, u.last_name].filter(Boolean).join(' ') || '?', isContact: u.is_contact === true, isBot: u.type?._ === 'userTypeBot', address };
 }
 
 /** A deletion that counts: permanent, and not TDLib clearing its cache. */

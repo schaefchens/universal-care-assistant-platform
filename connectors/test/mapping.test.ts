@@ -32,7 +32,9 @@ describe('telegram mapping', () => {
     expect(chat(F.privateChat as TdChat)).toEqual({ externalId: '777001', title: 'Anna Beispiel', kind: 'private', userId: 'user:42', muted: false, unread: 2, readInboxMaxId: null, readOutboxMaxId: null });
     expect(chat({ ...(F.privateChat as TdChat), last_read_inbox_message_id: 1048576, last_read_outbox_message_id: 2097152 })).toMatchObject({ readInboxMaxId: '1048576', readOutboxMaxId: '2097152' });
     expect(chat(F.channel as TdChat)).toMatchObject({ kind: 'channel', muted: true, unread: 40 });
-    expect(user(F.user as TdUser)).toEqual({ externalId: 'user:42', name: 'Anna Beispiel', isContact: true, isBot: false });
+    expect(user(F.user as TdUser)).toEqual({ externalId: 'user:42', name: 'Anna Beispiel', isContact: true, isBot: false, address: null });
+    // The number, where Telegram shows it, finds the person's contact (K6).
+    expect(user({ ...(F.user as TdUser), phone_number: '4915112345678' }).address).toBe('+4915112345678');
     expect(user(F.bot as TdUser)).toMatchObject({ isBot: true, isContact: false });
   });
 

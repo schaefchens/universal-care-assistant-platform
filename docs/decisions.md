@@ -1100,6 +1100,13 @@ The plan: [plan-m3.md](plan-m3.md).
   ("Maria hat den Kontakt „Physiotherapie" hinzugefügt."), fetching that version, as reminders' events carry ids
   only. The page offers "Rückgängig" right after each change; undo puts the version before back, a deleted contact
   included, and undoing a creation deletes it.
+- **Names come from the person's contacts as they are read**, on every service: a participant's address (a number in
+  E.164 or an email address, as plan-m3.md's Data has it) finds their contact, a Telegram user also by their id once
+  a contact has it. A private conversation is named by its peer's contact, a sender by theirs, and either counts as
+  known for the stranger warning. Nothing is written into the messages: changing or deleting a contact renames at
+  once, and core never touches messaging's tables. The address comes from the service's id (SMS, email, WhatsApp by
+  number), else from what the connector says (a WhatsApp person known by a LID; Telegram, where it shows the number);
+  an email whose sender was not confirmed has none.
 - **`contacts.manage` comes with K6, `agenda.manage` with K7**, each with what it manages. K6's tests name "the
   permission matrix with both new scopes"; K7's matrix test adds the second.
 

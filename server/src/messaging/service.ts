@@ -54,6 +54,13 @@ const WHATSAPP_POLICY = 'whatsapp_policy';
 /** The states in which a server-side connection runs, or should: started again when its process comes back. */
 const LIVE_STATES = ['starting', 'wait_phone', 'wait_code', 'wait_password', 'wait_qr', 'wait_pairing', 'ready'];
 
+/**
+ * A conversation's name (with `v` the conversation): a private one is named by the person's contact for its peer,
+ * where they saved one (K6; plan-m3.md: "Names come from the person's contacts, never from the sender"); else as its
+ * service names it. A sender is `coalesce(p.contact_name, p.name)` from `messaging_people p` the same way.
+ */
+const TITLE = sql`coalesce((select pp.contact_name from messaging_people pp where v.kind = 'private' and pp.connection_id = v.connection_id and pp.external_id = v.peer_external_id), v.title)`;
+
 export interface Hub {
   send(service: ServerService, cmd: ToConnectors): boolean;
   connected(service: ServerService): boolean;
@@ -512,12 +519,12 @@ export function createMessaging(d: {
       service: Service;
       label: string | null;
     }>`
-      select m.id, m.conversation_id, v.connection_id, v.title, v.kind as ckind, m.sender_external_id, p.name as sender_name, m.direction, m.sent_at, m.kind, m.text, m.file_name,
-        m.subject, m.quoted, m.delivered_at, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label
+      select m.id, m.conversation_id, v.connection_id, ${TITLE} as title, v.kind as ckind, m.sender_external_id, coalesce(p.contact_name, p.name) as sender_name, m.direction, m.sent_at,
+        m.kind, m.text, m.file_name, m.subject, m.quoted, m.delivered_at, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label
       from messaging_messages m
       join messaging_conversations v on v.id = m.conversation_id
       join messaging_connections k on k.id = v.connection_id
-      left join messaging_participants p on p.connection_id = k.id and p.external_id = m.sender_external_id
+      left join messaging_people p on p.connection_id = k.id and p.external_id = m.sender_external_id
       left join messaging_attachments a on a.message_id = m.id
       where k.user_id = ${userId} and ${where}
       order by ${order} limit ${limit}`.execute(d.db);
@@ -780,7 +787,7 @@ export function createMessaging(d: {
         label: string | null;
         last_out: boolean | null;
       }>`
-        select v.id, v.title, v.kind, v.muted, v.last_message_at, v.draft, v.draft_at, k.service, k.label,
+        select v.id, ${TITLE} as title, v.kind, v.muted, v.last_message_at, v.draft, v.draft_at, k.service, k.label,
           (select count(*) from messaging_messages m where m.conversation_id = v.id and m.direction = 'in' and m.read_at is null and m.heard_at is null) as unread,
           (select m.direction = 'out' from messaging_messages m where m.conversation_id = v.id order by m.sent_at desc limit 1) as last_out
         from messaging_conversations v join messaging_connections k on k.id = v.connection_id
@@ -854,8 +861,8 @@ export function createMessaging(d: {
         (
           await sql`
             select 1 from messaging_conversations v join messaging_connections k on k.id = v.connection_id
-            left join messaging_participants p on p.connection_id = k.id
-            where k.user_id = ${userId} and (v.title ilike ${`%${name}%`} or p.name ilike ${`%${name}%`}) limit 1`.execute(d.db)
+            left join messaging_people p on p.connection_id = k.id
+            where k.user_id = ${userId} and (${TITLE} ilike ${`%${name}%`} or p.name ilike ${`%${name}%`} or p.contact_name ilike ${`%${name}%`}) limit 1`.execute(d.db)
         ).rows.length > 0;
       // A name in the wrong place (a person nobody is called, a name among the words): taken as meant.
       if (person?.trim() && !(await known(person.trim()))) {
@@ -867,7 +874,9 @@ export function createMessaging(d: {
             break;
           }
       }
-      const who = person?.trim() ? sql`and (v.title ilike ${`%${person.trim()}%`} or p.name ilike ${`%${person.trim()}%`})` : sql``;
+      const who = person?.trim()
+        ? sql`and (${TITLE} ilike ${`%${person.trim()}%`} or coalesce(p.contact_name, p.name) ilike ${`%${person.trim()}%`} or p.name ilike ${`%${person.trim()}%`})`
+        : sql``;
       // "Was hat Michael geschrieben?" searched as the name: his messages, not the word "Michael" in them.
       const words = person && fold(q) === fold(person) ? '' : q.trim();
       const latest = async () => (await items(userId, sql`true ${who}`, sql`m.sent_at desc`, limit)).reverse();
@@ -981,10 +990,10 @@ export function createMessaging(d: {
       // A conversation's id wherever it stands ("chat:<id>", the id alone, "Anna Beispiel (chat:<id>)").
       const ref = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/.exec(to);
       const r = await sql<{ id: string; title: string; kind: string; subject: string | null; is_contact: boolean | null; service: Service; label: string | null; last_in: Date | null }>`
-        select v.id, v.title, v.kind, v.subject, p.is_contact, k.service, k.label,
+        select v.id, ${TITLE} as title, v.kind, v.subject, (p.contact_id is not null or p.is_contact) as is_contact, k.service, k.label,
           (select max(m.sent_at) from messaging_messages m where m.conversation_id = v.id and m.direction = 'in') as last_in
         from messaging_conversations v join messaging_connections k on k.id = v.connection_id
-        left join messaging_participants p on p.connection_id = k.id and p.external_id = v.peer_external_id
+        left join messaging_people p on p.connection_id = k.id and p.external_id = v.peer_external_id
         where k.user_id = ${userId} and v.title <> '' ${o.forSending ? sql`and k.state = 'ready' and v.kind in ('private', 'group')` : sql``}
         order by v.last_message_at desc nulls last`.execute(d.db);
       const out = (x: (typeof r.rows)[number]): Found => ({ conversationId: x.id, name: x.title, service: x.service, label: x.label, subject: x.subject, contact: x.kind === 'private' ? x.is_contact === true : null });
@@ -1043,7 +1052,7 @@ export function createMessaging(d: {
     /** What to tell the person about a message they sent (C3–C6), in their words. */
     async outbound(userId: string, id: string, lang?: Lang): Promise<{ state: string; told: Told[]; say: string | null } | null> {
       const r = await sql<{ state: string; told: Told[]; error: string | null; title: string; service: Service; label: string | null }>`
-        select o.state, o.told, o.error, v.title, k.service, k.label from messaging_outbound o join messaging_conversations v on v.id = o.conversation_id
+        select o.state, o.told, o.error, ${TITLE} as title, k.service, k.label from messaging_outbound o join messaging_conversations v on v.id = o.conversation_id
         join messaging_connections k on k.id = o.connection_id where o.id = ${id} and o.user_id = ${userId}`.execute(d.db);
       const o = r.rows[0];
       if (!o) return null;

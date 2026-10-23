@@ -488,6 +488,37 @@ describe('messaging across services', () => {
     expect(seen.at(-1)!.messages.at(-1)!.content).toContain('service_ambiguous: SMS, Telegram');
   });
 
+  it("names come from the person's contacts (K6): Mama's number saved as „Mutter“ names her SMS, its frames and C1; the practice saved is no stranger; deleted, the services' names come back", async () => {
+    const contacts = (method: 'POST' | 'DELETE', path: string, body?: unknown) =>
+      core.app.inject({ method, url: `/api/v1/people/${anna.userId}/contacts${path}`, payload: body as Record<string, unknown>, headers: { authorization: `Bearer ${anna.token}` } });
+    // The practice's sender, as the email connector tells every correspondent (a stranger: never written to).
+    mail.emit({ t: 'user.upsert', id: emailId, user: { externalId: 'praxis@example.org', name: 'Praxis Dr. Klein', isContact: false, isBot: false } });
+    await until(async () => (await sql`select 1 from messaging_participants where external_id = 'praxis@example.org'`.execute(db)).rows.length > 0, 'told');
+    const mutter = ((await contacts('POST', '', { name: 'Mutter', handles: [{ kind: 'phone', value: '+4917012345' }] })).json() as { id: string }).id;
+    const klein = ((await contacts('POST', '', { name: 'Dr. Klein', handles: [{ kind: 'email', value: 'Praxis@Example.org' }] })).json() as { id: string }).id;
+    const said = async (text: string) => {
+      const id = (await sql<{ id: string }>`select id from messaging_messages where text = ${text}`.execute(db)).rows[0]!.id;
+      return ((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { conversation: string; say: { frame: string; announce: string } });
+    };
+    const ask = async (chat: string, text: string) => {
+      script = () => ({ say: [], calls: [{ tool: 'messages.send', chat, text }], help: false });
+      return ((await turn(anna, `Schreib ${chat}: ${text}`)).find((e) => e.t === 'action') as unknown as { prompt: string }).prompt;
+    };
+    // By her number: her SMS conversation, its frame and announcement, and the confirmation.
+    expect(await said('Ruf mich bitte an.')).toMatchObject({ conversation: 'Mutter', say: { announce: 'Neue Nachricht von Mutter per SMS.' } });
+    expect((await said('Ruf mich bitte an.')).say.frame).toMatch(/^Mutter schrieb .+ per SMS:$/);
+    expect(await ask('Mutter', 'Gute Nacht.')).toBe('SMS an Mutter: „Gute Nacht.“. Senden?');
+    // By its address: the practice is no stranger any more.
+    expect((await said('Ihr Termin am Dienstag fällt aus.')).say.frame).toMatch(/^Dr\. Klein schrieb .+ per E-Mail mit dem Betreff „Ihr Termin am Dienstag“:$/);
+    expect(await ask('Dr. Klein', 'Danke.')).toBe('E-Mail an Dr. Klein, Betreff „Re: Ihr Termin am Dienstag“: „Danke.“. Senden?');
+    // Telegram's Mama has no number there: not this contact by name alone.
+    expect((await said('Alles Gute!')).say.frame).toMatch(/^Mama schrieb .+ auf Telegram:$/);
+    // Deleted: the services' own names again, and the practice a stranger again.
+    for (const id of [mutter, klein]) expect((await contacts('DELETE', `/${id}`)).statusCode).toBe(204);
+    expect((await said('Ruf mich bitte an.')).conversation).toBe('Mama');
+    expect(await ask('Praxis Dr. Klein', 'Danke.')).toMatch(/^Achtung: Praxis Dr\. Klein ist nicht in deinen Kontakten\. /);
+  });
+
   it('says what each connection can do, as data for the model', async () => {
     let round = 0;
     script = () => (++round === 1 ? { say: [], calls: [{ tool: 'messages.connections' }], help: false } : { say: [{ kind: 'reply', text: 'WhatsApp ist noch nicht verbunden.', ref: null }], calls: [], help: false });
