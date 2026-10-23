@@ -1235,4 +1235,4 @@ The plan: [plan-m3.md](plan-m3.md).
       starts.
     - LIVE said it waited for its name while its service was gone, once, after the recovery, the role dialog and
       TalkBack's prompts; switched off and on, it listened again. Not caused by the day's changes (the service's stop
-      paths logged nothing); not seen again.
+      paths logged nothing); not seen again. The owner switched LIVE on afterwards and found no fault (2026-10-23).
