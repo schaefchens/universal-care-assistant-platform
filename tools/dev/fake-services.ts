@@ -14,8 +14,9 @@
  * - WhatsApp: any phone number; the pairing code UCAP2026 is "typed on the phone" after 5 s (or at /pair).
  * - Email: any address and password; the password "falsch" is refused.
  *
- * A sent message is pending, then sent after 1.5 s, and Anna answers a little later on the same service; a new mail to
- * an address (K6) starts a thread of its own. A text with
+ * A sent message is pending, then sent after 1.5 s, and Anna answers a little later on the same service; a new message
+ * to a contact (K6) starts a chat of its own: a mail to an address, on WhatsApp and Telegram to a number (or a Telegram
+ * id); a number ending in 0000 is on neither. A text with
  * "#fail", or any to "Maria (Tochter)" (as if she had blocked the person), is refused; "#slow" is confirmed after 20 s,
  * "#lost" is never answered. Control on 127.0.0.1:8823 (POST, JSON):
  *   /incoming {service?, chat: "anna"|"familie"|"maria", text, subject?, quoted?}  a new message (Telegram unless
@@ -159,18 +160,24 @@ function ready(a: Account) {
   log(`${a.service} connection ${a.id} ready`);
 }
 
-/** A new mail to an address (K6): sent after 1.5 s, in a thread of its own, as the mail server's copy shows it. */
+/**
+ * A new message to a contact (K6), in a chat of its own: a mail to an address; on WhatsApp and Telegram to a number,
+ * which the service has unless it ends in 0000, or to a Telegram id. Sent after 1.5 s.
+ */
 function sendNew(a: Account, requestId: string, to: string, text: string, subject: string | null) {
+  const digits = /^\+(\d{7,15})$/.exec(to)?.[1];
+  if (a.service !== 'email' && !(digits && !digits.endsWith('0000')) && !/^user:\d+$/.test(to))
+    return emit({ t: 'send.result', id: a.id, requestId, state: 'failed', error: a.service === 'whatsapp' ? 'wa_not_found' : 'tg_not_found' });
   const tempId = String(a.temp--);
   emit({ t: 'send.result', id: a.id, requestId, state: 'pending_service', tempId });
   setTimeout(() => {
     a.nextId += 1048576;
-    const chatId = `thread:new-${a.nextId}`;
-    const peer = `mail:${to}`;
+    const chatId = a.service === 'email' ? `thread:new-${a.nextId}` : a.service === 'whatsapp' ? `${digits}@s.whatsapp.net` : (to.startsWith('user:') ? to.slice(5) : String(900000 + Number(digits!.slice(-5))));
+    const peer = a.service === 'email' ? `mail:${to}` : to.startsWith('user:') ? to : `user:${digits}`;
     emit({ t: 'send.result', id: a.id, requestId, state: 'sent', externalId: String(a.nextId), tempId });
-    emit({ t: 'user.upsert', id: a.id, user: { externalId: peer, name: to, isContact: true, isBot: false } });
+    emit({ t: 'user.upsert', id: a.id, user: { externalId: peer, name: to, isContact: a.service === 'email', isBot: false, ...(digits ? { address: `+${digits}` } : {}) } });
     emit({ t: 'chat.upsert', id: a.id, chat: { externalId: chatId, title: to, subject, kind: 'private', userId: peer, muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } });
-    emit({ t: 'msg.upsert', id: a.id, msg: { chatId, externalId: String(a.nextId), fromId: ME.email(a).externalId, outgoing: true, date: now(), editDate: null, kind: 'text', text, file: null, fileName: null, subject } });
+    emit({ t: 'msg.upsert', id: a.id, msg: { chatId, externalId: String(a.nextId), fromId: ME[a.service](a).externalId, outgoing: true, date: now(), editDate: null, kind: 'text', text, file: null, fileName: null, subject } });
   }, 1500);
 }
 
@@ -232,7 +239,7 @@ async function handle(cmd: ToConnectors) {
       emit({ t: 'conn.state', id: a.id, state: 'closed' });
       return;
     case 'send': {
-      if (!cmd.chatId && cmd.to && a.service === 'email') return sendNew(a, cmd.requestId, cmd.to, cmd.text, cmd.subject ?? null);
+      if (!cmd.chatId && cmd.to) return sendNew(a, cmd.requestId, cmd.to, cmd.text, cmd.subject ?? null);
       const chats = CHATS[a.service];
       const chat = (Object.keys(chats) as ChatKey[]).find((k) => chats[k].externalId === cmd.chatId);
       if (!chat) return emit({ t: 'send.result', id: a.id, requestId: cmd.requestId, state: 'failed', error: 'not_found' });

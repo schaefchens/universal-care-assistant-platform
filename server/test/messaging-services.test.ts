@@ -163,7 +163,7 @@ describe('messaging across services', () => {
     // No WhatsApp process yet: kept, and started when one dials in.
     expect((await connect({ service: 'whatsapp', acceptedRisk: true })).json()).toEqual({ error: { code: 'unavailable', params: { reason: 'connectors' } } });
     const c = (await connections(anna)).connections.find((x) => x.service === 'whatsapp')!;
-    expect(c).toMatchObject({ state: 'starting', running: false, capabilities: { history: 'since', send: 'conversations', sent: 'service' } });
+    expect(c).toMatchObject({ state: 'starting', running: false, capabilities: { history: 'since', send: 'contacts', sent: 'service' } });
     await wa.connect(url, SECRETS.connectorsToken!, [], ['whatsapp']);
     const start = (await wa.next('start')) as Extract<ToConnectors, { t: 'start'; service: 'whatsapp' }>;
     expect(start).toMatchObject({ id: c.id, service: 'whatsapp', dir: c.id, lang: 'de' });
@@ -567,16 +567,20 @@ describe('messaging across services', () => {
     })).json() as { id: string }).id;
     const tom = ((await contacts('POST', '', { name: 'Tom Neu', handles: [{ kind: 'phone', value: '+491511112222', label: 'Handy' }, { kind: 'phone', value: '+491513334444', label: 'Arbeit' }] })).json() as { id: string }).id;
     const find = (to: string, service: string | null = null, address: string | null = null) => assistant.messaging.find(anna.userId, to, { forSending: true, service, address });
-    // No conversation anywhere: SMS and email both could, so the service is asked; named, it is that one.
-    expect(await find('Physiotherapie')).toEqual({ services: ['SMS', 'E-Mail'] });
+    // No conversation anywhere: SMS, Telegram and email could, so the service is asked; named, it is that one.
+    expect(await find('Physiotherapie')).toEqual({ services: ['SMS', 'Telegram', 'E-Mail'] });
     // By SMS to the mobile number, never the practice's landline; said with which one it is.
     expect(await find('Physiotherapie', 'per SMS')).toEqual({ conversationId: null, name: 'Physiotherapie (Handy)', service: 'sms', label: null, subject: null, contact: true, to: { connectionId: smsId, address: '+491707654321' } });
     // Two mobile numbers: named back, and the one the person said is taken.
     expect(await find('Tom', 'SMS')).toEqual({ addresses: ['Handy', 'Arbeit'] });
     expect(await find('Tom', 'SMS', 'die Arbeit')).toMatchObject({ name: 'Tom Neu (Arbeit)', to: { address: '+491513334444' } });
     expect(await find('Tom', 'SMS', '0151 3334444')).toMatchObject({ to: { address: '+491513334444' } });
-    // Not on a service that cannot write to anyone new, nor for reading.
-    expect(await find('Tom', 'Telegram')).toBeNull();
+    // On Telegram too (the owner, 2026-10-23): to the user Telegram finds for the number, or to a saved Telegram id.
+    expect(await find('Tom', 'Telegram', 'Handy')).toMatchObject({ service: 'telegram', to: { connectionId: telegramId, address: '+491511112222' } });
+    const ida = ((await contacts('POST', '', { name: 'Ida', handles: [{ kind: 'phone', value: '+491603334444' }, { kind: 'telegram', value: '77' }] })).json() as { id: string }).id;
+    expect(await find('Ida', 'Telegram')).toEqual({ conversationId: null, name: 'Ida', service: 'telegram', label: null, subject: null, contact: true, to: { connectionId: telegramId, address: 'user:77' } });
+    expect(await find('Ida', 'WhatsApp')).toBeNull();
+    // Never for reading.
     expect(await assistant.messaging.find(anna.userId, 'Tom', { forSending: false })).toBeNull();
 
     // The SMS: asked as any SMS, taken by the phone with the number, and sent there in a new thread.
@@ -613,6 +617,18 @@ describe('messaging across services', () => {
     mail.emit({ t: 'send.result', id: emailId, requestId: cmd.requestId, state: 'failed', error: 'smtp_550' });
     await until(async () => (await outbound(e.id)).state === 'failed', 'failed');
     expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'de'))?.say).toBe('Nicht gesendet: der Mailserver hat sie abgelehnt.');
+    // On Telegram: the command goes to its process with the number; Telegram finds nobody, and says so.
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', service: 'Telegram', text: 'Hallo?' }], help: false });
+    const tgAsk = (await turn(anna, 'Schreib der Physiotherapie auf Telegram: Hallo?')).find((x) => x.t === 'action') as unknown as { id: string; contentHash: string; prompt: string };
+    expect(tgAsk.prompt).toBe('Nachricht an Physiotherapie (Handy) über Telegram: „Hallo?“. Senden?');
+    const sent = tg.got.length;
+    await as(anna, 'POST', `/api/v1/assistant/actions/${tgAsk.id}/confirm`, { contentHash: tgAsk.contentHash, via: 'voice' });
+    const tgCmd = await tg.next('send', sent);
+    expect(tgCmd).toMatchObject({ id: telegramId, chatId: '', to: '+491707654321', text: 'Hallo?' });
+    tg.emit({ t: 'send.result', id: telegramId, requestId: tgCmd.requestId, state: 'failed', error: 'tg_not_found' });
+    await until(async () => (await outbound(tgAsk.id)).state === 'failed', 'failed');
+    expect((await assistant.messaging.outbound(anna.userId, tgCmd.requestId, 'de'))?.say).toBe('Nicht gesendet: Telegram findet niemanden mit dieser Nummer.');
+    await contacts('DELETE', `/${ida}`);
     // Declined or unanswered: nothing sent, and no draft promised either.
     script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Tom', service: 'SMS', address: 'Handy', text: 'Hallo Tom.' }], help: false });
     const t1 = (await turn(anna, 'Schreib Tom per SMS aufs Handy: Hallo Tom.')).find((x) => x.t === 'action') as unknown as { id: string; prompt: string };
@@ -655,7 +671,7 @@ describe('messaging across services', () => {
     seen.length = 0;
     await turn(anna, 'Was kann WhatsApp hier?');
     const data = seen.at(-1)!.messages.at(-1)!.content;
-    expect(data).toMatch(/"service":"WhatsApp","connected":false,"history":"since","historySince":"\d{4}-\d{2}-\d{2}","sends":"conversations","sent":"service"/);
+    expect(data).toMatch(/"service":"WhatsApp","connected":false,"history":"since","historySince":"\d{4}-\d{2}-\d{2}","sends":"contacts","sent":"service"/);
     expect(data).toContain('"service":"Signal","connected":true,"history":"previews","sends":"replies","sent":"app"');
     expect(data).toContain('"service":"E-Mail","account":"anna.beispiel@example.org","connected":true');
   });

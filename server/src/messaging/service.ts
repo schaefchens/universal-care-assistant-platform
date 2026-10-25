@@ -33,7 +33,7 @@ import { enqueue } from '../lib/jobs.ts';
 import { emit } from '../lib/outbox.ts';
 import type { Sealer } from '../lib/sealed.ts';
 import { chunks, toPcm } from './audio.ts';
-import { type ContactService, displayOf, type Handle, type HandleInput } from '../domain/contacts/service.ts';
+import { type ContactService, displayOf, type Handle, type HandleInput, type HandleKind } from '../domain/contacts/service.ts';
 import { CAPABILITIES, type Capabilities, HISTORY_DAYS, isServerService, type Service } from './services.ts';
 import { createMessageStore } from './store.ts';
 
@@ -159,22 +159,27 @@ export interface Found {
   subject: string | null;
   /** Whether the other side is in the person's contacts (private chats). */
   contact: boolean | null;
-  /** A new message's connection and the number (E.164) or email address it goes to. */
+  /** A new message's connection and where it goes: a number (E.164), an email address, a Telegram id ("user:123"). */
   to: { connectionId: string; address: string } | null;
 }
 
-/** One of the person's contacts with no conversation on a service that can write to them anew (K6): SMS or email. */
+/** One of the person's contacts with no conversation on a service that can write to them anew (K6). */
 interface NewTarget {
   contactId: string;
   name: string;
   service: Service;
   label: string | null;
   connectionId: string;
-  /** Their numbers (SMS) or addresses (email), in their order. */
+  /** Their numbers, addresses or Telegram id, as that service reaches them, in their order. */
   handles: Handle[];
   /** They have a conversation on another service: a message goes there unless the person names this one. */
   elsewhere: boolean;
 }
+
+/** What each service writes to anew (K6): numbers, addresses, a Telegram user's id. */
+const REACHES: Partial<Record<Service, HandleKind[]>> = { sms: ['phone', 'whatsapp'], whatsapp: ['phone', 'whatsapp'], email: ['email'], telegram: ['telegram', 'phone', 'whatsapp'] };
+/** A handle as a new message's address: a Telegram user's id as "user:<id>", anything else as it is kept. */
+const addressOf = (h: Handle) => (h.kind === 'telegram' ? `user:${h.value}` : h.value);
 
 /** "Where they last wrote" counts when it was this recent; older, UCAP asks which service. */
 const LATELY_MS = 14 * 86_400_000;
@@ -350,28 +355,30 @@ export function createMessaging(d: {
   }
 
   /**
-   * The person's contacts a new message can go to (K6): by SMS to their numbers, by email to their addresses, on the
-   * first ready connection of that service, where they have no conversation there (`conversations`: those one can
-   * write in).
+   * The person's contacts a new message can go to (K6): by SMS and on WhatsApp to their numbers, by email to their
+   * addresses, on Telegram to their Telegram id, else to the user Telegram finds for their number; on the first ready
+   * connection of each service, where they have no conversation there (`conversations`: those one can write in).
    */
   async function newTargets(userId: string, conversations: { contact_id: string | null; service: Service }[]): Promise<NewTarget[]> {
     const k = await sql<{ id: string; service: Service; label: string | null }>`
       select distinct on (service) id, service, label from messaging_connections
-      where user_id = ${userId} and state = 'ready' and service in ('sms', 'email') order by service, created_at`.execute(d.db);
+      where user_id = ${userId} and state = 'ready' and service in ('sms', 'email', 'whatsapp', 'telegram') order by service, created_at`.execute(d.db);
     if (!k.rows.length) return [];
-    const h = await sql<{ contact_id: string; name: string; kind: 'phone' | 'email'; value: string; label: string | null }>`
+    const h = await sql<{ contact_id: string; name: string; kind: HandleKind; value: string; label: string | null }>`
       select c.id as contact_id, c.name, h.kind, h.value, h.label from contacts c join contact_handles h on h.contact_id = c.id
-      where c.person_id = ${userId} and c.deleted_at is null and h.kind in ('phone', 'email') order by c.created_at, c.id, h.position`.execute(d.db);
+      where c.person_id = ${userId} and c.deleted_at is null order by c.created_at, c.id, h.position`.execute(d.db);
     const out = new Map<string, NewTarget>();
-    for (const x of h.rows) {
-      const conn = k.rows.find((c) => c.service === (x.kind === 'phone' ? 'sms' : 'email'));
-      // A conversation with them on this service: a message goes there.
-      if (!conn || conversations.some((v) => v.contact_id === x.contact_id && v.service === conn.service)) continue;
-      const key = `${x.contact_id}|${conn.service}`;
-      const t = out.get(key) ?? { contactId: x.contact_id, name: x.name, service: conn.service, label: conn.label, connectionId: conn.id, handles: [], elsewhere: conversations.some((v) => v.contact_id === x.contact_id) };
-      t.handles.push({ kind: x.kind, value: x.value, label: x.label });
-      out.set(key, t);
-    }
+    for (const x of h.rows)
+      for (const conn of k.rows) {
+        // A conversation with them on this service: a message goes there.
+        if (!REACHES[conn.service]?.includes(x.kind) || conversations.some((v) => v.contact_id === x.contact_id && v.service === conn.service)) continue;
+        const key = `${x.contact_id}|${conn.service}`;
+        const t = out.get(key) ?? { contactId: x.contact_id, name: x.name, service: conn.service, label: conn.label, connectionId: conn.id, handles: [], elsewhere: conversations.some((v) => v.contact_id === x.contact_id) };
+        if (!t.handles.some((y) => y.value === x.value)) t.handles.push({ kind: x.kind, value: x.value, label: x.label });
+        out.set(key, t);
+      }
+    // On Telegram their Telegram id, where the contact has one; their numbers only without.
+    for (const t of out.values()) if (t.service === 'telegram' && t.handles.some((x) => x.kind === 'telegram')) t.handles = t.handles.filter((x) => x.kind === 'telegram');
     return [...out.values()];
   }
 
@@ -1034,9 +1041,9 @@ export function createMessaging(d: {
     // —— Sending ——
     /**
      * One conversation, by its ref or by a name, never a guess: several that fit are named back. For sending: only
-     * chats one can write in, on a connection that is ready, and the person's contacts with none yet (K6): a new SMS to
-     * their number, a new email to their address, where they have no conversation on any service or the person named
-     * that one. Of a contact's several numbers or addresses, `address` says which; else they are named back.
+     * chats one can write in, on a connection that is ready, and the person's contacts with none yet (K6): a new message
+     * to their number, address or Telegram id, where they have no conversation on any service or the person named that
+     * one. Of a contact's several numbers or addresses, `address` says which; else they are named back.
      */
     async find(
       userId: string,
@@ -1056,11 +1063,11 @@ export function createMessaging(d: {
       type Candidate = Omit<(typeof r.rows)[number], 'id'> & { id: string | null; fresh: NewTarget | null };
       const out = (x: Candidate): Found | { addresses: string[] } => {
         if (!x.fresh) return { conversationId: x.id, name: x.title, service: x.service, label: x.label, subject: x.subject, contact: x.kind === 'private' ? x.is_contact === true : null, to: null };
-        const h = chooseHandle(x.fresh.handles, o.address ?? null, { mobileFirst: x.service === 'sms' });
+        const h = chooseHandle(x.fresh.handles, o.address ?? null, { mobileFirst: x.service !== 'email' });
         if (Array.isArray(h)) return { addresses: h };
         // Said with the number or address it goes to, where the contact has more than one.
         const name = x.fresh.handles.length > 1 ? `${x.title} (${h.label ?? displayOf(h)})` : x.title;
-        return { conversationId: null, name, service: x.service, label: x.label, subject: null, contact: true, to: { connectionId: x.fresh.connectionId, address: h.value } };
+        return { conversationId: null, name, service: x.service, label: x.label, subject: null, contact: true, to: { connectionId: x.fresh.connectionId, address: addressOf(h) } };
       };
       const conversations: Candidate[] = r.rows.map((x) => ({ ...x, fresh: null }));
       if (ref) {
@@ -1097,7 +1104,7 @@ export function createMessaging(d: {
 
     /**
      * The confirmed message, written before the service is asked; said back as C2 or, without a connection, C9. In a
-     * conversation, or new (K6): to a number or address of one of the person's contacts, on their SMS or email.
+     * conversation, or new (K6): to a number, address or Telegram id of one of the person's contacts.
      */
     async send(o: {
       userId: string;
@@ -1121,9 +1128,12 @@ export function createMessaging(d: {
             await sql<{ id: string }>`
             insert into messaging_outbound (id, connection_id, conversation_id, to_address, recipient, user_id, action_id, device_id, text, subject, state, created_at, updated_at)
             select ${id}, k.id, null, ${o.to.address}, ${o.to.recipient}, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, 'queued', ${now()}, ${now()}
-            from messaging_connections k where k.id = ${o.to.connectionId} and k.user_id = ${o.userId} and k.service in ('sms', 'email')
+            from messaging_connections k where k.id = ${o.to.connectionId} and k.user_id = ${o.userId} and k.service in ('sms', 'email', 'whatsapp', 'telegram')
               and exists (select 1 from contact_handles h join contacts c on c.id = h.contact_id
-                where h.person_id = ${o.userId} and c.deleted_at is null and h.value = ${o.to.address} and h.kind = case k.service when 'sms' then 'phone' else 'email' end)
+                where h.person_id = ${o.userId} and c.deleted_at is null and (
+                  (k.service = 'email' and h.kind = 'email' and h.value = ${o.to.address})
+                  or (k.service <> 'email' and h.kind in ('phone', 'whatsapp') and h.value = ${o.to.address})
+                  or (k.service = 'telegram' and h.kind = 'telegram' and 'user:' || h.value = ${o.to.address})))
             on conflict (action_id) do nothing returning id`.execute(d.db)
           : { rows: [] };
       if (!r.rows[0]) {
@@ -1381,6 +1391,8 @@ function reasonKey(error: string | null, service: Service): string {
     if (/^sms_/.test(error ?? '')) return 'sms.network';
     return 'sms.phone';
   }
+  // A new chat (K6): the service has nobody with that number (or the person hides it there).
+  if (error === 'wa_not_found' || error === 'tg_not_found') return 'notFound';
   if (error === 'tg_403') return 'forbidden';
   if (error === 'tg_400') return 'refused';
   // WhatsApp's 463: the account may not start conversations for now (an account restriction, docs/spikes/m3.md, A).

@@ -44,6 +44,11 @@ class FakeSocket implements SocketLike {
   async readMessages(keys: WAMessageKey[]) {
     this.read.push(keys);
   }
+  /** Numbers WhatsApp has (the test's Anna and Maria, and a new one). */
+  readonly known = new Set(['4915112345678', '4917699999999', '4915155566677']);
+  async onWhatsApp(...numbers: string[]) {
+    return numbers.map((n) => n.replace(/^\+/, '').split('@')[0]!).filter((d) => this.known.has(d)).map((d) => ({ jid: `${d}@s.whatsapp.net`, exists: true }));
+  }
   async groupMetadata(jid: string) {
     this.asked.push(jid);
     return { subject: 'Familie' };
@@ -232,6 +237,28 @@ describe('a WhatsApp connection', () => {
     await sock().close(428);
     await conn.send('r3', ANNA, 'Offline');
     expect(of('send.result').at(-1)).toMatchObject({ requestId: 'r3', state: 'failed', error: 'offline' });
+    await conn.stop();
+  });
+
+  it('a new chat with a contact (K6): to their number once WhatsApp says it has it; its chat and person told first; a number WhatsApp lacks fails as such', async () => {
+    const { conn, sock, of, open } = await setup({ linked: true });
+    await open();
+    await conn.send('r1', '', 'Hallo Lisa, hier ist Clara.', '+4915155566677');
+    const jid = '4915155566677@s.whatsapp.net';
+    expect(of('chat.upsert').at(-1)!.chat).toMatchObject({ externalId: jid, kind: 'private', userId: 'user:4915155566677' });
+    expect(of('user.upsert').at(-1)!.user).toMatchObject({ externalId: 'user:4915155566677', isContact: false });
+    const id = of('send.result').at(-1)!.tempId!;
+    expect(sock().sent.at(-1)).toEqual({ jid, content: { text: 'Hallo Lisa, hier ist Clara.', linkPreview: null }, id });
+    sock().ack({ class: 'message', id, from: jid, t: String(NOW + 1) });
+    expect(of('send.result').at(-1)).toMatchObject({ requestId: 'r1', state: 'sent', externalId: id });
+    expect(of('msg.upsert').at(-1)!.msg).toMatchObject({ chatId: jid, externalId: id, outgoing: true, text: 'Hallo Lisa, hier ist Clara.' });
+    // Not on WhatsApp, or no number at all: nothing goes out.
+    const before = sock().sent.length;
+    await conn.send('r2', '', 'Hallo?', '+4930123456789');
+    expect(of('send.result').at(-1)).toMatchObject({ requestId: 'r2', state: 'failed', error: 'wa_not_found' });
+    await conn.send('r3', '', 'Hallo?', 'nobody@example.org');
+    expect(of('send.result').at(-1)).toMatchObject({ requestId: 'r3', state: 'failed', error: 'no_recipient' });
+    expect(sock().sent).toHaveLength(before);
     await conn.stop();
   });
 

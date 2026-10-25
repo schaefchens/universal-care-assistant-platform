@@ -330,7 +330,7 @@ test('7 · Telegram: connected on the person’s device; a new message announced
   // Back on the list: the connection says what it can do, its history from a day on, never "all of it" (Appendix K; CONCEPT §3).
   let from = await mark(clara);
   await clara.getByRole('button', { name: 'Zurück', exact: true }).click();
-  await expect(clara.getByText(/^Telegram: verbunden\. hat Nachrichten ab dem \d+\. \S+ \d{4}; antwortet in den Unterhaltungen, die es gibt; „gesendet“, sobald Telegram es bestätigt\.$/)).toBeVisible();
+  await expect(clara.getByText(/^Telegram: verbunden\. hat Nachrichten ab dem \d+\. \S+ \d{4}; antwortet in den Unterhaltungen, die es gibt, und schreibt an deine Kontakte; „gesendet“, sobald Telegram es bestätigt\.$/)).toBeVisible();
   await said(clara, /^Nachrichtendienste\. Telegram: verbunden\.$/, from);
   await home(clara);
 
@@ -541,7 +541,7 @@ test('7d · contacts (docs/plan-m3.md, K6): Clara lets Maria manage her contacts
   await home(maria);
 });
 
-test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Clara saves Anna’s number; WhatsApp is hers by it, Telegram and email are asked and taken; her messages there are said as Anna’s; a new SMS and a new email to contacts with no conversation; "Ruf die Physiotherapie an": asked, then dialled', async () => {
+test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Clara saves Anna’s number; WhatsApp is hers by it, Telegram and email are asked and taken; her messages there are said as Anna’s; a new SMS, email and WhatsApp message to contacts with no conversation; "Ruf die Physiotherapie an": asked, then dialled', async () => {
   await home(clara);
   await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   await clara.getByRole('button', { name: 'Kontakte', exact: true }).click();
@@ -569,10 +569,23 @@ test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Cla
   expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ chat: 'anna', text: 'Und Kuchen?' }) })).ok).toBe(true);
   await said(clara, /^Neue Nachricht von Anna auf Telegram\.$/, from);
 
-  // A new SMS to the practice Maria saved (7d), with no conversation yet: the phone takes it with the number.
-  engines.model = asked(/Physiotherapie/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', text: 'Ich komme zehn Minuten später.' }], help: false }));
+  // A new message to the practice Maria saved (7d), with no conversation yet: SMS, WhatsApp and Telegram could all
+  // write to its number, so the service is asked; by SMS the phone takes it with the number.
+  let told = '';
+  engines.model = asked(
+    /Physiotherapie/,
+    () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', text: 'Ich komme zehn Minuten später.' }], help: false }),
+    (req) => {
+      told = engines.last(req);
+      return reply('Per SMS, auf WhatsApp oder auf Telegram?');
+    },
+  );
   from = await mark(clara);
   await talk(clara, engines, 'Schreib der Physiotherapie, dass ich zehn Minuten später komme');
+  await said(clara, /^Per SMS, auf WhatsApp oder auf Telegram\?$/, from);
+  expect(told).toContain('service_ambiguous: SMS, Telegram, WhatsApp');
+  engines.model = asked(/SMS/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', service: 'SMS', text: 'Ich komme zehn Minuten später.' }], help: false }));
+  await talk(clara, engines, 'Per SMS');
   await said(clara, /^SMS an Physiotherapie: „Ich komme zehn Minuten später\.“\. Senden\?$/, from);
   await talk(clara, engines, 'Ja');
   await said(clara, /^Bestätigt\. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist\.$/, from);
@@ -594,6 +607,13 @@ test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Cla
   await said(clara, /^E-Mail an Bernd, Betreff „Kaffee am Sonntag“: „Kommst du am Sonntag zum Kaffee\?“\. Senden\?$/, from);
   await talk(clara, engines, 'Ja');
   await said(clara, /^Gesendet an Bernd\.$/, from);
+  // On WhatsApp too (the owner, 2026-10-23): the practice has no chat there, and WhatsApp has its number.
+  engines.model = asked(/WhatsApp/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', service: 'WhatsApp', text: 'Bis gleich.' }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Schreib der Physiotherapie auf WhatsApp: Bis gleich.');
+  await said(clara, /^Nachricht an Physiotherapie über WhatsApp: „Bis gleich\.“\. Senden\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Gesendet an Physiotherapie\.$/, from);
   // "Ruf die Physiotherapie an" (acceptance 9): asked first, with which number; then dialled (a browser opens tel:).
   engines.model = asked(/Ruf/, () => ({ say: [], calls: [{ tool: 'contacts.call', name: 'die Physiotherapie', number: null, service: null }], help: false }));
   from = await mark(clara);

@@ -115,6 +115,31 @@ describe('a Telegram connection', () => {
     await conn.stop();
   });
 
+  it('a new chat with a contact (K6): by their Telegram id, or the user Telegram finds for their number; nobody found fails as such', async () => {
+    const { td, events, conn } = setup();
+    td.answer = (q) => {
+      if (q._ === 'searchUserByPhoneNumber') return q.phone_number === '4915155566677' ? { _: 'user', id: 55 } : Promise.reject(Object.assign(new Error('Not Found'), { code: 404 }));
+      if (q._ === 'createPrivateChat') return { _: 'chat', id: Number(q.user_id) };
+      if (q._ === 'sendMessage') return text(-5, 'Hallo', { chat_id: q.chat_id, is_outgoing: true, sending_state: { _: 'messageSendingStatePending' } });
+      return { _: 'ok' };
+    };
+    await conn.send('r1', '', 'Hallo', '+4915155566677');
+    expect(td.calls.filter((q) => q._ !== 'loadChats').map((q) => [q._, q.phone_number ?? q.user_id ?? q.chat_id])).toEqual([
+      ['searchUserByPhoneNumber', '4915155566677'],
+      ['createPrivateChat', 55],
+      ['sendMessage', 55],
+    ]);
+    expect(events.at(-1)).toMatchObject({ requestId: 'r1', state: 'pending_service', tempId: '-5' });
+    td.calls.length = 0;
+    await conn.send('r2', '', 'Hallo', 'user:42');
+    expect(td.calls.map((q) => q._)).toEqual(['createPrivateChat', 'sendMessage']);
+    await conn.send('r3', '', 'Hallo', '+4930123456789');
+    expect(events.at(-1)).toEqual({ t: 'send.result', id: 'c1', requestId: 'r3', state: 'failed', error: 'tg_not_found' });
+    await conn.send('r4', '', 'Hallo', 'nobody@example.org');
+    expect(events.at(-1)).toEqual({ t: 'send.result', id: 'c1', requestId: 'r4', state: 'failed', error: 'no_recipient' });
+    await conn.stop();
+  });
+
   it('a send TDLib refuses at once is failed, never pending', async () => {
     const { td, events, conn } = setup();
     td.answer = () => {

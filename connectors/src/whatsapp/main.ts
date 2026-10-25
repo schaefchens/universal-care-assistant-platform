@@ -149,7 +149,7 @@ function handle(cmd: ToConnectors) {
       void conn.login(cmd.step, cmd.value);
       return;
     case 'send':
-      void conn.send(cmd.requestId, cmd.chatId, cmd.text);
+      void conn.send(cmd.requestId, cmd.chatId, cmd.text, cmd.to);
       return;
     case 'download':
       if (!SAFE_DEST.test(cmd.dest)) {

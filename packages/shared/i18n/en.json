@@ -874,6 +874,7 @@
   "messages.reason.forbidden": "you can't write in this chat",
   "messages.reason.refused": "{service} refused it",
   "messages.reason.service": "{service} did not accept it",
+  "messages.reason.notFound": "{service} finds nobody with this number",
   "messages.reason.restricted": "{service} does not let your account start conversations right now",
   "messages.when.today": "today at {time}",
   "messages.when.yesterday": "yesterday at {time}",

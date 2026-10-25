@@ -17,6 +17,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.core.content.ContextCompat;
 
 /**
  * The full-screen alarm over the lock screen: whose request it is, and two large buttons. Native, not the WebView:
@@ -63,8 +64,8 @@ public class AlarmActivity extends Activity {
             }
         };
         IntentFilter f = new IntentFilter(CareAlarm.ACTION_CLOSED);
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(closed, f, Context.RECEIVER_NOT_EXPORTED);
-        else registerReceiver(closed, f);
+        // Only UCAP's own broadcast closes it, on every Android (below 13 through a permission only UCAP holds).
+        ContextCompat.registerReceiver(this, closed, f, ContextCompat.RECEIVER_NOT_EXPORTED);
         take(getIntent());
     }
 

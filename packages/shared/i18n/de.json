@@ -1045,6 +1045,7 @@
   "messages.reason.forbidden@Sie": "in diesem Chat dürfen Sie nicht schreiben",
   "messages.reason.refused": "{service} hat sie abgelehnt",
   "messages.reason.service": "{service} hat sie nicht angenommen",
+  "messages.reason.notFound": "{service} findet niemanden mit dieser Nummer",
   "messages.reason.restricted": "{service} lässt dein Konto gerade keine neuen Unterhaltungen beginnen",
   "messages.reason.restricted@Sie": "{service} lässt Ihr Konto gerade keine neuen Unterhaltungen beginnen",
   "messages.when.today": "heute um {time}",

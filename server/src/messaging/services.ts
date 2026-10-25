@@ -45,8 +45,9 @@ export interface Capabilities {
 }
 
 export const CAPABILITIES: Record<Service, Capabilities> = {
-  telegram: { history: 'since', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
-  whatsapp: { history: 'since', send: 'conversations', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
+  // Each writes in its conversations, and anew to a contact (K6; the owner, 2026-10-23: WhatsApp too).
+  telegram: { history: 'since', send: 'contacts', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
+  whatsapp: { history: 'since', send: 'contacts', sent: 'service', voice: true, readState: true, groups: true, subject: false, delivery: true },
   // Email answers in its threads, and writes a new mail to a contact's address (K6).
   email: { history: 'since', send: 'contacts', sent: 'server', voice: false, readState: true, groups: true, subject: true, delivery: false },
   // Replies in the threads there are, and writes a new SMS to a contact's number (K6).

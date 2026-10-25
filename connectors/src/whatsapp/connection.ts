@@ -32,6 +32,8 @@ export interface SocketLike {
   user?: { id: string; lid?: string; name?: string } | undefined;
   requestPairingCode(phoneNumber: string): Promise<string>;
   sendMessage(jid: string, content: { text: string; linkPreview: null }, options: { messageId: string }): Promise<WAMessage | undefined>;
+  /** Which of these numbers WhatsApp has: only those it has come back. */
+  onWhatsApp(...numbers: string[]): Promise<{ jid: string; exists: unknown }[] | undefined>;
   readMessages(keys: WAMessageKey[]): Promise<void>;
   groupMetadata(jid: string): Promise<{ subject?: string }>;
   updateMediaMessage(m: WAMessage): Promise<WAMessage>;
@@ -558,8 +560,12 @@ export class WhatsappConnection {
 
   // —— Sending ——————————————————————————————————————————————————————————————————————————————————————————————————————
 
-  /** Sends; the result follows when WhatsApp's server acknowledges it (send.result). */
-  async send(requestId: string, chatIdOf: string, text: string) {
+  /**
+   * Sends; the result follows when WhatsApp's server acknowledges it (send.result). A new chat (K6) goes to one of the
+   * person's contacts by their number (`to`), once WhatsApp says it has that number: the person heard WhatsApp's risk
+   * when connecting (the owner, 2026-10-23: "whatsapp works like telegram and others").
+   */
+  async send(requestId: string, chatIdOf: string, text: string, to?: string) {
     const id = this.o.id;
     // One at a time, a little apart: a person's pace, never a burst.
     const wait = this.lastSend + (this.o.paceMs ?? PACE_MS) - Date.now();
@@ -569,12 +575,25 @@ export class WhatsappConnection {
     if (!this.isOpen && !(this.ready && (await this.waitOpen(this.o.downMs ?? DOWN_MS)))) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: 'offline' });
     const sock = this.sock;
     if (!sock) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: 'offline' });
+    let jid = chatIdOf;
+    if (!chatIdOf) {
+      const digits = /^\+([1-9]\d{6,14})$/.exec(to ?? '')?.[1];
+      if (!digits) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: 'no_recipient' });
+      const found = await sock.onWhatsApp(`${digits}@s.whatsapp.net`).catch(() => null);
+      if (!found) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: 'wa_send' });
+      const hit = found.find((x) => x.exists);
+      if (!hit) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: 'wa_not_found' });
+      // Its chat and its person, as for someone who wrote.
+      jid = hit.jid;
+      this.tellChat(jid, null, null);
+    }
+    const key = chatId(jid, this.ids);
     const messageId = generateMessageIDV2(this.ids.me.pn || undefined);
-    this.pending.set(messageId, { requestId, chatId: chatIdOf, text });
+    this.pending.set(messageId, { requestId, chatId: key, text });
     this.emit({ t: 'send.result', id, requestId, state: 'pending_service', tempId: messageId });
     try {
       // The id is set before the frame goes out, so the acknowledgement always finds its send.
-      const m = await sock.sendMessage(chatIdOf, { text, linkPreview: null }, { messageId });
+      const m = await sock.sendMessage(jid, { text, linkPreview: null }, { messageId });
       if (m?.message) {
         this.sent.set(messageId, m.message);
         if (this.sent.size > 200) this.sent.delete(this.sent.keys().next().value!);

@@ -955,6 +955,13 @@ The plan: [plan-m3.md](plan-m3.md).
     - On Telegram a contact's id comes from a conversation; writing to a number would add it to the person's Telegram
       contacts first.
     - The other choice: new conversations on WhatsApp (to a number) and Telegram (to a known id) too.
+    - **The owner chose the other choice, 2026-10-23:** "we use whatsapp as well. the user is informed about that
+      risk when connecting, its more important he can use the app than capping the functionality, so whatsapp works
+      like telegram and others." Built: every service writes anew to a contact. WhatsApp to their number, once WhatsApp
+      says it has it ("WhatsApp findet niemanden mit dieser Nummer" otherwise); Telegram to their Telegram id, else to
+      the user Telegram finds for their number (as far as that user's privacy settings let it), in a private chat of
+      its own, without adding anyone to the person's Telegram contacts. A contact with no conversation anywhere is
+      asked about by service ("Per SMS, auf Telegram oder per E-Mail?").
 13. **A new message keeps no draft**, and is never said to: "Nicht gesendet: {reason}.", "Nicht gesendet.", "Keine
     Antwort, deshalb habe ich nichts gesendet." Appendix F's C4, C7 and C8 end with "Der Entwurf ist gespeichert.",
     which is kept for replies; a new message has no conversation to keep its draft in. The other choice: a draft per

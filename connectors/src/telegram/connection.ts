@@ -227,11 +227,21 @@ export class TelegramConnection {
     this.emit({ t: 'conn.state', id: this.o.id, state: 'logged_out' });
   }
 
-  /** Sends; the result follows when Telegram confirms or refuses (send.result). */
-  async send(requestId: string, chatId: string, text: string) {
+  /**
+   * Sends; the result follows when Telegram confirms or refuses (send.result). A new chat (K6) goes to one of the
+   * person's contacts (`to`): by their Telegram id, else to the user Telegram finds for their number, as far as that
+   * user's privacy settings let it.
+   */
+  async send(requestId: string, chatId: string, text: string, to?: string) {
     this.sendsInFlight++;
     try {
-      const m = (await this.o.client.invoke({ _: 'sendMessage', chat_id: Number(chatId), input_message_content: { _: 'inputMessageText', text: { _: 'formattedText', text } } })) as TdMessage;
+      let target = Number(chatId);
+      if (!chatId) {
+        const user = await this.userFor(to ?? '');
+        if (user === null) return this.emit({ t: 'send.result', id: this.o.id, requestId, state: 'failed', error: /^(user:\d|\+\d)/.test(to ?? '') ? 'tg_not_found' : 'no_recipient' });
+        target = ((await this.o.client.invoke({ _: 'createPrivateChat', user_id: user, force: false })) as { id: number }).id;
+      }
+      const m = (await this.o.client.invoke({ _: 'sendMessage', chat_id: target, input_message_content: { _: 'inputMessageText', text: { _: 'formattedText', text } } })) as TdMessage;
       const tempId = String(m.id);
       this.emit({ t: 'send.result', id: this.o.id, requestId, state: 'pending_service', tempId });
       const held = this.early.get(tempId);
@@ -243,6 +253,16 @@ export class TelegramConnection {
     } finally {
       this.sendsInFlight--;
     }
+  }
+
+  /** A contact's Telegram user: their id ("user:123"), or the one Telegram finds for their number ("+49…"). */
+  private async userFor(to: string): Promise<number | null> {
+    const id = /^user:(\d{1,20})$/.exec(to)?.[1];
+    if (id) return Number(id);
+    const digits = /^\+([1-9]\d{6,14})$/.exec(to)?.[1];
+    if (!digits) return null;
+    const u = (await this.o.client.invoke({ _: 'searchUserByPhoneNumber', phone_number: digits, only_local: false }).catch(() => null)) as TdUser | null;
+    return typeof u?.id === 'number' ? u.id : null;
   }
 
   async download(requestId: string, fileId: number, dest: string) {

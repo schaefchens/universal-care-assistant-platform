@@ -101,8 +101,9 @@ export type ToConnectors =
   /** The person disconnected: log out where it is logged in, then delete everything of it (TDLib's database too). */
   | { t: 'remove'; id: string }
   /**
-   * `subject`: an email's, as the person confirmed it. `to`: a new mail's address (K6: one of the person's contacts),
-   * where there is no conversation yet; `chatId` is then ''.
+   * `subject`: an email's, as the person confirmed it. `to`: a new message's address (K6: one of the person's
+   * contacts), where there is no conversation yet, and `chatId` is then '': an email address, a number in E.164
+   * (WhatsApp, Telegram), or a Telegram user's id ("user:123").
    */
   | { t: 'send'; id: string; requestId: string; chatId: string; text: string; subject?: string; to?: string }
   | { t: 'download'; id: string; requestId: string; fileId: number; dest: string }

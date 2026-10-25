@@ -10,8 +10,8 @@
  *
  * A reply goes back on the service its conversation is on. A name found on several services goes where that person
  * last wrote lately; otherwise UCAP says which services, and the model asks the person (CONCEPT §2: "a focused
- * clarification rather than a guess"). Someone in the person's contacts with no conversation gets a new SMS or email
- * (K6), to their number or address: a new email with a subject the model proposes, read back in C1. A message is
+ * clarification rather than a guess"). Someone in the person's contacts with no conversation gets a new message (K6),
+ * to their number, address or Telegram id: a new email with a subject the model proposes, read back in C1. A message is
  * marked read on its service only when the person heard its original, never because the model read it. The model
  * never confirms: the person's yes comes from their device.
  */
@@ -190,7 +190,7 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     kind: 'act',
     name: 'messages.send',
     description:
-      'Sends a message in a conversation, on the service the conversation is on, or a new one to someone in the person\'s contacts (by SMS to their number, by email to their address): the words the person dictated or agreed to, exactly as they should arrive. UCAP reads the whole message back with its recipient and service and asks the person before sending; it says itself when the service confirmed it.',
+      'Sends a message in a conversation, on the service the conversation is on, or a new one to someone in the person\'s contacts (to their number, address or Telegram id): the words the person dictated or agreed to, exactly as they should arrive. UCAP reads the whole message back with its recipient and service and asks the person before sending; it says itself when the service confirmed it.',
     args: {
       chat: str('The conversation, as "chat:<id>", or the name of the person or group.'),
       text: str('The message, as it should be sent.'),
