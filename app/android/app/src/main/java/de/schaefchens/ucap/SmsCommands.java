@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * What the app's process asks of the SMS process (explicit broadcasts within UCAP, never exported): connect to the
  * server's connection, disconnect, take what waits for this phone (a push woke it, or the app heard of it), mark SMS
- * read that the person heard. The SMS process keeps its own state (SmsDb), so nothing is shared across processes but
+ * read that the person heard, and take away UCAP's notifications for SMS marked read in UCAP only. The SMS process keeps its own state (SmsDb), so nothing is shared across processes but
  * these commands.
  */
 public class SmsCommands extends BroadcastReceiver {
@@ -54,6 +54,17 @@ public class SmsCommands extends BroadcastReceiver {
                 if (SmsSync.connection(ctx) != null) SmsJob.ensure(ctx);
                 if (!SmsSender.take(ctx)) SmsJob.retry(ctx);
                 break;
+            case "seen": {
+                // The person marked them read in UCAP only ("Rest gelesen"): UCAP's own notifications for these threads
+                // go; Android's store keeps the SMS unread, as the services keep theirs.
+                if (!String.valueOf(i.getStringExtra("connectionId")).equals(SmsSync.connection(ctx))) return;
+                String[] chats = i.getStringArrayExtra("chatIds");
+                if (chats == null) return;
+                for (String c : chats) {
+                    if (c != null && c.matches("^[0-9]{1,18}$")) SmsNotify.read(ctx, Long.parseLong(c));
+                }
+                break;
+            }
             case "read": {
                 // Only this phone's connection, and only its SMS and MMS ids ("s12", "m3").
                 if (!String.valueOf(i.getStringExtra("connectionId")).equals(SmsSync.connection(ctx))) return;

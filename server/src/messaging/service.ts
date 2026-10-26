@@ -938,12 +938,13 @@ export function createMessaging(d: {
      * For the messages screen: what is unread, oldest first, then the newest message of each other recent
      * conversation, so "Nächste" always has somewhere to go.
      */
-    /** How many messages are new for the person: all of them, where the queue holds the oldest 30. */
-    async unreadCount(userId: string): Promise<number> {
+    /** How many messages are new for the person: all of them, where the queue holds the oldest 30; `before`: those that came by then. */
+    async unreadCount(userId: string, before?: Date): Promise<number> {
       const r = await sql<{ n: number }>`
         select count(*)::int as n from messaging_messages m join messaging_conversations v on v.id = m.conversation_id
         join messaging_connections k on k.id = v.connection_id
-        where k.user_id = ${userId} and m.direction = 'in' and m.read_at is null and m.heard_at is null and v.kind <> 'channel'`.execute(d.db);
+        where k.user_id = ${userId} and m.direction = 'in' and m.read_at is null and m.heard_at is null and v.kind <> 'channel'
+          ${before ? sql`and m.created_at <= ${before}` : sql``}`.execute(d.db);
       return r.rows[0]?.n ?? 0;
     },
 
@@ -1087,6 +1088,37 @@ export function createMessaging(d: {
       // Gone from here (older than a month) or never fetched: fetched now.
       await requestDownload({ id: a.connection_id, service: a.service }, messageId, { fileId: Number(a.service_file_id), mime: a.mime, size: a.bytes === null ? null : Number(a.bytes), durationS: a.duration_s });
       return { pending: true };
+    },
+
+    /**
+     * Every message still new marked read, in UCAP only (the owner, 2026-10-26: "mark the rest as read is ucap only"):
+     * nothing goes to the services or the phone, so no sender learns of it, and the phone's apps keep them unread. Only
+     * those that came by `before` (when the person was asked); `at` is the mark, so undoing it undoes exactly it.
+     */
+    async markRestRead(userId: string, before: Date): Promise<{ count: number; at: string }> {
+      const at = now();
+      const r = await sql<{ id: string; connection_id: string; chat: string; service: Service }>`
+        update messaging_messages m set read_at = ${at} from messaging_conversations v, messaging_connections k
+        where v.id = m.conversation_id and k.id = v.connection_id and k.user_id = ${userId}
+          and m.direction = 'in' and m.read_at is null and m.heard_at is null and v.kind <> 'channel' and m.created_at <= ${before}
+        returning m.id, v.connection_id, v.external_id as chat, k.service`.execute(d.db);
+      if (r.rows.length) await notify(userId, 'messaging.read', { count: r.rows.length });
+      // UCAP's own notifications for them go (as the SMS app it shows one per thread); Android's store keeps them unread.
+      const threads = new Map<string, Set<string>>();
+      for (const x of r.rows) if (x.service === 'sms') threads.set(x.connection_id, (threads.get(x.connection_id) ?? new Set()).add(x.chat));
+      for (const [connectionId, chats] of threads) await notify(userId, 'messaging.device.seen', { connectionId, chatIds: [...chats] });
+      return { count: r.rows.length, at: at.toISOString() };
+    },
+
+    /** That mark undone: new again, those not heard or read on their service since. */
+    async unmarkRead(userId: string, at: string): Promise<number> {
+      const r = await sql<{ id: string }>`
+        update messaging_messages m set read_at = null from messaging_conversations v, messaging_connections k
+        where v.id = m.conversation_id and k.id = v.connection_id and k.user_id = ${userId}
+          and m.direction = 'in' and m.read_at = ${new Date(at)} and m.heard_at is null
+        returning m.id`.execute(d.db);
+      if (r.rows.length) await notify(userId, 'messaging.read', { count: r.rows.length, undone: true });
+      return r.rows.length;
     },
 
     /** The person heard these originals: marked, and read on their service (only now: Appendix E). */

@@ -23,6 +23,18 @@ const dayIn = (iso: string, tz: string) => new Intl.DateTimeFormat('en-CA', { ti
 
 type Screen = { session: Session; config: DeviceConfig; onHome: () => void; onHelp: () => void };
 
+/**
+ * Where "Nächste" goes on the tasks screen from `i`: the next open task, what was ticked off leaving the list as it
+ * goes on. After the last open one it stays, a task just ticked off too, so it can be opened again right here (the
+ * owner, 2026-10-26: as the messages screen, "so its consistent"); 'none' when every one is done.
+ */
+export function nextTask<T extends { done: boolean }>(list: T[], i: number): { list: T[]; i: number } | 'none' | 'last' {
+  const left = list.filter((y) => !y.done);
+  if (!left.length) return 'none';
+  const after = list.slice(i + 1).find((y) => !y.done);
+  return after ? { list: left, i: left.indexOf(after) } : 'last';
+}
+
 export function AppointmentsScreen(p: Screen) {
   const ui = useUi();
   const { tr, say } = ui;
@@ -89,9 +101,10 @@ export function AppointmentsScreen(p: Screen) {
           choices={choices}
           onChoose={(id) => {
             if (id === 'next' && list.length) {
-              const k = (i + 1) % list.length;
-              setI(k);
-              say(item(list, k), 'system');
+              // After the last, it stays there and says so, as the messages screen does (the owner, 2026-10-26).
+              if (i + 1 >= list.length) return say(tr('agenda.area.last'), 'system');
+              setI(i + 1);
+              say(item(list, i + 1), 'system');
             } else if (id === 'repeat' && current) say(item(list, i), 'system');
             else if (id === 'back') p.onHome();
             else if (id === 'help') p.onHelp();
@@ -192,18 +205,17 @@ export function TasksScreen(p: Screen) {
             if (id === 'done' && current) void setDone(current, true);
             else if (id === 'reopen' && current) void setDone(current, false);
             else if (id === 'next' && list.length) {
-              // What was ticked off leaves the list as the next one is said.
-              const left = list.filter((y) => !y.done);
-              if (!left.length) {
+              const n = nextTask(list, i);
+              if (n === 'none') {
                 setList([]);
                 setI(0);
                 say(tr('tasks.area.count', { count: 0 }), 'system');
                 return;
               }
-              const k = left.indexOf(list.slice(i + 1).find((y) => !y.done) ?? left[0]!);
-              setList(left);
-              setI(k);
-              say(item(left, k), 'system');
+              if (n === 'last') return say(tr('tasks.area.last'), 'system');
+              setList(n.list);
+              setI(n.i);
+              say(item(n.list, n.i), 'system');
             } else if (id === 'repeat' && current) say(item(list, i), 'system');
             else if (id === 'back') p.onHome();
             else if (id === 'help') p.onHelp();

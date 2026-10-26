@@ -156,7 +156,7 @@ export async function buildAssistant(o: {
   const liveNews = createLiveNews({ db: o.db, clock: o.clock, llm, messaging, agenda, log, summaryBudgetMs: o.liveSummaryMs });
   registerLiveRoutes(app, { news: liveNews });
   registerAssistantRoutes(app, { actions, llm, contextFor });
-  registerMessagingRoutes(app, { messaging, identity, actions, contextFor, requireSigned });
+  registerMessagingRoutes(app, { messaging, identity, actions, contextFor, requireSigned, clock: o.clock });
   registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, stt, llm, herde, publicUrl: o.config.publicUrl });
 
   const handlers: Record<string, Handler> = {

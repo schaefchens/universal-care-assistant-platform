@@ -16,6 +16,7 @@ import type { ContextFor } from '../assistant/turns.ts';
 import { auth, requireAdmin, requireAuth } from '../core/auth.ts';
 import { signed } from '../core/signed.ts';
 import type { IdentityService } from '../domain/identity/service.ts';
+import type { Clock } from '../lib/clock.ts';
 import { AppError } from '../lib/errors.ts';
 import type { AnyApp } from '../lib/http.ts';
 import { deviceEvent } from './device.ts';
@@ -86,9 +87,10 @@ function publicHost(host: string): boolean {
 
 export function registerMessagingRoutes(
   app: AnyApp,
-  o: { messaging: Messaging; identity: IdentityService; actions: Actions; contextFor: ContextFor; requireSigned: (req: import('fastify').FastifyRequest) => Promise<void> },
+  o: { messaging: Messaging; identity: IdentityService; actions: Actions; contextFor: ContextFor; requireSigned: (req: import('fastify').FastifyRequest) => Promise<void>; clock: Clock },
 ) {
   const m = o.messaging;
+  const clock = o.clock;
 
   // —— The person's connections ——
   app.get('/api/v1/messaging/connections', { preHandler: requireAuth, schema: { querystring: LangQuery } }, async (req) => ({
@@ -164,6 +166,12 @@ export function registerMessagingRoutes(
     // `unread`: all of them, said as the screen opens; the items hold the oldest 30.
     return { connections, items: await m.spoken(userId, await m.queue(userId), (req.query as { lang?: 'de' | 'en' }).lang), unread: await m.unreadCount(userId) };
   });
+  // How many are new now, as "Rest gelesen" asks about them (`asOf`: the server's time, which the mark then takes as
+  // its `before`, so it marks exactly what was counted).
+  app.get('/api/v1/messaging/unread', { preHandler: requireAuth }, async (req) => {
+    const asOf = new Date(clock());
+    return { unread: await m.unreadCount(auth(req).userId, asOf), asOf: asOf.toISOString() };
+  });
   app.get('/api/v1/messaging/conversations', { preHandler: requireAuth }, async (req) => ({ conversations: await m.overview(auth(req).userId, 50) }));
   app.get('/api/v1/messaging/conversations/:id/messages', { preHandler: requireAuth, schema: { params: Id, querystring: LangQuery } }, async (req) => {
     const userId = auth(req).userId;
@@ -188,6 +196,14 @@ export function registerMessagingRoutes(
       await m.heard(auth(req).userId, (req.body as { ids: string[] }).ids);
       return { ok: true };
     },
+  );
+
+  // The rest marked read, in UCAP only, after the person said yes on the messages screen (the assistant's tool asks
+  // by itself): what came by `before`.
+  app.post(
+    '/api/v1/messaging/messages/read-rest',
+    { preHandler: requireAuth, schema: { body: Type.Object({ before: Type.String({ format: 'date-time' }) }, { additionalProperties: false }) } },
+    async (req) => m.markRestRead(auth(req).userId, new Date(Math.min(Date.parse((req.body as { before: string }).before), clock()))),
   );
 
   // —— Suggestions for the person's contacts (K6): their own only, drawn from their conversations ——

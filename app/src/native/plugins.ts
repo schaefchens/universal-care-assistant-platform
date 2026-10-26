@@ -225,6 +225,8 @@ export interface SmsPlugin {
   take(): Promise<void>;
   /** SMS the person heard: read in the store. */
   markRead(o: { connectionId: string; externalIds: string[] }): Promise<void>;
+  /** Marked read in UCAP only ("Rest gelesen"): UCAP's notifications for these threads go, the store keeps them unread. */
+  seen(o: { connectionId: string; chatIds: string[] }): Promise<void>;
   /** Another app's "write an SMS": Android's thread for the number, and the events that tell the server of it. */
   compose(o: { to: string }): Promise<{ thread: string; name: string; events: Record<string, unknown>[] }>;
   /** What the app was opened for: a conversation (a notification) or an SMS to write (another app); once. */

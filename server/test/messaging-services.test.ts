@@ -730,6 +730,59 @@ describe('messaging across services', () => {
     expect(news).toEqual([{ kind: 'original', text: 'Mama schrieb per SMS: „Bist du wach?“', source: { message: expect.any(String) } }]);
   });
 
+  it('"Markiere den Rest als gelesen" (the owner, 2026-10-26: "ucap only"): asked with how many, marked read in UCAP and never on a service or a phone; what came meanwhile stays new; undone, new again. "Lies die letzten 3 Nachrichten": that many', async () => {
+    await client.renew(anna);
+    const sms = (externalId: string, text: string) => ({ t: 'msg.upsert', msg: { chatId: '12', externalId, fromId: '+4917012345', outgoing: false, date: now(), editDate: null, kind: 'text', text, file: null, fileName: null }, live: true });
+    await forward(anna, [sms('320', 'Bist du schon zurück?'), sms('321', 'Ruf mich an, wenn du kannst.')]);
+    const queue = async () => (await as(anna, 'GET', '/api/v1/messaging/queue?lang=de')).json() as { unread: number };
+    const n = (await queue()).unread;
+    expect(n).toBeGreaterThanOrEqual(2);
+    const sentBefore = [tg, mail, wa].map((f) => f.got.filter((x) => x.t === 'mark_read').length);
+    const deviceReads = (await events('messaging.device.read')).length;
+
+    script = () => ({ say: [], calls: [{ tool: 'messages.mark_read' }], help: false });
+    const a = (await turn(anna, 'Markiere den Rest als gelesen')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string; prompt: string };
+    expect(a.prompt).toBe(`Die ${n} neuen Nachrichten als gelesen markieren? Das gilt nur hier in UCAP: Die Absender erfahren davon nichts.`);
+    // One comes while she is asked: it stays new.
+    clock.advance(1000);
+    await forward(anna, [sms('322', 'Ich bin jetzt da.')]);
+    expect(((await as(anna, 'POST', `/api/v1/assistant/actions/${a.id}/confirm`, { contentHash: a.contentHash, via: 'voice' })).json() as { say: string }).say).toBe(`${n} Nachrichten als gelesen markiert.`);
+    expect((await queue()).unread).toBe(1);
+    // In UCAP only: no service and no phone was told.
+    expect([tg, mail, wa].map((f) => f.got.filter((x) => x.t === 'mark_read').length)).toEqual(sentBefore);
+    expect((await events('messaging.device.read')).length).toBe(deviceReads);
+    expect((await events('messaging.read')).at(-1)).toEqual({ count: n });
+    // The phone only takes away UCAP's own notifications for those SMS threads; its store keeps them unread.
+    expect((await events('messaging.device.seen')).at(-1)).toEqual({ connectionId: smsId, chatIds: ['12'] });
+    expect((await sql<{ n: number }>`select count(*)::int as n from messaging_messages where external_id in ('320', '321') and read_at is not null and heard_at is null`.execute(db)).rows[0]!.n).toBe(2);
+
+    // "Rückgängig": exactly those are new again.
+    expect(((await as(anna, 'POST', '/api/v1/assistant/undo')).json() as { say: string }).say).toBe(`${n} Nachrichten sind wieder neu.`);
+    expect((await queue()).unread).toBe(n + 1);
+    // From the messages screen: counted as it asks, and marked as counted, also when another comes meanwhile.
+    const q = (await as(anna, 'GET', '/api/v1/messaging/unread')).json() as { unread: number; asOf: string };
+    expect(q.unread).toBe(n + 1);
+    clock.advance(1000);
+    await forward(anna, [sms('323', 'Noch eine.')]);
+    expect((await as(anna, 'POST', '/api/v1/messaging/messages/read-rest', { before: q.asOf })).json()).toMatchObject({ count: q.unread });
+    expect((await queue()).unread).toBe(1);
+
+    // Nothing new: the tool says so, and the model words it.
+    await as(anna, 'POST', '/api/v1/messaging/messages/read-rest', { before: new Date(clock()).toISOString() });
+    let round = 0;
+    script = () => (++round === 1 ? { say: [], calls: [{ tool: 'messages.mark_read' }], help: false } : { say: [{ kind: 'reply', text: 'Es ist nichts mehr neu.', ref: null }], calls: [], help: false });
+    seen.length = 0;
+    await turn(anna, 'Markiere den Rest als gelesen');
+    expect(seen.at(-1)!.messages.at(-1)!.content).toContain('nothing_new');
+
+    // "Lies die letzten 3 Nachrichten": the newest three, wherever they came.
+    round = 0;
+    script = () => (++round === 1 ? { say: [], calls: [{ tool: 'messages.read', chat: null, unread_only: false, count: 3 }], help: false } : { say: [{ kind: 'reply', text: 'Drei Nachrichten.', ref: null }], calls: [], help: false });
+    seen.length = 0;
+    await turn(anna, 'Lies die letzten 3 Nachrichten');
+    expect([...seen.at(-1)!.messages.at(-1)!.content.matchAll(/"ref":"msg:/g)]).toHaveLength(3);
+  });
+
   it('K9, limits where UCAP acts on accounts elsewhere: five WhatsApp pairing codes a connection an hour; ten email tries a person an hour, and ten accounts', async () => {
     // WhatsApp: each number given or code asked again is a request to WhatsApp.
     await client.renew(bernd);

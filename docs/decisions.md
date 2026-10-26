@@ -877,7 +877,17 @@ The plan: [plan-m3.md](plan-m3.md).
     - Built: at the end, and at a message already heard on this visit (a refresh puts those last), it says "Das war
       die letzte Nachricht." and the last one stays in front ("Wiederholen" says it again). A message that comes
       meanwhile is still next. Opening the screen again starts afresh, unread first.
-    - The appointments and tasks screens still go round: To confirm, item 22.
+    - The appointments and tasks screens now stop too (To confirm, item 22).
+13. **"Mark the rest as read" marks them read in UCAP only** (the owner, 2026-10-26, asked whether there is such an
+    option: "mark the rest as read is ucap only").
+    - plan-m3.md, K2, K3 and K5 mark a message read on its service once it was heard. That stays: what is marked here is
+      read in UCAP alone. No service and no phone is told, so no sender gets a read receipt, and the phone's apps and
+      Android's SMS store keep them unread. Only UCAP's own notification for an SMS goes.
+    - By voice ("Markiere den Rest als gelesen": the tool `messages.mark_read`) and on the messages screen ("Rest
+      gelesen", while some are new). Each asks first with how many: "Die 14 neuen Nachrichten als gelesen markieren?
+      Das gilt nur hier in UCAP: Die Absender erfahren davon nichts."
+    - Only what was new when the person was asked: a message that comes meanwhile stays new. "Rückgängig" makes exactly
+      those new again.
 
 ### To confirm
 
@@ -1043,8 +1053,13 @@ The plan: [plan-m3.md](plan-m3.md).
     removes deleted things for good. The owner's answer to item 20 speaks of "messages"; it is read as the person's own
     notes, contacts, appointments and tasks, which item 20 asked about. The other choice: such a message is kept,
     marked as deleted by its sender, until the person removes what was deleted.
+    - **Confirmed by the owner, 2026-10-26:** "if they delete their messages, just have them deleted like it is now."
 22. **The appointments and tasks screens still begin again from the first after the last** ("Nächster", K7), where the
     messages screen now stops (decided item 12). The other choice: they stop at the last too.
+    - **The owner chose the other choice, 2026-10-26:** "they do that too. so its consistent. user can always ask for a new
+      list afterwards of what interests him. "read the last 10 messages"". Built: after the last, "Das war der letzte
+      Termin." and "Das war die letzte Aufgabe.", and it stays there. "Lies die letzten 10 Nachrichten" takes how many
+      (`messages.read`'s count, up to 30; ten before).
 
 ### Decided (within the plan)
 
@@ -1868,3 +1883,17 @@ The plan: [plan-m3.md](plan-m3.md).
   - **Found and fixed:** after "Nein" the question stayed in the section's status line, as if still open.
   - The messages screen's end was not tried on the emulator: going through Wanda's messages would mark the owner's
     real WhatsApp messages read. The walk checks it; the code is the same in the app.
+- **After the owner's answers on items 21 and 22 and on marking the rest read (2026-10-26):**
+  - The browser walk: 29 of 29. Step 8b: after the second appointment, "Das war der letzte Termin.", and nothing read
+    again. Step 8c: "Rest gelesen" asked with how many; "Nein" kept them ("Nichts markiert."); "Ja" marked them; the
+    area went, and nothing was new any more.
+  - **Found and fixed in the walk:** the question counted from the screen's last fetch, and a message heard to its
+    end meanwhile made it one too many ("Die 8 neuen Nachrichten …", then "7 … markiert"). It now counts afresh as it
+    asks, by the server's time, and the mark takes that time: what it marks is what it counted.
+  - On the emulator, the new build, with the SMS role for the check: a test SMS's notification from UCAP went at the
+    phone's new "seen", and Android's store kept the SMS unread. A first test SMS, which LIVE said to its end, was read
+    in the store and its notification gone, as before: heard.
+  - The appointments and tasks screens' ends were not tried on the emulator: Wanda's home screen has no area for
+    them. The walk has the appointments' (step 8b); `app/test/agenda-screen.test.ts` the tasks'.
+  - Afterwards the SMS role went back to Google Messages, UCAP was opened again, and LIVE came back ("waiting"). The
+    two test SMS stay in the emulator's store, as K4's did.

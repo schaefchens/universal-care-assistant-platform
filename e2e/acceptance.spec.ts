@@ -860,6 +860,10 @@ test('8b · the appointments in areas (docs/plan-m3.md, K7): Maria turns Clara�
   const both = `${first} ${await said(clara, /^2 von 2: /, opened)}`;
   expect(both).toMatch(/Zahnarzt: \S+, \d+\. \S+( \d{4})?, 11 Uhr, Praxis Weber\./);
   expect(both).toMatch(/Kaffee mit Anna: Samstag, \d+\. \S+( \d{4})?, 15 Uhr\./);
+  // After the last, it stays there and says so, as the messages screen does (the owner, 2026-10-26).
+  await clara.getByRole('button', { name: 'Nächster', exact: true }).click();
+  await said(clara, /^Das war der letzte Termin\.$/, opened);
+  expect((await spoken(clara)).slice(opened).filter((t) => /^\d+ von 2: /.test(t))).toHaveLength(1);
   await clara.getByRole('button', { name: 'Zurück', exact: true }).click();
   await expect(heading(clara)).toHaveText('Startseite');
   await home(maria);
@@ -1058,7 +1062,7 @@ test('7i · across services (docs/plan-m3.md, acceptance 5): "Was hat Bernd heut
   engines.model = () => reply('In Ordnung.');
 });
 
-test('8c · previews (docs/plan-m3.md, K5; acceptance 8): Clara’s phone reads Signal’s notifications; Lena’s message is said as a preview; a reply goes through Signal’s notification, "Gesendet" only once Signal shows it as Clara’s', async () => {
+test('8c · previews (docs/plan-m3.md, K5; acceptance 8): Clara’s phone reads Signal’s notifications; Lena’s message is said as a preview; on to the end of the messages, never from the first again, and the rest marked read in UCAP; a reply goes through Signal’s notification, "Gesendet" only once Signal shows it as Clara’s', async () => {
   await home(clara);
   let from = await mark(clara);
   await ph.preview({ package: 'org.thoughtcrime.securesms', name: 'Signal' }, 'Lena', 'Bist du heute Nachmittag zu Hause?', await clocks.now());
@@ -1083,6 +1087,19 @@ test('8c · previews (docs/plan-m3.md, K5; acceptance 8): Clara’s phone reads 
   await clara.getByRole('button', { name: 'Nächste', exact: true }).click();
   await expect.poll(async () => (await spoken(clara)).slice(from).filter((t) => end.test(t)).length).toBe(2);
   expect((await spoken(clara)).slice(from).filter((t) => / schrieb /.test(t)).length).toBe(reads);
+  // "Rest gelesen", in UCAP only (the owner, 2026-10-26): asked with how many; "Nein" keeps them, "Ja" marks them.
+  const rest = /^(Die neue Nachricht|Die (\d+) neuen Nachrichten) als gelesen markieren\? Das gilt nur hier in UCAP: Die Absender erfahren davon nichts\.$/;
+  await clara.getByRole('button', { name: 'Rest gelesen', exact: true }).click();
+  await said(clara, rest, from);
+  await clara.getByRole('button', { name: 'Nein', exact: true }).click();
+  await said(clara, /^Nichts markiert\.$/, from);
+  const marking = await mark(clara);
+  await clara.getByRole('button', { name: 'Rest gelesen', exact: true }).click();
+  const many = rest.exec(await said(clara, rest, marking))![2];
+  await clara.getByRole('button', { name: 'Ja, als gelesen markieren', exact: true }).click();
+  await said(clara, many ? new RegExp(`^${many} Nachrichten als gelesen markiert\\.$`) : /^Eine Nachricht als gelesen markiert\.$/, marking);
+  await expect(clara.getByRole('button', { name: 'Rest gelesen', exact: true })).toHaveCount(0);
+  expect(sql(`select count(*) from messaging_messages m join messaging_conversations v on v.id = m.conversation_id where m.direction = 'in' and m.read_at is null and m.heard_at is null and v.kind <> 'channel'`)).toBe('0');
   await home(clara);
 
   // The reply: Lena is known only by what Signal's notifications show, so she is no contact (decisions.md, M3, 19).

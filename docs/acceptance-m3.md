@@ -6,7 +6,7 @@ automated test, in the browser walk, by a run on the Android emulator or by hand
 [acceptance.md](acceptance.md). State of 2026-10-26.
 
 ```sh
-npm run typecheck && npm test        # 576 tests; opt-in: the Telegram test-DC suite, the email live suite (below)
+npm run typecheck && npm test        # 579 tests; opt-in: the Telegram test-DC suite, the email live suite (below)
 npm run test:e2e                     # M1's and M3's acceptance scripts in browsers, axe on each M3 screen they open
 tools/android/unit-test.sh           # the app's JVM tests: SMS events, MMS PDUs, previews (GRADLE_OFFLINE=1 offline)
 node tools/android/axe.ts            # accessibility audit of the screen the emulator shows
@@ -119,7 +119,8 @@ owner's own account by hand only, and nothing automated ever reaches it.
 | Limits: pairing codes, email tries and accounts | `messaging-services.test.ts` | test |
 | Accessibility of the new screens | axe in steps 1, 7b–7h, 8b, L2 (14 screens, the person's and the helpers'); on the emulator in K5, K6, K8 and K9 (the SMS page, the contacts page with its disclosure, the appointment form) | e2e, emulator |
 | What was deleted kept until the person removes it for good (item 20) | `server/test/deleted.test.ts`; step 15 | test, e2e |
-| Through all messages, "Nächste" stops at the last one (decided item 12) | `app/test/messages-list.test.ts`; step 8c | test, e2e |
+| Through all messages, "Nächste" stops at the last one (decided item 12); the appointments and tasks screens too (item 22) | `app/test/messages-list.test.ts`, `app/test/agenda-screen.test.ts`; steps 8c and 8b | test, e2e |
+| The rest marked read, in UCAP only, by voice and on the messages screen (decided item 13) | `messaging-services.test.ts`; step 8c; the phone's own SMS notifications cleared, its store unread, on the emulator | test, e2e, emulator |
 | Play's disclosures | `docs/play.md`; the texts on the SMS, previews and contacts pages, shown on the emulator (K5, K9) | written; the Play Console with M9 |
 
 ## The acceptance script (plan-m3.md)

@@ -1018,6 +1018,9 @@ export function App() {
       const read = { connectionId: String(data.connectionId), externalIds: (data.externalIds as string[]) ?? [] };
       if (has('Sms')) void Sms.markRead(read).catch(() => {});
       if (has('Previews')) void Previews.markRead({ ...read, chatId: String(data.chatId ?? '') }).catch(() => {});
+    } else if (type === 'messaging.device.seen') {
+      // Marked read in UCAP only ("Rest gelesen"): this phone's own SMS notifications for them go, nothing else.
+      if (has('Sms')) void Sms.seen({ connectionId: String(data.connectionId), chatIds: (data.chatIds as string[]) ?? [] }).catch(() => {});
     } else if (type === 'messaging.outbound' && data.deviceId === session.ref.deviceId) {
       const o = await session.call<{ say: string | null }>(`/api/v1/messaging/outbound/${String(data.outboundId)}?lang=${u.lang}`).catch(() => null);
       if (o?.say) u.say(o.say, 'notice');

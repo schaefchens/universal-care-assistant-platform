@@ -147,6 +147,17 @@ public class SmsPlugin extends Plugin {
         }, "ucap-sms-compose").start();
     }
 
+    /** Marked read in UCAP only (the person's "Rest gelesen"): UCAP's notifications for these threads go. */
+    @PluginMethod
+    public void seen(PluginCall call) {
+        JSArray ids = call.getArray("chatIds", new JSArray());
+        String[] chats = new String[ids.length()];
+        for (int i = 0; i < ids.length(); i++) chats[i] = ids.optString(i);
+        Intent x = new Intent().putExtra("connectionId", call.getString("connectionId", "")).putExtra("chatIds", chats);
+        SmsCommands.send(getContext(), "seen", x);
+        call.resolve();
+    }
+
     /** SMS the person heard (on any of their devices): read in the store, as in any SMS app. */
     @PluginMethod
     public void markRead(PluginCall call) {

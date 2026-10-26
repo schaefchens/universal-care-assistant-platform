@@ -1,6 +1,6 @@
 /**
- * The person's messages (docs/plan.md, S10), in large areas: the next one, the current one again, a reply, back home,
- * and help, which every screen has (Appendix H). Unread messages come first, oldest first, then the newest of each
+ * The person's messages (docs/plan.md, S10), in large areas: the next one, the current one again, a reply, the rest
+ * marked read (in UCAP only, asked first), back home, and help, which every screen has (Appendix H). Unread messages come first, oldest first, then the newest of each
  * other conversation. Each is introduced by UCAP (who, when, where, on which service: CONCEPT §3), then its original
  * follows in the voice for reading; a voice message's original is its recording. Only an original heard to its end
  * is marked read on Telegram. A reply is dictated and asked about as said (C1), never sent without the person's yes.
@@ -63,6 +63,10 @@ export function MessagesScreen(p: {
   const [state, setState] = useState<'none' | 'ready' | 'not_ready' | 'unavailable'>('ready');
   const [conns, setConns] = useState<{ id: string; name: string; state: string }[]>([]);
   const [i, setI] = useState(0);
+  /** How many are new (the area "Rest gelesen" is there while some are). */
+  const [unread, setUnread] = useState(0);
+  /** "Rest gelesen" asked: how many the server counted, by its time then, which the mark takes. */
+  const [askingRest, setAskingRest] = useState<{ unread: number; asOf: string } | null>(null);
   const reading = useRef(0);
   /** What was shown on this visit: a refresh of the queue leads on past it (messages-list.ts). */
   const shownHere = useRef(new Set<string>());
@@ -106,6 +110,7 @@ export function MessagesScreen(p: {
   const load = async (first: boolean) => {
     try {
       const r = await p.session.call<{ connections: { id: string; service: string; name: string; state: string }[]; items: MessageItem[]; unread?: number }>(`/api/v1/messaging/queue?lang=${ui.lang}`);
+      setUnread(r.unread ?? r.items.filter((x) => x.unread).length);
       // Ready while one of the person's services is (each message keeps its own service).
       const st = !r.connections.length ? 'none' : r.connections.some((x) => x.state === 'ready') ? 'ready' : 'not_ready';
       setState(st);
@@ -158,6 +163,40 @@ export function MessagesScreen(p: {
     void readItem(items[n]!);
   }
 
+  /**
+   * "Rest gelesen": asked first, with how many are new now (counted afresh: one heard meanwhile is no longer new);
+   * then those marked read in UCAP only (the owner, 2026-10-26).
+   */
+  async function askRest() {
+    reading.current++;
+    p.stop();
+    try {
+      const r = await p.session.call<{ unread: number; asOf: string }>('/api/v1/messaging/unread');
+      setUnread(r.unread);
+      if (!r.unread) return say(tr('messages.rest.none'), 'system');
+      setAskingRest(r);
+      say(tr('messages.rest.confirm', { count: r.unread }), 'system');
+    } catch {
+      say(tr('messages.unavailable'), 'system');
+    }
+  }
+  async function markRest() {
+    const asked = askingRest;
+    setAskingRest(null);
+    if (!asked) return;
+    try {
+      const r = await p.session.call<{ count: number }>('/api/v1/messaging/messages/read-rest', { method: 'POST', body: { before: asked.asOf } });
+      say(tr('messages.rest.done', { count: r.count }), 'system');
+      await load(false);
+    } catch {
+      say(tr('messages.unavailable'), 'system');
+    }
+  }
+  const keepRest = () => {
+    setAskingRest(null);
+    say(tr('messages.rest.kept'), 'system');
+  };
+
   async function reply() {
     if (!current || current.kind === 'service') return say(tr('messages.reply.none'), 'system');
     const conn = conns.find((x) => x.id === current.connectionId);
@@ -170,13 +209,17 @@ export function MessagesScreen(p: {
 
   useScreenVoice(
     {
+      ...(askingRest ? { context: 'confirm' as const } : {}),
       onIntent: (intent) => {
-        if (intent === 'repeat' && current) void readItem(current);
+        if (askingRest && intent === 'yes') void markRest();
+        else if (askingRest && (intent === 'no' || intent === 'stop')) keepRest();
+        else if (askingRest && intent === 'repeat') say(tr('messages.rest.confirm', { count: askingRest.unread }), 'system');
+        else if (intent === 'repeat' && current) void readItem(current);
         else return false;
         return true;
       },
     },
-    [current],
+    [current, askingRest],
   );
 
   const choices =
@@ -186,13 +229,21 @@ export function MessagesScreen(p: {
           { id: 'back', label: tr('messages.area.back'), role: 'nav' as const },
           { id: 'help', label: tr('area.help.label'), role: 'help' as const },
         ]
-      : [
-          { id: 'next', label: tr('messages.area.next'), role: 'messages' as const },
-          { id: 'repeat', label: tr('messages.area.repeat'), role: 'neutral' as const },
-          { id: 'reply', label: tr('messages.area.reply'), role: 'assistant' as const },
-          { id: 'back', label: tr('messages.area.back'), role: 'nav' as const },
-          { id: 'help', label: tr('area.help.label'), role: 'help' as const },
-        ];
+      : askingRest
+        ? [
+            { id: 'rest.yes', label: tr('messages.rest.yes'), role: 'messages' as const },
+            { id: 'rest.no', label: tr('messages.rest.no'), role: 'nav' as const },
+            { id: 'help', label: tr('area.help.label'), role: 'help' as const },
+          ]
+        : [
+            { id: 'next', label: tr('messages.area.next'), role: 'messages' as const },
+            { id: 'repeat', label: tr('messages.area.repeat'), role: 'neutral' as const },
+            { id: 'reply', label: tr('messages.area.reply'), role: 'assistant' as const },
+            // While some are new: the rest marked read at once, without hearing them.
+            ...(unread > 0 ? [{ id: 'rest', label: tr('messages.area.rest'), role: 'neutral' as const }] : []),
+            { id: 'back', label: tr('messages.area.back'), role: 'nav' as const },
+            { id: 'help', label: tr('area.help.label'), role: 'help' as const },
+          ];
 
   return (
     <main className="area-screen" aria-label={tr('messages.title')}>
@@ -223,7 +274,7 @@ export function MessagesScreen(p: {
       </div>
       {items && (
         <ChoiceGrid
-          id={`messages-${state}`}
+          id={`messages-${state}${askingRest ? '-rest' : ''}`}
           config={p.config}
           choices={choices}
           onChoose={(id) => {
@@ -232,6 +283,9 @@ export function MessagesScreen(p: {
               if (current) void readItem(current);
               else say(tr('messages.empty'), 'system');
             } else if (id === 'reply') void reply();
+            else if (id === 'rest') void askRest();
+            else if (id === 'rest.yes') void markRest();
+            else if (id === 'rest.no') keepRest();
             else if (id === 'back') p.onHome();
             else if (id === 'help') p.onHelp();
             else if (id === 'connect') p.onConnect();

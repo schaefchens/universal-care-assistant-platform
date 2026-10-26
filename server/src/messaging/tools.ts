@@ -7,6 +7,7 @@
  * | messages.overview, messages.read, messages.search | read: the messages come back as untrusted data with their sender, service and time, and the turn is tainted | – |
  * | messages.connections | read: each connection and what it can do (Appendix K), for "Was kann WhatsApp hier?" | – |
  * | messages.send | act: UCAP reads the whole message back with its recipient and service (C1; an email with its subject), warns when the recipient is no contact | always |
+ * | messages.mark_read | act: every message still new marked read, in UCAP only (the services and senders are not told), with undo | always, with how many |
  *
  * A reply goes back on the service its conversation is on. A name found on several services goes where that person
  * last wrote lately; otherwise UCAP says which services, and the model asks the person (CONCEPT §2: "a focused
@@ -130,21 +131,23 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     kind: 'read',
     name: 'messages.read',
     description:
-      'Messages, oldest first: of one conversation, or (chat null) of all of them. Each with its ref, service, conversation, sender, time, kind and text (a voice message with its automatic transcript, if there is one; an email with its subject, and the first line of what it quotes). "Lies meine neuen Nachrichten": chat null, unread_only true. To read one out word for word, say it as kind "original" with its ref; the original of a voice message is its recording.',
+      'Messages, oldest first: of one conversation, or (chat null) of all of them. Each with its ref, service, conversation, sender, time, kind and text (a voice message with its automatic transcript, if there is one; an email with its subject, and the first line of what it quotes). "Lies meine neuen Nachrichten": chat null, unread_only true. "Lies die letzten 10 Nachrichten": chat null, unread_only false, count 10. To read one out word for word, say it as kind "original" with its ref; the original of a voice message is its recording.',
     args: {
       chat: nullableStr('The conversation, as "chat:<id>", or the name of the person or group; null for all.'),
       unread_only: { type: 'boolean', description: 'Only messages not read yet.' },
       service: nullableStr('Only on this service, when the person named one ("Telegram", "WhatsApp", "E-Mail", "SMS", an app); else null.'),
+      count: { anyOf: [{ type: 'integer', minimum: 1, maximum: 30 }, { type: 'null' }], description: 'How many, the newest, when the person said ("die letzten 5"); else null.' },
     },
     async run(ctx, args) {
       const unreadOnly = args.unread_only === true;
+      const limit = typeof args.count === 'number' && Number.isInteger(args.count) ? Math.min(Math.max(args.count, 1), 30) : unreadOnly ? 20 : 10;
       if (args.chat === null || args.chat === undefined || args.chat === '') {
-        const list = await messaging(ctx).everywhere(ctx.userId, { unreadOnly, limit: unreadOnly ? 20 : 10 });
+        const list = await messaging(ctx).everywhere(ctx.userId, { unreadOnly, limit });
         return { data: { messages: list.map((i) => asData(ctx, i)) } };
       }
       const c = await conversationOf(ctx, args.chat, { forSending: false, service: args.service });
       if (!c.conversationId) throw new ToolError('chat_unknown');
-      const list = await messaging(ctx).conversation(ctx.userId, c.conversationId, { limit: unreadOnly ? 20 : 10, unreadOnly });
+      const list = await messaging(ctx).conversation(ctx.userId, c.conversationId, { limit, unreadOnly });
       return {
         data: { chat: { ref: `chat:${c.conversationId}`, name: c.name, service: serviceName(c.service, c.label) }, messages: list.map((i) => asData(ctx, i)) },
         focus: { chat: { id: c.conversationId, title: c.name } },
@@ -163,6 +166,27 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     async run(ctx, args) {
       const found = await messaging(ctx).search(ctx.userId, typeof args.query === 'string' ? args.query : '', typeof args.person === 'string' ? args.person : null);
       return { data: { messages: found.map((i) => asData(ctx, i)) } };
+    },
+  },
+  {
+    kind: 'act',
+    name: 'messages.mark_read',
+    description:
+      'Marks every message that is still new as read, in UCAP only, for "Markiere den Rest als gelesen" or "Alle als gelesen markieren": they are no longer new here, while the services and the senders are not told (no read receipts). UCAP asks the person first, with how many; "Rückgängig" makes them new again.',
+    args: {},
+    async prepare(ctx) {
+      // What is new now, counted as it will be marked: a message that comes while the person is asked stays new.
+      const before = new Date(ctx.now);
+      const count = await messaging(ctx).unreadCount(ctx.userId, before);
+      if (!count) throw new ToolError('nothing_new');
+      return { args: { before: before.toISOString() }, confirm: t(ctx.lang, 'messages.rest.confirm', { count }, ctx.form) };
+    },
+    async run(ctx, args) {
+      const r = await messaging(ctx).markRestRead(ctx.userId, new Date(String(args.before)));
+      return { say: t(ctx.lang, 'messages.rest.done', { count: r.count }, ctx.form), undo: { at: r.at } };
+    },
+    async undo(ctx, u) {
+      return t(ctx.lang, 'messages.rest.undone', { count: await messaging(ctx).unmarkRead(ctx.userId, String(u.at)) }, ctx.form);
     },
   },
   {
