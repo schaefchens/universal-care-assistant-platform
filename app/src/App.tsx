@@ -983,7 +983,7 @@ export function App() {
       // a quiet time or with messages not to be said, nothing (CONCEPT §19: "its live until disabled/paused").
       if (liveRef.current?.listening) {
         const news = newsRef.current!;
-        // Nor what LIVE leaves for when the person asks (K8): a stranger's email, a service set so on this device.
+        // Nor a service this device leaves to the person (K8).
         if (!news.allowed() || !saysByItself(liveOf(configRef.current), data)) return;
         u.earcons.play('message');
         return news.arrived();

@@ -68,9 +68,9 @@ function setup(o: { allowed?: () => boolean; free?: () => boolean; cut?: number 
 }
 
 describe('what LIVE says by itself (docs/plan-m3.md, K8)', () => {
-  it('every service unless the device leaves it to the person; never what the server keeps for when they ask', () => {
+  it('every service unless the device leaves it to the person', () => {
     expect(saysByItself(DEFAULT_LIVE, { service: 'whatsapp' })).toBe(true);
-    expect(saysByItself(DEFAULT_LIVE, { service: 'email', liveQuiet: true })).toBe(false);
+    expect(saysByItself(DEFAULT_LIVE, { service: 'email' })).toBe(true);
     const live = { ...DEFAULT_LIVE, say: { ...DEFAULT_LIVE.say, services: { whatsapp: false, sms: true } } };
     expect(saysByItself(live, { service: 'whatsapp' })).toBe(false);
     expect(saysByItself(live, { service: 'sms' })).toBe(true);

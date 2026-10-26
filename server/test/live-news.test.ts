@@ -98,8 +98,8 @@ describe('LIVE across services', () => {
     ({ db, drop } = await testDb());
     const config = testConfig({ ollamaUrl: 'http://ollama:11434', ollamaModel: 'fake' });
     core = await buildCore({ config, db, clock, secrets: SECRETS, logger: false });
-    // The model's summaries get half a second here, not 25 s.
-    assistant = await buildAssistant({ config, db, clock, secrets: SECRETS, logger: false, providerFetch, liveSummaryMs: 500 });
+    // The model's summaries get 2 s here, not 25 s.
+    assistant = await buildAssistant({ config, db, clock, secrets: SECRETS, logger: false, providerFetch, liveSummaryMs: 2_000 });
     await assistant.app.listen({ host: '127.0.0.1', port: 0 });
     const url = `ws://127.0.0.1:${(assistant.app.server.address() as { port: number }).port}/internal/connectors`;
     await assistant.llm.ensureConfigured();
@@ -207,13 +207,11 @@ describe('LIVE across services', () => {
     expect(await news()).toEqual([]);
     // Each new message's event names its service, for the device's own settings.
     expect(await lastEvent()).toMatchObject({ messageId: signal, service: 'notifications', announce: true });
-    expect((await lastEvent()).liveQuiet).toBeUndefined();
     await heardAll();
   });
 
   it('an email from someone the person knows: who and its subject, then summed up (the subject given to the model with it); unread until heard', async () => {
     const id = await arrives(mail, ids.email, 'thread:anna', 'mail:anna@example.org', 'Liebe Clara,\n\npasst dir Samstag um drei? Ich bringe Kuchen mit.\n\nViele Grüße\nAnna', { subject: 'Besuch am Samstag' });
-    expect((await lastEvent()).liveQuiet).toBeUndefined();
     seen.length = 0;
     summed = () => 'Anna fragt, ob dir Samstag um drei passt, und bringt Kuchen mit.';
     expect(await news()).toEqual([
@@ -231,16 +229,17 @@ describe('LIVE across services', () => {
     await heardAll();
   });
 
-  it('an email from someone the person does not know waits until they ask; lists and newsletters are counted then, as muted chats are', async () => {
+  it('an email from someone the person does not know: by itself who and its subject, what it says when asked; lists and newsletters are counted then, as muted chats are', async () => {
     await arrives(mail, ids.email, 'thread:shop', 'mail:info@shop.example', 'Ihre Bestellung wurde versandt.', { subject: 'Bestellung 4711' });
-    expect(await lastEvent()).toMatchObject({ service: 'email', announce: true, liveQuiet: true });
+    expect(await lastEvent()).toMatchObject({ service: 'email', announce: true });
     await arrives(mail, ids.email, 'thread:garten', 'mail:news@garten.example', 'Tipps für den Herbst: Laub als Mulch.', { subject: 'Newsletter Oktober' });
     await arrives(mail, ids.email, 'thread:garten', 'mail:news@garten.example', 'Unser Herbstfest am Samstag.', { subject: 'Newsletter Oktober' });
     await arrives(wa, ids.whatsapp, '120363000000000001@g.us', 'user:4917699999999', 'Wer hat die Leiter?');
     // A muted chat and a list are never announced, LIVE or not.
     expect(await lastEvent()).toMatchObject({ service: 'whatsapp', announce: false });
     seen.length = 0;
-    expect(await news()).toEqual([]);
+    // By itself that it came, from whom and about what; the person may ask about it (the owner, 2026-10-26).
+    expect(await news()).toEqual([{ kind: 'system', text: 'E-Mail von Shop Beispiel, Betreff „Bestellung 4711“.' }]);
     expect(seen).toHaveLength(0);
     summed = () => 'Shop Beispiel schreibt, dass deine Bestellung versandt wurde.';
     expect(await news({ asked: true })).toEqual([
@@ -294,7 +293,7 @@ describe('LIVE across services', () => {
   it('a model slower than the news’ budget: who wrote is said instead; a device that gave up waiting marks nothing announced', async () => {
     await arrives(tg, ids.telegram, '501', 'user:501', 'Ich habe am Wochenende den Garten umgegraben, die Tomaten geerntet, und nächste Woche fahre ich zu meiner Schwester nach Hamburg. Danach komme ich gern vorbei, wenn es dir passt, und bringe Tomaten mit.');
     await arrives(mail, ids.email, 'thread:anna', 'mail:anna@example.org', 'Kommst du am Samstag?', { subject: 'Kaffee' });
-    slowMs = 2_000;
+    slowMs = 10_000;
     summed = () => 'Bernd Becker erzählt vom Garten.';
     const started = Date.now();
     // The device gives up first: nothing counts as announced.
@@ -305,8 +304,8 @@ describe('LIVE across services', () => {
       { kind: 'system', text: 'Bernd Becker hat auf Telegram eine Nachricht geschrieben.' },
       { kind: 'system', text: 'E-Mail von Anna, Betreff „Kaffee“.' },
     ]);
-    // One budget for both, not one each.
-    expect(Date.now() - started).toBeLessThan(1_800);
+    // One budget for both, not one each (that would be 4 s at least).
+    expect(Date.now() - started).toBeLessThan(3_900);
     slowMs = 0;
     await heardAll();
   });

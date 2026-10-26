@@ -10,15 +10,16 @@
  *   §19 has it ("Maria asked how you are doing and if she should bring launch later this day"): "Maria fragt, …";
  *   without a model: how many came;
  * - an email by who sent it and its subject, then summed up: "E-Mail von Anna, Betreff „Besuch am Samstag“." "Anna
- *   fragt, …" (K8: "Emails: from contacts, summed up with their subject"); by itself only from someone the person knows;
+ *   fragt, …" (K8: "Emails: from contacts, summed up with their subject"); one from someone the person does not know
+ *   by itself only by who and its subject, and the person may ask about it (the owner, 2026-10-26);
  * - a one-time code by who sent it, never the code: "Amazon hat per SMS einen Code geschickt." (K8);
  * - a preview as one: "Vorschau von Signal: …" (CONCEPT §3: previews are no conversation's history);
  * - a voice message or a photo by what it is; at most three conversations, then how many more;
  * - the service named when the person has more than one ("Anna schrieb auf WhatsApp: …").
  *
  * By itself it leaves out the services the device is set to leave to the person. Asked, it covers everything: those
- * services and email from anyone too, a count of what is never said by itself (lists and newsletters, muted chats),
- * and the tasks due today.
+ * services too, what an email from anyone says, a count of what is never said by itself (lists and newsletters, muted
+ * chats), and the tasks due today.
  *
  * Each message is announced once, on any device (`live_announced_at`); the conversation becomes the device's focus,
  * so "Antworte ihr, …" knows whom. What was said is not kept.
@@ -138,10 +139,12 @@ export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: M
         }
         const rest = msgs.filter((m) => !m.code);
         if (!rest.length) continue;
-        // An email: who and its subject, then what it says, summed up (K8).
+        // An email: who and its subject, then what it says, summed up (K8). From someone the person does not know, by
+        // itself only that it came: they may ask about it (the owner, 2026-10-26).
         if (first.service === 'email') {
           const subject = rest.find((m) => m.subject?.trim())?.subject?.trim() ?? '';
           out.push({ kind: 'system', text: tr(subject ? 'live.news.email' : 'live.news.email.noSubject', { name: from, n: rest.length, subject }) });
+          if (!o.asked && rest.some((m) => !m.known)) continue;
           const s = await summary(userId, lang, who.form, who.name, from, rest, budget);
           if (s) out.push({ kind: 'summary', text: s });
           continue;

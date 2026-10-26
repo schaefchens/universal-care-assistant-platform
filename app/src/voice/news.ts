@@ -21,12 +21,9 @@ export function inQuietTime(quietTimes: LiveConfig['quietTimes'], now: Date): bo
   });
 }
 
-/**
- * Whether LIVE mode says a new message by itself (docs/plan-m3.md, K8): not one the server keeps for when the person
- * asks (an email from someone they do not know), nor one on a service this device leaves to the person.
- */
-export function saysByItself(live: LiveConfig, e: { service?: unknown; liveQuiet?: unknown }): boolean {
-  return e.liveQuiet !== true && !(liveSkips(live) as string[]).includes(String(e.service ?? ''));
+/** Whether LIVE mode says a new message by itself (docs/plan-m3.md, K8): not on a service the device leaves to the person. */
+export function saysByItself(live: LiveConfig, e: { service?: unknown }): boolean {
+  return !(liveSkips(live) as string[]).includes(String(e.service ?? ''));
 }
 
 export interface NewsSegment {

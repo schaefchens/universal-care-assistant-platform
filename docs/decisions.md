@@ -993,15 +993,21 @@ The plan: [plan-m3.md](plan-m3.md).
       hears less of such mail.
     - The other choice: LIVE names such a mail by itself without summing it up ("E-Mail von Shop Beispiel, Betreff
       „Bestellung 4711“.").
+    - **The owner chose the other choice, 2026-10-26:** "it should say that email from unknown senders did arrive, the
+      user may then ask about those." Built: by itself, such a mail is named by who sent it and its subject, and is not
+      summed up; asked ("Was gibt's Neues?"), it is summed up as any other. Email is said by itself from anyone now,
+      and the device's switch for it reads "E-Mail".
 17. **A one-time code is named by who sent it, never read out by LIVE**: "Amazon hat per SMS einen Code geschickt. Codes
     lese ich nur vor, wenn du darum bittest." That holds by itself and when asked; the code itself is read only when
     the person asks for that message (the assistant, the messages screen). plan-m3.md, K8: "One-time codes are never
     said by themselves." The other choice: nothing of it at all by itself, not even the earcon; only when asked.
+    - **Confirmed by the owner, 2026-10-26.**
 18. **LIVE's "Erinnerungen zu ihrer Zeit" switch is gone from its settings.** It never changed anything: reminders and
     appointments are M1's, and they come at their time with LIVE on or off (M2's "Reminders keep their time in quiet
     times"). The settings now say so ("Erinnerungen und Termine sage ich immer zu ihrer Zeit."), and the switches are
     per service (K8: "what LIVE says by itself, per service"). The configuration keeps the field for the versions that
     have it. The other choice: a switch that, in LIVE mode, leaves a reminder to its alarm without its words.
+    - **Confirmed by the owner, 2026-10-26.**
 
 ### Decided (within the plan)
 
@@ -1279,7 +1285,8 @@ The plan: [plan-m3.md](plan-m3.md).
     model's sentence begins with who wrote, so UCAP says the rest; M2 named neither the group nor the service there.
   - A sender named as its service is not followed by it again: "Telegram hat einen Code geschickt."
 - **An email is said by who sent it and its subject, then summed up**: "E-Mail von Anna, Betreff „Besuch am Samstag“."
-  "Anna fragt, ob …". A short one is summed up too: what a mail says sits between a greeting and a signature.
+  "Anna fragt, ob …". A short one is summed up too: what a mail says sits between a greeting and a signature. One
+  from someone the person does not know is only named by itself, and summed up when asked (To confirm, item 16).
   - Its subject goes to the model with its words.
   - Without a sentence from the model, only who and the subject are said.
   - Summed up is not heard: the mail stays unread on the server until its original is.
@@ -1300,11 +1307,11 @@ The plan: [plan-m3.md](plan-m3.md).
   Blumen gießen."), not those of other days; with no message, "Keine neuen Nachrichten." comes first. Appointments are
   said at their reminder (K7's reminders, in LIVE mode with the time first), not in the news.
 - **What LIVE says by itself is set per service and per device** (`live.say.services` in the device configuration,
-  under "Neue Nachrichten"): Telegram, WhatsApp, email from contacts, SMS, and previews.
+  under "Neue Nachrichten"): Telegram, WhatsApp, email, SMS, and previews.
   - Every service is offered on every page, so a helper with "Bedienung der Geräte einstellen" learns nothing of which
     ones the person uses.
   - A service left to the person brings neither the earcon nor an announcement; "Was gibt's Neues?" still covers it.
-  - The new-message event names its service, and marks a mail LIVE keeps until the person asks (`liveQuiet`).
+  - The new-message event names its service.
 - **LIVE's news wait at most 25 s for the model's summaries, all of them together**; after that, who wrote and how much
   (for an email, who and its subject) are said instead. The device waits 45 s for its news, where other calls wait
   15 s, and a device that gave up marks nothing as announced, so the news comes again (found on the emulator, below).
@@ -1583,14 +1590,18 @@ The plan: [plan-m3.md](plan-m3.md).
   that gave up; the services a device leaves to the person; "Was gibt's Neues?" with today's tasks, in German and
   English. The code rule (`server/test/codes.test.ts`): 15 codes worded as services send them found, 12 look-alikes not.
 - **K8, the browser walk (2026-10-26):** 23 of 23, with a new step L2.
-  - By itself: Anna's WhatsApp message word for word with its service; a code by SMS named, never read.
-  - Not by itself, and no "Neue Nachricht" either: a newsletter, Maria's mail from an address Clara has not saved, and
-    WhatsApp once Clara left it to herself on her settings page.
+  - By itself: Anna's WhatsApp message word for word with its service; a code by SMS named, never read; since the
+    owner's answer (To confirm, item 16), Maria's mail from an address Clara has not saved by who and its subject.
+  - Not by itself, and no "Neue Nachricht" either: a newsletter, what Maria's mail says, and WhatsApp once Clara left
+    it to herself on her settings page.
   - "Was gibt's Neues?": the server's answer held all of it (the code named, Maria's mail by who and subject and then
     summed up, Anna's WhatsApp, the newsletter counted, today's task last), and its first part was said.
   - Found: in the walk's browser every utterance ends by its stall cut, which counts as cut short, so LIVE waited
     behind each one and said only the first part of news in several parts (M2's rule). The step reads the whole answer
     from the server's response (CLAUDE.md).
+  - Seen once in six runs: after "LIVE an" by voice, the line beside the talk button kept "Gehört: „LIVE an“" instead
+    of LIVE's state. Push-to-talk's turn reports what it heard again as it ends, and here that came after LIVE had
+    cleared it (M2). The step accepts either line; the app is unchanged.
 - **K8 on the emulator (2026-10-26)**, Wanda in LIVE mode, the real model (qwen3.6). The dev stack's WhatsApp process
   was stopped for the run, so no real WhatsApp message was said or marked read. UCAP was the SMS app for the run.
   - An SMS: "555-1234 schrieb per SMS: „Bist du wach?“", 4.4 s after it arrived.
@@ -1598,7 +1609,7 @@ The plan: [plan-m3.md](plan-m3.md).
     was in nothing said; the message was marked as a code and stayed unread.
   - Mails put into Wanda's test mailbox (IMAP APPEND). From the other test mailbox, whom Wanda wrote to: "E-Mail von
     Anna Tester, Betreff „…“.", then the model's summary. A newsletter (List-Id) and a stranger's mail: nothing, not
-    even the earcon.
+    even the earcon (as built then; see the second run).
   - Email switched off for LIVE on the device's settings page: a known sender's mail was not said and stayed new;
     switched on again, it came with the next one.
   - axe on the settings page with the new section: nothing at any impact.
@@ -1628,3 +1639,17 @@ The plan: [plan-m3.md](plan-m3.md).
     - The host microphone is on again, and the storage threshold removed.
     - The WhatsApp process was started again, and Wanda's WhatsApp is ready.
     - The emulator was shut down, as it was found.
+- **K8 on the emulator, second run (2026-10-26)**, after the owner's answers ("yes its fine to read real messages
+  aloud"): Wanda in LIVE mode, the real model and speech recognition, her real WhatsApp running, UCAP the SMS app.
+  - By itself: the SMS with its service; the code named, the code in nothing said; a stranger's mail by who and its
+    subject alone ("E-Mail von Shop Beispiel, Betreff „…“."), and before it the first run's stranger's mail, which
+    had not been announced; a newsletter, nothing.
+  - "Alina, was gibt's Neues?" (a recording of the Mac's German voice played into the capture): the news came 10.6 s
+    later. Two parts on Wanda's real WhatsApp news, then the code named, "Dazu 6 weitere neue Nachrichten.", "Von
+    Newslettern und Verteilern: 2 neue E-Mails." and "Heute zu erledigen: K8 Rezept abholen." (a task entered on her
+    page for it).
+  - The first try failed: the Mac's speech recognition (`services/stt-mlx/run.sh`) was not running. It was started
+    for the run.
+  - Afterwards: the test mails and the task deleted, the recording removed, the SMS role back with Google Messages
+    (which ended UCAP's process, as Android does), the host microphone on, the storage threshold removed. UCAP was
+    started again and left open on the emulator, as the owner asked.

@@ -928,7 +928,7 @@ test('L · LIVE mode in a browser (docs/plan-m2.md): Maria switches it on for Cl
   engines.model = () => reply('In Ordnung.');
 });
 
-test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by itself with its service; a code named, never read; a newsletter, an email from someone Clara does not know and a service she leaves to herself only when asked; "Was gibt’s Neues?" covers everything, today’s tasks too', async () => {
+test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by itself with its service; a code named, never read; an email from someone Clara does not know named, what it says only when asked; a newsletter and a service she leaves to herself only when asked; "Was gibt’s Neues?" covers everything, today’s tasks too', async () => {
   // LIVE speaks only when nothing else is being said, and the browser's speech here ends only when it is cut, after
   // about twice its time (src/audio/speech.ts): each announcement may wait for the one before.
   test.setTimeout(480_000);
@@ -950,7 +950,9 @@ test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by 
   let from = await mark(clara);
   await talk(clara, engines, 'LIVE an');
   await said(clara, /^LIVE-Modus ist an\. Hier kann ich nicht auf meinen Namen warten/, from);
-  await expect(clara.locator('.voice-status').first()).toHaveText('LIVE: Berühre „Sprechen“');
+  // The line beside the talk button may still show what was heard: push-to-talk's turn reports it again as it ends,
+  // sometimes after LIVE cleared it (M2).
+  await expect(clara.locator('.voice-status').first()).toHaveText(/^(LIVE: Berühre „Sprechen“|Gehört: „LIVE an“)$/);
   // The model sums up what is to be summed up, beginning with who wrote (the summary's rule).
   engines.model = (req) => {
     const who = /zusammen, was (.+?) geschrieben hat/.exec(req.system)?.[1];
@@ -971,7 +973,8 @@ test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by 
   const live = clara.locator('section').filter({ has: clara.getByRole('heading', { name: 'LIVE-Modus', exact: true }) });
   await setChoice(live.getByRole('checkbox', { name: 'WhatsApp', exact: true }), false);
   await home(clara);
-  // Not by themselves: a newsletter, a mail from Maria's address (no contact of Clara's), and WhatsApp now.
+  // Maria's mail, from an address Clara has not saved: that it came, from whom and about what, never what it says
+  // (the owner, 2026-10-26: "the user may then ask about those"). Not by themselves: a newsletter, WhatsApp now.
   from = await mark(clara);
   for (const m of [
     { service: 'email', chat: 'newsletter', text: 'Tipps für den Herbst: Laub als Mulch.' },
@@ -980,9 +983,10 @@ test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by 
   ])
     expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify(m) })).ok).toBe(true);
   await expect.poll(() => sql(`select count(*) from messaging_messages where text in ('Tipps für den Herbst: Laub als Mulch.', 'Hallo, das ist meine neue Adresse.', 'Ich bringe Kuchen mit.')`)).toBe('3');
-  // Longer than LIVE gathers news and waits for what is still being said: none of them, nor M1's "Neue Nachricht".
+  await said(clara, /^E-Mail von Maria, Betreff „Neue Adresse“\.$/, from, LIVE_WAIT);
+  // Longer than LIVE gathers news and waits for what is still being said: none of the others, nor M1's "Neue Nachricht".
   await new Promise((r) => setTimeout(r, 30_000));
-  expect((await spoken(clara)).slice(from).filter((t) => /Herbst|Adresse|Kuchen|Maria|Gartenfreunde|Neue Nachricht|E-Mail von/.test(t))).toEqual([]);
+  expect((await spoken(clara)).slice(from).filter((t) => /Herbst|Kuchen|Gartenfreunde|Neue Nachricht|Maria schreibt/.test(t))).toEqual([]);
 
   // "Was gibt's Neues?": a touch opens LIVE, and the answer covers everything, WhatsApp too, the newsletter counted, the
   // task. This browser's speech ends only when it is cut, and LIVE says no more of news cut short (M2): its first part
