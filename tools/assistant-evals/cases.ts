@@ -124,6 +124,7 @@ export const CASES: Case[] = [
   // Made from a message, with it as its source: asked first, since the turn read it (K7, CONCEPT §11).
   { id: 'src-1', messaging: true, say: 'Speichere Michaels Nachricht als Notiz.', tools: ['notes.create'], asks: /^Notiz „.*“ speichern, aus der Nachricht von Michael Weber auf Telegram\?$/ },
   { id: 'src-2', messaging: true, say: 'Trag den Besuch ein, den Petra vorgeschlagen hat.', tools: ['agenda.add'], asks: /^Termin eintragen: .*15 Uhr: .*\?$/ },
-  { id: 'src-3', messaging: true, say: 'Erinnere mich an den Besuch, den Petra in ihrer Sprachnachricht erwähnt hat.', anyTools: ['agenda.add', 'reminders.create'], asks: /15 Uhr/ },
+  // The visit at three: an appointment at 15:00, or a reminder then or an hour before.
+  { id: 'src-3', messaging: true, say: 'Erinnere mich an den Besuch, den Petra in ihrer Sprachnachricht erwähnt hat.', anyTools: ['agenda.add', 'reminders.create'], asks: /1[45](:00)? Uhr/ },
   // Follow-ups and focus are not part of this single-turn evaluation; nor are recovery words (dropped before any model).
 ];

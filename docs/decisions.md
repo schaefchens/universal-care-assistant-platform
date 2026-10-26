@@ -1255,6 +1255,8 @@ The plan: [plan-m3.md](plan-m3.md).
   about now close the system prompt instead of standing in its third line, so the model's server reuses what it read of
   the rest (its prompt cache). Read afresh every minute, the tools' long part made a turn on the emulator answer later
   than the 15 s limit under memory pressure ("Der Assistent ist gerade nicht erreichbar.").
+- **An empty reply from the model is asked again**, as a tool's error is (one round of the turn's four), instead of
+  ending the turn in "Das hat nicht geklappt.": the model sometimes answered `{"calls": [], "help": false, "say": []}`.
 
 ### Measured
 
@@ -1516,3 +1518,8 @@ The plan: [plan-m3.md](plan-m3.md).
   - Afterwards the test appointments and the task were deleted on Wanda's pages, two drafts left by declined questions
     cleared, the stand-in's Telegram removed, the real connector started again (Clara's Telegram ready), the recordings
     deleted, the host microphone on again and the storage threshold removed.
+- **The evaluation after the run's changes (2026-10-26):** with the time and the focus at the prompt's end, 70 of 74
+  and no turn past the limit (median 3.9 s), but "Speichere Michaels Nachricht als Notiz" got an empty reply in 8 of 8
+  tries (2 of 5 with the time near the top again: the order makes it likelier, not the cause). With the empty reply
+  asked again it passed 5 of 6, and the full evaluation gave 72 of 74, median 4.0 s; the walk 22 of 22. The two left:
+  12 × 13 wrong, and a reminder for Petra's visit at 15:00 set for 14:00, an hour before (the case now takes either).

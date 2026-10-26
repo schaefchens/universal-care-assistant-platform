@@ -199,6 +199,9 @@ describe('appointments and tasks by voice', () => {
     expect(a.prompt).toBe('Termin eintragen: Mittwoch, 28. Oktober, 15 Uhr: Besuch von Anna?');
     expect((await as('POST', `/api/v1/assistant/actions/${a.id}/cancel`, { why: 'no' })).json()).toEqual({ ok: true, say: null });
     expect((await fromCore<{ appointments: unknown[] }>('/appointments')).appointments).toEqual([]);
+    // An empty reply is asked again once, instead of ending the turn without an answer.
+    script = (req) => (req.messages.at(-1)!.content.includes('empty_reply') ? call('tasks.add', { title: 'Brot kaufen', due: null })() : { say: [], calls: [], help: false });
+    expect(said(await turn('Setz Brot kaufen auf meine Liste'))).toEqual(['system: Aufgabe gespeichert: Brot kaufen.']);
     // Words given where a message's ref belongs are what to note (a model's slip), without any source.
     script = call('notes.create', { body: '', from_message: 'Die Heizung im Bad tropft.' });
     expect(said(await turn('Bitte notier dir, dass die Heizung im Bad tropft.'))).toEqual(['system: Notiz gespeichert: „Die Heizung im Bad tropft“. Sag „Rückgängig“, um sie zu löschen.']);

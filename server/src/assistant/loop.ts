@@ -287,6 +287,13 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
             if (!said.length) emit({ t: 'error', code: 'assistant_failed' });
             return 'failed';
           }
+          // An empty reply (no words, no tool, no help question) is asked again, as a tool's error is: measured with the
+          // dialogue model in a few percent of turns ("Speichere Michaels Nachricht als Notiz"), which then failed.
+          if (!reply.help && !reply.calls.length && !reply.say.some((x) => x.text.trim() || x.ref) && !said.length && round < MAX_ROUNDS) {
+            d.log('assistant reply was empty');
+            messages.push({ role: 'assistant', content: r.text }, { role: 'user', content: dataBlock(who.lang, [{ tool: 'reply', error: 'empty_reply' }]) });
+            continue;
+          }
           const unknown = reply.calls.filter((c) => !offered.has(c.tool)).map((c) => c.tool);
           const reads = reply.calls.filter((c) => offered.get(c.tool)?.kind === 'read');
           const acts = reply.calls.filter((c) => offered.get(c.tool)?.kind === 'act');
