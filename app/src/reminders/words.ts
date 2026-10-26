@@ -3,16 +3,20 @@
  * is due, what the person hears after answering, how a schedule reads, and how a helper reads an answer ("Anna hat
  * angegeben: getrunken"): always as what the person reported, never as fact (CONCEPT §9).
  */
-import type { Schedule } from '@ucap/shared';
-import type { Category, ResponseRow } from './api.ts';
+import { appointmentPromptBy, type Schedule } from '@ucap/shared';
+import type { AppointmentFacts, Category, ResponseRow } from './api.ts';
 
 type Tr = (key: string, params?: Record<string, string | number | Date>) => string;
 
 /** The name; without one of its own, the category's, in this person's language. */
 export const titleOf = (tr: Tr, o: { title: string; category: Category }) => o.title.trim() || tr(`reminder.category.${o.category}`);
 
-/** The question; without one of its own, the category's, in this person's language and form of address. */
-export const promptOf = (tr: Tr, o: { prompt: string; category: Category }) => o.prompt.trim() || tr(`reminder.defaultPrompt.${o.category}`);
+/**
+ * The question; without one of its own, the category's, in this person's language and form of address; an
+ * appointment's says how far off it is (K7: "Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber.").
+ */
+export const promptOf = (tr: Tr, o: { prompt: string; category: Category; appointment?: AppointmentFacts | null }) =>
+  o.prompt.trim() || (o.appointment ? appointmentPromptBy(tr, o.appointment, o.appointment.before) : tr(`reminder.defaultPrompt.${o.category}`));
 
 /** "Erinnerung: Trinken. Hast du etwas getrunken?", and "Noch einmal: …" for a repeated prompt. */
 /**

@@ -10,6 +10,7 @@
  */
 import { type AddressForm, isTimeZone, type Lang, t } from '@ucap/shared';
 import { sql } from 'kysely';
+import { ProviderError } from '../ai/http.ts';
 import type { LlmMessage } from '../ai/llm/adapters.ts';
 import { finishedSay, nothingHappens, parseReply, replySchema, type SayItem } from '../ai/llm/reply.ts';
 import type { Llm } from '../ai/llm/service.ts';
@@ -201,20 +202,9 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
 
       /** One part of the reply, as it goes out: originals from the source, summaries announced, promises dropped. */
       const speak = async (item: SayItem) => {
-        if ((item.kind === 'original' || item.kind === 'transcript') && (await fromMessage(item))) return;
-        if (item.kind === 'transcript') return;
-        if (item.kind === 'original' && /^contact:/.test(item.ref ?? '')) {
-          // A contact's numbers, digit by digit from what is stored (K6), never as the model would copy them.
-          const c = await contactById(ctx(), item.ref!.slice(8));
-          if (!c) return;
-          const text = contactAloud(who.lang, who.form, who.timezone, c);
-          emit({ t: 'segment', kind: 'original', text });
-          said.push(`[${c.name}]`);
-          focus = { ...focus, contact: { id: c.id, title: c.name } };
-          return;
-        }
-        if (item.kind === 'original' && isSourceRef(item.ref)) {
-          // "Lies die Nachricht dazu" (K7): the message it was made from, framed as any original, while it is kept.
+        if ((item.kind === 'original' || item.kind === 'transcript') && isSourceRef(item.ref)) {
+          // "Lies die Nachricht dazu" (K7): the message it was made from, as an original (a voice message's recording)
+          // or a transcript, framed as any, while it is kept.
           const src = await sourceOfRef(ctx(), item.ref!).catch(() => null);
           const kept = src && messaging ? await messaging.message(o.userId, src.messageId) : null;
           if (src && kept) {
@@ -225,6 +215,18 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
           const text = src ? tr('assistant.source.gone', { sender: src.sender, date }) : tr('assistant.source.none');
           emit({ t: 'segment', kind: 'system', text });
           said.push(text);
+          return;
+        }
+        if ((item.kind === 'original' || item.kind === 'transcript') && (await fromMessage(item))) return;
+        if (item.kind === 'transcript') return;
+        if (item.kind === 'original' && /^contact:/.test(item.ref ?? '')) {
+          // A contact's numbers, digit by digit from what is stored (K6), never as the model would copy them.
+          const c = await contactById(ctx(), item.ref!.slice(8));
+          if (!c) return;
+          const text = contactAloud(who.lang, who.form, who.timezone, c);
+          emit({ t: 'segment', kind: 'original', text });
+          said.push(`[${c.name}]`);
+          focus = { ...focus, contact: { id: c.id, title: c.name } };
           return;
         }
         if (item.kind === 'original' && /^day:\d{4}-\d{2}-\d{2}$/.test(item.ref ?? '')) {
@@ -357,7 +359,8 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
         }
       } catch (e) {
         if (o.signal.aborted) return 'aborted';
-        d.log(`assistant turn failed: ${(e as Error).name}`);
+        // Its kind (a class: timeout, http_500, bad_answer), never anything said.
+        d.log(`assistant turn failed: ${(e as Error).name}${e instanceof ProviderError ? ` ${e.kind}` : ''}`);
         if (!said.length) emit({ t: 'error', code: 'assistant_unavailable' });
         return 'failed';
       }

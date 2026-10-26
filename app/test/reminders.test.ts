@@ -31,6 +31,10 @@ describe('what a reminder says', () => {
     expect(question(de('Sie'), { ...occ(), prompts: 1 })).toBe('Erinnerung: Trinken. Haben Sie etwas getrunken?');
     expect(question(de(), { ...occ({ prompt: 'Wasser oder Tee?' }), prompts: 2 })).toBe('Noch einmal: Trinken. Wasser oder Tee?');
     expect(promptOf(en, occ({ category: 'medication' }))).toBe('Have you taken your medication?');
+    // An appointment's (K7): how far off it is, said by the device in its own language.
+    const dentist = { time: '10:00', place: 'Praxis Weber', before: 60 };
+    expect(question(de(), { ...occ({ title: 'Zahnarzt', category: 'appointment', appointment: dentist }), prompts: 1 })).toBe('Erinnerung: Zahnarzt. Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber.');
+    expect(promptOf(en, occ({ title: 'Dentist', category: 'appointment', appointment: { ...dentist, before: 1440 } }))).toBe('The appointment is tomorrow at 10:00, Praxis Weber.');
   });
 
   it('says what was recorded, and whether it has left the device', () => {

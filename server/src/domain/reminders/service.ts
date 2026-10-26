@@ -61,10 +61,20 @@ interface ReminderRow {
   updated_at: Date;
   deleted_at: Date | null;
   version: number;
-  /** The appointment it reminds of (K7): changed only with it. */
+  /** The appointment it reminds of (K7): changed only with it; how long before it, in minutes. */
   appointment_id: string | null;
+  before_min: number | null;
   source: MessageSource | null;
 }
+
+/** An appointment's time and place, joined to its reminders: the device says from them how far off it is. */
+interface AppointmentFacts {
+  appt_time?: string | null;
+  appt_place?: string | null;
+}
+
+const appointmentOf = (r: { appointment_id: string | null; before_min: number | null } & AppointmentFacts) =>
+  r.appointment_id && r.before_min !== null ? { time: r.appt_time ?? null, place: r.appt_place ?? null, before: r.before_min } : null;
 
 interface OccurrenceRow {
   id: string;
@@ -81,7 +91,7 @@ interface OccurrenceRow {
 export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Array; people: PeopleService; nonceFor: (deliveryId: string) => string; wake?: () => void }) {
   const now = () => new Date(d.clock());
 
-  const view = (r: ReminderRow, names: Map<string, string>) => ({
+  const view = (r: ReminderRow & AppointmentFacts, names: Map<string, string>) => ({
     id: r.id,
     personId: r.person_id,
     title: r.title,
@@ -99,6 +109,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
     updatedAt: r.updated_at.toISOString(),
     version: r.version,
     appointmentId: r.appointment_id,
+    appointment: appointmentOf(r),
     // Said as one ("aus einer Nachricht"); which message, to the person only (list).
     fromMessage: r.source !== null,
   });
@@ -219,9 +230,11 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
   }
 
   async function occurrenceView(exec: Exec, id: string) {
-    const r = await sql<OccurrenceRow & { title: string; prompt: string; category: Category; repeat_every_min: number; repeat_count: number; snooze_min: number }>`
-      select o.*, r.title, r.prompt, r.category, r.repeat_every_min, r.repeat_count, r.snooze_min
-      from reminder_occurrences o join reminders r on r.id = o.reminder_id where o.id = ${id}`.execute(exec);
+    const r = await sql<
+      OccurrenceRow & AppointmentFacts & { title: string; prompt: string; category: Category; repeat_every_min: number; repeat_count: number; snooze_min: number; appointment_id: string | null; before_min: number | null }
+    >`
+      select o.*, r.title, r.prompt, r.category, r.repeat_every_min, r.repeat_count, r.snooze_min, r.appointment_id, r.before_min, a.time as appt_time, a.place as appt_place
+      from reminder_occurrences o join reminders r on r.id = o.reminder_id left join appointments a on a.id = r.appointment_id where o.id = ${id}`.execute(exec);
     const o = r.rows[0];
     if (!o) return null;
     return {
@@ -239,14 +252,16 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
       repeatEveryMin: o.repeat_every_min,
       repeatCount: o.repeat_count,
       snoozeMin: o.snooze_min,
+      appointment: appointmentOf(o),
     };
   }
 
   return {
     async list(actorId: string, personId: string) {
       if (!(await mayRead(actorId, personId))) throw new AppError('not_found');
-      const r = await sql<ReminderRow>`
-        select * from reminders where person_id = ${personId} and deleted_at is null ${shownTo(actorId, personId, 'reminders.appointment_id')} order by created_at`.execute(d.db);
+      const r = await sql<ReminderRow & AppointmentFacts>`
+        select r.*, a.time as appt_time, a.place as appt_place from reminders r left join appointments a on a.id = r.appointment_id
+        where r.person_id = ${personId} and r.deleted_at is null ${shownTo(actorId, personId, 'r.appointment_id')} order by r.created_at`.execute(d.db);
       const n = await names(d.db, r.rows.flatMap((x) => [x.created_by, x.updated_by]));
       const next = await sql<{ reminder_id: string; due_at: Date }>`
         select distinct on (reminder_id) reminder_id, due_at from reminder_occurrences
@@ -329,27 +344,26 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
      * spec, made, moved and ended with it in its transaction, by whoever changed the appointment (a helper's
      * agenda.manage covers them). The device's alarm, offline, and the answers are as for any reminder.
      */
-    async syncAppointment(exec: Exec, actorId: string, personId: string, appointmentId: string, specs: { title: string; prompt?: string; schedule: Schedule; timezone: string }[]) {
+    async syncAppointment(exec: Exec, actorId: string, personId: string, appointmentId: string, specs: { title: string; before: number; schedule: Schedule; timezone: string }[]) {
       const cur = await sql<ReminderRow>`
         select * from reminders where appointment_id = ${appointmentId} and deleted_at is null order by created_at, id for update`.execute(exec);
       let touched = false;
       for (const [i, spec] of specs.entries()) {
         const r = cur.rows[i];
-        const prompt = spec.prompt ?? '';
-        if (r && r.title === spec.title && r.prompt === prompt && r.timezone === spec.timezone && JSON.stringify(r.schedule) === JSON.stringify(spec.schedule)) continue;
+        if (r && r.title === spec.title && r.before_min === spec.before && r.timezone === spec.timezone && JSON.stringify(r.schedule) === JSON.stringify(spec.schedule)) continue;
         touched = true;
         if (r) {
           await sql`
-            update reminders set title = ${spec.title}, prompt = ${prompt}, schedule = ${JSON.stringify(spec.schedule)}::jsonb, timezone = ${spec.timezone}, updated_by = ${actorId}, updated_at = ${now()},
+            update reminders set title = ${spec.title}, before_min = ${spec.before}, schedule = ${JSON.stringify(spec.schedule)}::jsonb, timezone = ${spec.timezone}, updated_by = ${actorId}, updated_at = ${now()},
               version = version + 1 where id = ${r.id}`.execute(exec);
           await cancelAhead(exec, r.id);
           await materialiseOne(exec, await lockReminder(exec, personId, r.id));
         } else {
           const id = uuidv7(d.clock());
           await sql`
-            insert into reminders (id, person_id, client_reminder_id, title, prompt, category, schedule, timezone, created_by, updated_by, created_at, updated_at, appointment_id)
-            values (${id}, ${personId}, ${uuidv7(d.clock())}, ${spec.title}, ${prompt}, 'appointment', ${JSON.stringify(spec.schedule)}::jsonb, ${spec.timezone},
-                    ${actorId}, ${actorId}, ${now()}, ${now()}, ${appointmentId})`.execute(exec);
+            insert into reminders (id, person_id, client_reminder_id, title, prompt, category, schedule, timezone, created_by, updated_by, created_at, updated_at, appointment_id, before_min)
+            values (${id}, ${personId}, ${uuidv7(d.clock())}, ${spec.title}, '', 'appointment', ${JSON.stringify(spec.schedule)}::jsonb, ${spec.timezone},
+                    ${actorId}, ${actorId}, ${now()}, ${now()}, ${appointmentId}, ${spec.before})`.execute(exec);
           await materialiseOne(exec, await lockReminder(exec, personId, id));
         }
       }

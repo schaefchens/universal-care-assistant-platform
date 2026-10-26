@@ -9,7 +9,7 @@
  *   verwalten") does too, never seeing what the person marked private: audited by ids and version only (the log holds
  *   no text a person wrote), said on the person's devices and named in their history.
  */
-import { appointmentPrompt, isTimeZone, type Lang, type MessageSource, occurrences, type Schedule, uuidv7 } from '@ucap/shared';
+import { isTimeZone, type MessageSource, occurrences, type Schedule, uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import { audit } from '../../lib/audit.ts';
 import type { Clock } from '../../lib/clock.ts';
@@ -143,7 +143,7 @@ export function nextAt(a: { day: string; time: string | null; weekdays: number[]
  * ("eine Stunde vorher" is an hour earlier on the clock, whatever summer time does). A whole-day appointment reminds at
  * ALL_DAY_AT, of the day itself or of whole days before.
  */
-export function reminderSpecs(a: { title: string; day: string; time: string | null; weekdays: number[] | null; place?: string | null; remindBefore: number[] }, timezone: string, lang: Lang = 'de') {
+export function reminderSpecs(a: { title: string; day: string; time: string | null; weekdays: number[] | null; remindBefore: number[] }, timezone: string) {
   const [y, m, d] = a.day.split('-').map(Number) as [number, number, number];
   const [h, mi] = (a.time ?? ALL_DAY_AT).split(':').map(Number) as [number, number];
   const base = Date.UTC(y, m - 1, d, h, mi);
@@ -154,13 +154,12 @@ export function reminderSpecs(a: { title: string; day: string; time: string | nu
       const at = new Date(base - minutes * 60_000);
       const date = at.toISOString().slice(0, 10);
       const time = at.toISOString().slice(11, 16);
-      // Its question says how far off the appointment is ("Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber.").
-      const prompt = appointmentPrompt(lang, a, minutes);
-      if (!a.weekdays?.length) return { title: a.title, prompt, timezone, schedule: { kind: 'once', date, time } as Schedule };
+      // How long before: the device says from it how far off the appointment is ("in einer Stunde, um 10 Uhr").
+      if (!a.weekdays?.length) return { title: a.title, before: minutes, timezone, schedule: { kind: 'once', date, time } as Schedule };
       // A reminder the day before a Monday appointment is on Sundays.
       const shift = Math.round((Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()) - Date.UTC(y, m - 1, d)) / 86_400_000);
       const days = [...new Set(a.weekdays.map((w) => ((((w - 1 + shift) % 7) + 7) % 7) + 1))].sort();
-      return { title: a.title, prompt, timezone, schedule: { kind: 'daily', times: [time], days, from: date } as Schedule };
+      return { title: a.title, before: minutes, timezone, schedule: { kind: 'daily', times: [time], days, from: date } as Schedule };
     });
 }
 
@@ -176,12 +175,6 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
     if (!ids.length) return new Map<string, string>();
     const r = await sql<{ id: string; display_name: string }>`select id, display_name from users where id = any(${[...new Set(ids)]}::uuid[])`.execute(exec);
     return new Map(r.rows.map((x) => [x.id, x.display_name]));
-  }
-
-  /** The person's language: an appointment's reminders speak it, whoever entered the appointment. */
-  async function personLang(exec: Exec, personId: string): Promise<Lang> {
-    const r = await sql<{ locale: string | null }>`select locale from users where id = ${personId}`.execute(exec);
-    return r.rows[0]?.locale === 'en' ? 'en' : 'de';
   }
 
   async function personZone(exec: Exec, personId: string): Promise<string> {
@@ -244,7 +237,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
     await sql`
       insert into appointment_versions (appointment_id, version, data, changed_by, changed_at)
       values (${a.id}, ${a.version}, ${JSON.stringify(data)}::jsonb, ${actorId}, ${now()})`.execute(exec);
-    await d.reminders.syncAppointment(exec, actorId, personId, a.id, data.deleted ? [] : reminderSpecs(data, a.timezone, await personLang(exec, personId)));
+    await d.reminders.syncAppointment(exec, actorId, personId, a.id, data.deleted ? [] : reminderSpecs(data, a.timezone));
     if (actorId !== personId) await audit(exec, d.clock, { actorUser: actorId, subjectUser: personId, action: `appointment.${action}`, targetType: 'appointment', targetId: a.id, detail: { version: a.version } });
     await told(exec, personId, { kind: 'appointment', id: a.id, version: a.version, action, by: actorId });
   }

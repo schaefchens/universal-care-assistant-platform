@@ -16,7 +16,7 @@ import { fakeClock, SECRETS, testConfig, testDb } from './helpers.ts';
 type Msg = { role: string; content: string };
 type Script = (req: { system: string; messages: Msg[] }) => Record<string, unknown>;
 type Event = { t: string; [k: string]: unknown };
-type Reminder = { title: string; prompt: string; schedule: Record<string, unknown>; appointmentId: string | null };
+type Reminder = { title: string; prompt: string; schedule: Record<string, unknown>; appointmentId: string | null; appointment: { time: string | null; place: string | null; before: number } | null };
 
 describe('appointments and tasks by voice', () => {
   let db: Db;
@@ -95,7 +95,8 @@ describe('appointments and tasks by voice', () => {
       'system: Termin gespeichert: Dienstag, 27. Oktober, 10 Uhr: Zahnarzt, Praxis Weber. Ich erinnere dich eine Stunde vorher.',
     ]);
     expect(await reminders()).toEqual([
-      expect.objectContaining({ title: 'Zahnarzt', prompt: 'Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber.', schedule: { kind: 'once', date: '2026-10-27', time: '09:00' } }),
+      // The device says from these how far off it is, in its own language ("Der Termin ist in einer Stunde, …").
+      expect.objectContaining({ title: 'Zahnarzt', prompt: '', appointment: { time: '10:00', place: 'Praxis Weber', before: 60 }, schedule: { kind: 'once', date: '2026-10-27', time: '09:00' } }),
     ]);
     expect(await undo()).toBe('Rückgängig gemacht: Der Termin „Zahnarzt“ ist gelöscht.');
     expect(await reminders()).toEqual([]);
@@ -106,7 +107,7 @@ describe('appointments and tasks by voice', () => {
     ]);
     script = call('agenda.add', { title: 'Geburtstag Oma', date: '2026-10-30', time: null, place: null, weekdays: null, remind_before: null });
     expect(said(await turn('Trag den Geburtstag von Oma am Freitag ein'))).toEqual(['system: Termin gespeichert: Freitag, 30. Oktober, ganztägig: Geburtstag Oma. Ich erinnere dich am Morgen des Tages.']);
-    expect((await reminders()).find((r) => r.title === 'Geburtstag Oma')).toMatchObject({ prompt: 'Der Termin ist heute.', schedule: { kind: 'once', date: '2026-10-30', time: '09:00' } });
+    expect((await reminders()).find((r) => r.title === 'Geburtstag Oma')).toMatchObject({ appointment: { time: null, place: null, before: 0 }, schedule: { kind: 'once', date: '2026-10-30', time: '09:00' } });
     // A day gone is refused, told to the model.
     script = (req) => (req.messages.at(-1)!.content.startsWith('DATEN') ? reply('Der Tag ist schon vorbei.') : call('agenda.add', { ...ADD, date: '2026-10-20' })());
     expect(said(await turn('Trag den Zahnarzt am 20. ein'))).toEqual(['reply: Der Tag ist schon vorbei.']);
@@ -154,7 +155,7 @@ describe('appointments and tasks by voice', () => {
     expect(said(await turn('Verschieb den Zahnarzt auf 11 Uhr'))).toEqual([
       'system: Termin geändert: Dienstag, 27. Oktober, 11 Uhr: Zahnarzt, Praxis Weber. Ich erinnere dich eine Stunde vorher.',
     ]);
-    expect(await reminders()).toEqual([expect.objectContaining({ prompt: 'Der Termin ist in einer Stunde, um 11 Uhr, Praxis Weber.', schedule: { kind: 'once', date: '2026-10-27', time: '10:00' } })]);
+    expect(await reminders()).toEqual([expect.objectContaining({ appointment: { time: '11:00', place: 'Praxis Weber', before: 60 }, schedule: { kind: 'once', date: '2026-10-27', time: '10:00' } })]);
     expect(await undo()).toBe('Rückgängig gemacht: Der Termin „Zahnarzt“ ist wieder wie vorher.');
     expect(await reminders()).toEqual([expect.objectContaining({ schedule: { kind: 'once', date: '2026-10-27', time: '09:00' } })]);
     // "Der Zahnarzt fällt aus": asked first, with when; then deleted with its reminder; undone, back.

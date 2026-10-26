@@ -502,6 +502,16 @@ describe('messaging', () => {
     expect(said(await turn(anna, 'Lies die Nachricht dazu'))).toEqual([expect.stringMatching(/^original: Anna Beispiel schrieb heute um \d{1,2}:\d{2} auf Telegram: Besuch am Samstag um drei\? Ich bringe Kuchen mit\.$/)]);
     // What the yes made is what the conversation is about: the model was told so.
     expect(seen.at(-1)!.system).toContain(`(note:${note.id})`);
+    // From a voice message: its automatic transcript, kept as one; read again as its transcript ("Lies sie mir vor").
+    const voiceId = (await sql<{ id: string }>`select id from messaging_messages where external_id = '3145728'`.execute(db)).rows[0]!.id;
+    script = readThen({ tool: 'notes.create', body: '', from_message: `msg:${voiceId}` });
+    const v = actionOf(await turn(anna, 'Speichere Annas Sprachnachricht als Notiz'));
+    expect(v.prompt).toBe('Notiz „Ich bin morgen um drei bei“ speichern, aus der Sprachnachricht von Anna Beispiel auf Telegram?');
+    expect((await confirm(v)).ok).toBe(true);
+    const spoken = (await sql<{ id: string; body: string }>`select id, body from notes where person_id = ${anna.userId} and origin->>'messageId' = ${voiceId}`.execute(db)).rows[0]!;
+    expect(spoken.body).toBe('Automatisch abgeschrieben: Ich bin morgen um drei bei dir.');
+    script = () => ({ say: [{ kind: 'transcript', text: '', ref: `source:note:${spoken.id}` }], calls: [], help: false });
+    expect(said(await turn(anna, 'Lies mir die Nachricht dazu vor'))).toEqual(['transcript: Automatisch abgeschrieben: Ich bin morgen um drei bei dir.']);
     // An appointment from it: the day and time asked as understood, then read back with where it came from.
     const saturday = new Date(clock() + ((6 - new Date(clock()).getDay() + 7) % 7 || 7) * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
     script = readThen({ tool: 'agenda.add', title: 'Besuch von Anna', date: saturday, time: '15:00', place: null, weekdays: null, remind_before: null, from_message: `msg:${id}` });

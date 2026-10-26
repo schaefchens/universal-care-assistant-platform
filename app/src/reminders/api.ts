@@ -13,6 +13,12 @@ import { signedCall } from '../net/signed.ts';
 export type Category = 'drink' | 'meal' | 'medication' | 'movement' | 'wellbeing' | 'appointment' | 'other';
 export const CATEGORIES: readonly Category[] = ['drink', 'meal', 'medication', 'movement', 'wellbeing', 'appointment', 'other'];
 export type Answer = 'done' | 'later' | 'no';
+/** An appointment's reminder (K7): its time and place, and how long before it the reminder rings. */
+export interface AppointmentFacts {
+  time: string | null;
+  place: string | null;
+  before: number;
+}
 
 export interface Reminder {
   id: string;
@@ -34,6 +40,7 @@ export interface Reminder {
   nextAt: string | null;
   /** The appointment it reminds of (K7): changed with it, on the appointments page. */
   appointmentId: string | null;
+  appointment: AppointmentFacts | null;
   /** Made from a message (K7); which one, to the person only. */
   fromMessage: boolean;
   source: MessageSource | null;
@@ -54,6 +61,7 @@ export interface Occurrence {
   repeatEveryMin: number;
   repeatCount: number;
   snoozeMin: number;
+  appointment?: AppointmentFacts | null;
 }
 
 export interface ResponseRow {

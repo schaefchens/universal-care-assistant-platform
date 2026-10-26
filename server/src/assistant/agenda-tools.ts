@@ -209,7 +209,7 @@ export const AGENDA_TOOLS: (ReadTool | ActTool)[] = [
       time: nullableStr('HH:MM, 24 hours; null for the whole day.'),
       place: nullableStr('Where, when the person said it; else null.'),
       weekdays: numbers('Every week on these days (1 Monday … 7 Sunday); null: once.', 1, 7),
-      remind_before: numbers('Minutes before it, one reminder each, when the person said when (60: an hour before, 1440: a day before, 0: at its time; empty: none); null: as usual.', 0, 20_160),
+      remind_before: numbers('Minutes before it, one reminder each, as the person said: [60] an hour before, [1440] a day before, [0] at its time ("zur Zeit des Termins", "pünktlich"), [] none; null when they said nothing about it (then an hour before; a whole day: that morning).', 0, 20_160),
       from_message: FROM_MESSAGE,
     },
     async prepare(ctx, args, tainted) {

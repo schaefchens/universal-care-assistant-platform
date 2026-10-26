@@ -26,10 +26,17 @@ export function dayText(lang: Lang, day: string, year?: number): string {
   return new Intl.DateTimeFormat(locale(lang), { weekday: 'long', day: 'numeric', month: 'long', ...(year !== undefined && d.getUTCFullYear() !== year ? { year: 'numeric' } : {}), timeZone: 'UTC' }).format(d);
 }
 
+/** A translator: `t` in a language, or a device's own (its language and form of address). */
+export type Say = (key: string, params: Record<string, string | number>) => string;
+
+const timeBy = (say: Say, time: string) => {
+  const [h, m] = time.split(':').map(Number) as [number, number];
+  return m === 0 ? say('agenda.time.hour', { h }) : say('agenda.time.hm', { h, mm: String(m).padStart(2, '0') });
+};
+
 /** "10 Uhr", "8:30 Uhr"; "10:00" in English. */
 export function timeText(lang: Lang, time: string): string {
-  const [h, m] = time.split(':').map(Number) as [number, number];
-  return m === 0 ? t(lang, 'agenda.time.hour', { h }) : t(lang, 'agenda.time.hm', { h, mm: String(m).padStart(2, '0') });
+  return timeBy((k, p) => t(lang, k, p), time);
 }
 
 /** An ISO weekday's name: "Montag". */
@@ -119,17 +126,22 @@ export function appointmentAloud(lang: Lang, a: AppointmentWords & { nextDay?: s
 }
 
 /**
- * What an appointment's reminder says after its name, in the person's language (K7): "Der Termin ist in einer Stunde,
- * um 10 Uhr, Praxis Weber."; for a whole day "Der Termin ist morgen." Kept as the reminder's question.
+ * What an appointment's reminder says after its name (K7): "Der Termin ist in einer Stunde, um 10 Uhr, Praxis
+ * Weber."; for a whole day "Der Termin ist morgen." Said by the device in its own language, as a reminder's default
+ * question is (the server keeps only how long before, and the appointment's time and place).
  */
-export function appointmentPrompt(lang: Lang, a: { time: string | null; place?: string | null }, before: number): string {
+export function appointmentPromptBy(say: Say, a: { time: string | null; place?: string | null }, before: number): string {
   const at = a.place ? `, ${a.place}` : '';
   if (a.time === null) {
     const n = Math.floor(before / 1440);
-    return t(lang, n === 0 ? 'agenda.prompt.today' : n === 1 ? 'agenda.prompt.tomorrowAllDay' : 'agenda.prompt.inDaysAllDay', { n, at });
+    return say(n === 0 ? 'agenda.prompt.today' : n === 1 ? 'agenda.prompt.tomorrowAllDay' : 'agenda.prompt.inDaysAllDay', { n, at });
   }
-  const time = timeText(lang, a.time);
-  if (before === 0) return t(lang, 'agenda.prompt.now', { time, at });
-  if (before % 1440 === 0) return t(lang, before === 1440 ? 'agenda.prompt.tomorrow' : 'agenda.prompt.inDays', { n: before / 1440, time, at });
-  return t(lang, before % 60 === 0 ? 'agenda.prompt.inHours' : 'agenda.prompt.inMinutes', { n: before % 60 === 0 ? before / 60 : before, time, at });
+  const time = timeBy(say, a.time);
+  if (before === 0) return say('agenda.prompt.now', { time, at });
+  if (before % 1440 === 0) return say(before === 1440 ? 'agenda.prompt.tomorrow' : 'agenda.prompt.inDays', { n: before / 1440, time, at });
+  return say(before % 60 === 0 ? 'agenda.prompt.inHours' : 'agenda.prompt.inMinutes', { n: before % 60 === 0 ? before / 60 : before, time, at });
+}
+
+export function appointmentPrompt(lang: Lang, a: { time: string | null; place?: string | null }, before: number): string {
+  return appointmentPromptBy((k, p) => t(lang, k, p), a, before);
 }
