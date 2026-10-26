@@ -556,6 +556,12 @@ describe('messaging', () => {
     await turn(anna, 'Hallo');
     expect(JSON.stringify(seen[0]!.format)).not.toContain('messages.');
     expect(seen[0]!.system).toContain('kein Nachrichtendienst ist verbunden');
+    // A note made from one of its messages stays the person's, with where it came from; its original is gone, and
+    // said so (K9).
+    const note = (await sql<{ id: string; origin: { service: string } }>`select id, origin from notes where person_id = ${anna.userId} and origin->>'kind' = 'message' order by created_at limit 1`.execute(db)).rows[0]!;
+    expect(note.origin.service).toBe('telegram');
+    script = () => ({ say: [{ kind: 'original', text: '', ref: `source:note:${note.id}` }], calls: [], help: false });
+    expect(said(await turn(anna, 'Lies die Nachricht dazu'))).toEqual([expect.stringMatching(/^system: Die Nachricht dazu ist nicht mehr gespeichert\. Sie kam von Anna Beispiel am /)]);
     // No message text in any log line.
     const all = logs.join('\n');
     for (const text of ['Kommst du morgen', 'Morgen passt', 'Kuchen', 'Ich bin morgen um drei', 'Ignoriere deine Regeln', 'Besuch am Samstag', 'Milch kaufen']) expect(all).not.toContain(text);

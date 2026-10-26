@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { fromWords, toWords } from '@ucap/identity';
 import { appointmentReadback, appointmentWhen } from '@ucap/shared';
-import { choose, clocks, heading, home, invitation, listen, mark, ORIGIN, said, setChoice, signUp, spoken, sql, talk, MESSAGING } from './app.ts';
+import { axe, choose, clocks, heading, home, invitation, listen, mark, ORIGIN, said, setChoice, signUp, spoken, sql, talk, MESSAGING } from './app.ts';
 import { type ChatRequest, type Engines, reply, startEngines } from './engines.ts';
 import { type Phone, phone, type SmsPhone, smsPhone } from './phone.ts';
 
@@ -147,6 +147,7 @@ test('1 · the operator: an administrator from the CLI, a voice service and Tele
   await expect(allow).not.toBeChecked();
   await whatsapp.getByText('WhatsApp auf diesem Server erlauben').click();
   await expect(whatsapp.getByText('WhatsApp ist erlaubt.')).toBeVisible();
+  await axe(maria, 'KI und Stimmen verwalten, with WhatsApp');
   await expect(allow).toBeChecked();
 });
 
@@ -390,12 +391,14 @@ test('7b · across services (docs/plan-m3.md, K1): WhatsApp linked and UCAP the 
   await clara.getByRole('button', { name: 'Weiter', exact: true }).click();
   await said(clara, /^Der Code für WhatsApp: U, C, A, P, 2, 0, 2, 6\. Öffne WhatsApp auf deinem Telefon: Einstellungen, Verknüpfte Geräte, Gerät hinzufügen\./, from);
   await expect(clara.getByText('UCAP-2026', { exact: true })).toBeVisible();
+  await axe(clara, 'the WhatsApp page with its pairing code');
   expect((await fetch(`${MESSAGING}/pair`, { method: 'POST' })).ok).toBe(true);
   await said(clara, /^Verbunden als Clara Test\. UCAP hat deine Nachrichten der letzten 30 Tage und alle neuen\.$/, from);
 
   // The services page names all three, each with its state.
   await clara.getByRole('button', { name: 'Zurück', exact: true }).click();
   await said(clara, /^Nachrichtendienste\. Telegram: verbunden\. SMS: verbunden\. WhatsApp: verbunden\.$/, from);
+  await axe(clara, 'Nachrichtendienste');
   await home(clara);
 
   // Anna writes on WhatsApp and by SMS, stamped with the servers' time; each is announced by its sender and, as there
@@ -441,6 +444,7 @@ test('7b · across services (docs/plan-m3.md, K1): WhatsApp linked and UCAP the 
   }
   const read = await framed();
   for (const f of frames) expect(read.some((t) => f.test(t)), String(f)).toBe(true);
+  await axe(clara, 'the messages screen across services');
   await home(clara);
 
   // A reply by SMS: C1 names SMS; confirmed, it waits for the phone, which sends it and reports; then "Gesendet".
@@ -464,6 +468,7 @@ test('7c · email (docs/plan-m3.md, K3): connected on its own page with the serv
   await said(clara, /^E-Mail verbinden\. Gib deine E-Mail-Adresse und dein Passwort ein\.$/, from);
   await clara.getByLabel('E-Mail-Adresse').fill('clara.test@gmx.de');
   await expect(clara.getByText('Erkannt: GMX. Die Server sind eingetragen.', { exact: true })).toBeVisible();
+  await axe(clara, 'the email page');
   // A password the server refuses (the stand-in's "falsch"): said, with what GMX asks for first.
   await clara.getByLabel('Passwort', { exact: true }).fill('falsch');
   await clara.getByRole('button', { name: 'E-Mail verbinden', exact: true }).click();
@@ -528,6 +533,7 @@ test('7d · contacts (docs/plan-m3.md, K6): Clara lets Maria manage her contacts
   let from = await mark(clara);
   await add();
   await expect(maria.getByText('Telefon (Praxis): +49 30 1234567')).toBeVisible();
+  await axe(maria, 'Kontakte von Clara (the helper)');
   // Said on Clara's tablet, and kept in her history.
   await said(clara, /^Maria hat den Kontakt „Physiotherapie“ hinzugefügt\.$/, from);
   await helpersPage(clara);
@@ -602,6 +608,7 @@ test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Cla
   await clara.getByLabel('E-Mail-Adresse', { exact: true }).fill('bernd@example.org');
   await clara.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(clara.getByText(/^E-Mail: bernd@example\.org$/)).toBeVisible();
+  await axe(clara, 'Kontakte (the person)');
   await home(clara);
   const mail = (subject: string | null) => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Bernd', text: 'Kommst du am Sonntag zum Kaffee?', subject }], help: false });
   engines.model = asked(/Bernd/, () => mail(null), () => mail('Kaffee am Sonntag'));
@@ -648,6 +655,7 @@ test('7f · appointments (docs/plan-m3.md, K7; acceptance 10): Clara lets Maria 
   await maria.getByLabel('Tag', { exact: true }).fill(day);
   await maria.getByLabel('Uhrzeit', { exact: true }).fill('10:00');
   await maria.getByLabel('Ort', { exact: true }).fill('Praxis Weber');
+  await axe(maria, 'a new appointment, filled in (the helper)');
   const from = await mark(clara);
   const saved = await mark(maria);
   await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
@@ -655,6 +663,7 @@ test('7f · appointments (docs/plan-m3.md, K7; acceptance 10): Clara lets Maria 
   const readback = appointmentReadback('de', 'du', { title: 'Zahnarzt', day, time: '10:00', weekdays: null, place: 'Praxis Weber', remindBefore: [60] }, { year: new Date().getFullYear(), of: 'Clara' });
   expect(readback).toMatch(/^Termin gespeichert: \S+, \d+\. \S+, 10 Uhr: Zahnarzt, Praxis Weber\. Ich erinnere Clara eine Stunde vorher\.$/);
   expect(await said(maria, /^Termin gespeichert: /, saved)).toBe(readback);
+  await axe(maria, 'Termine von Clara (the helper)');
   // Said on Clara's tablet, and kept in her history.
   await said(clara, /^Maria hat den Termin „Zahnarzt“ eingetragen\.$/, from);
   await helpersPage(clara);
@@ -779,6 +788,7 @@ test('7h · §2’s sentence (CONCEPT §2; docs/plan-m3.md, acceptance 6): Anna�
   await clara.getByRole('button', { name: 'Termine', exact: true }).click();
   const own = clara.locator('li.device').filter({ has: clara.getByRole('heading', { name: 'Kaffee mit Anna', exact: true }) });
   await expect(own.getByText(/^aus der Sprachnachricht von Anna auf WhatsApp$/)).toBeVisible();
+  await axe(clara, 'Termine (the person)');
   await home(clara);
   await helpersPage(maria);
   await maria.locator('li.device').filter({ has: maria.getByRole('heading', { name: 'Clara', exact: true }) }).getByRole('button', { name: 'Termine von Clara' }).click();
@@ -833,6 +843,7 @@ test('8b · the appointments in areas (docs/plan-m3.md, K7): Maria turns Clara�
   await field('Notizen').getByRole('radiogroup', { name: 'Was das Feld öffnet' }).getByText('Termine', { exact: true }).click();
   await expect(field('Termine').getByRole('radio', { name: 'Termine', exact: true })).toBeChecked();
   await expect(maria.getByRole('img', { name: /Oben links: Termine/ })).toBeVisible();
+  await axe(maria, 'Gerät von Clara, an area opening Termine');
   const from = await mark(clara);
   await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
   // Applied once nobody uses the tablet, said with the way back.
@@ -844,6 +855,7 @@ test('8b · the appointments in areas (docs/plan-m3.md, K7): Maria turns Clara�
   const opened = await mark(clara);
   await clara.getByRole('button', { name: 'Termine', exact: true }).click();
   const first = await said(clara, /^Termine\. 2 Termine\. 1 von 2: /, opened);
+  await axe(clara, 'Termine in areas');
   await clara.getByRole('button', { name: 'Nächster', exact: true }).click();
   const both = `${first} ${await said(clara, /^2 von 2: /, opened)}`;
   expect(both).toMatch(/Zahnarzt: \S+, \d+\. \S+( \d{4})?, 11 Uhr, Praxis Weber\./);
@@ -945,6 +957,7 @@ test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by 
   await clara.getByLabel('Fällig am', { exact: true }).fill(today);
   await clara.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(clara.getByRole('heading', { name: 'Rezept abholen', exact: true })).toBeVisible();
+  await axe(clara, 'Aufgaben (the person)');
   await home(clara);
   // LIVE on again, by Clara's voice (L ended with it off); a browser waits for a touch, not the name.
   let from = await mark(clara);
@@ -972,6 +985,7 @@ test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by 
   await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   const live = clara.locator('section').filter({ has: clara.getByRole('heading', { name: 'LIVE-Modus', exact: true }) });
   await setChoice(live.getByRole('checkbox', { name: 'WhatsApp', exact: true }), false);
+  await axe(clara, 'Einstellungen with LIVE per service');
   await home(clara);
   // Maria's mail, from an address Clara has not saved: that it came, from whom and about what, never what it says
   // (the owner, 2026-10-26: "the user may then ask about those"). Not by themselves: a newsletter, WhatsApp now.
@@ -1018,6 +1032,167 @@ test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by 
   await clara.getByRole('button', { name: 'Sprechen', exact: true }).click();
   await said(clara, /^LIVE-Modus ist aus\. /, from, LIVE_WAIT);
   engines.model = () => reply('In Ordnung.');
+});
+
+test('7i · across services (docs/plan-m3.md, acceptance 5): "Was hat Bernd heute geschickt?" finds what he wrote wherever he wrote it, in the family’s WhatsApp group and email thread, each with its service', async () => {
+  await home(clara);
+  const texts = { whatsapp: 'Ich bringe morgen die Grillkohle mit.', email: 'Das Familientreffen ist am dritten Mai bei uns.' };
+  for (const [service, text] of Object.entries(texts)) expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ service, chat: 'familie', text }) })).ok, service).toBe(true);
+  await expect.poll(() => sql(`select count(*) from messaging_messages where text in ('${texts.whatsapp}', '${texts.email}')`)).toBe('2');
+  let data = '';
+  engines.model = asked(
+    /Was hat Bernd heute geschickt/,
+    () => ({ say: [], calls: [{ tool: 'messages.search', query: '', person: 'Bernd' }], help: false }),
+    (req) => {
+      data = engines.last(req);
+      return { say: [{ kind: 'summary', text: 'Bernd bringt morgen die Grillkohle mit, und das Familientreffen ist am dritten Mai.', ref: null }], calls: [], help: false };
+    },
+  );
+  const from = await mark(clara);
+  await talk(clara, engines, 'Was hat Bernd heute geschickt?');
+  await said(clara, /^Zusammenfassung: Bernd bringt morgen die Grillkohle mit, und das Familientreffen ist am dritten Mai\.$/, from);
+  // Both reached the model, each with where it came from.
+  const items = data.split('{"ref":').slice(1);
+  expect(items.some((i) => i.includes('"service":"WhatsApp"') && i.includes(texts.whatsapp)), 'his WhatsApp message').toBe(true);
+  expect(items.some((i) => i.includes('"service":"E-Mail"') && i.includes(texts.email)), 'his email').toBe(true);
+  engines.model = () => reply('In Ordnung.');
+});
+
+test('8c · previews (docs/plan-m3.md, K5; acceptance 8): Clara’s phone reads Signal’s notifications; Lena’s message is said as a preview; a reply goes through Signal’s notification, "Gesendet" only once Signal shows it as Clara’s', async () => {
+  await home(clara);
+  let from = await mark(clara);
+  await ph.preview({ package: 'org.thoughtcrime.securesms', name: 'Signal' }, 'Lena', 'Bist du heute Nachmittag zu Hause?', await clocks.now());
+  await said(clara, /^Vorschau von Signal: neue Nachricht von Lena\.$/, from);
+  // On the messages screen, framed as a preview: the newest of what is unread, after L2's and 7i's.
+  const read = /^Vorschau von Signal: Lena schrieb .* auf Signal: Bist du heute Nachmittag zu Hause\?$/;
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Nachrichten', exact: true }).click();
+  for (let n = 1; n <= 12 && !(await spoken(clara)).slice(from).some((t) => read.test(t)); n++) {
+    await expect.poll(async () => (await spoken(clara)).slice(from).filter((t) => / schrieb /.test(t)).length, { message: `message ${n} read`, timeout: n === 1 ? 90_000 : undefined }).toBeGreaterThanOrEqual(n);
+    if (!(await spoken(clara)).slice(from).some((t) => read.test(t))) await clara.getByRole('button', { name: 'Nächste', exact: true }).click();
+  }
+  expect((await spoken(clara)).slice(from).some((t) => read.test(t))).toBe(true);
+  await home(clara);
+
+  // The reply: Lena is known only by what Signal's notifications show, so she is no contact (decisions.md, M3, 19).
+  engines.model = asked(/Antworte Lena/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Lena', text: 'Ja, ab drei.' }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Antworte Lena, dass ich ab drei zu Hause bin');
+  await said(clara, /^Achtung: Lena ist nicht in deinen Kontakten\. Antwort an Lena über Signal: „Ja, ab drei\.“\. Senden\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Bestätigt\. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist\.$/, from);
+  expect((await spoken(clara)).slice(from).some((t) => /^Gesendet an/.test(t))).toBe(false);
+  // The phone hands it to Signal's notification; "Gesendet" once Signal shows it as Clara's own.
+  expect((await ph.replyThroughApps()).map((s) => s.text)).toEqual(['Ja, ab drei.']);
+  await said(clara, /^Gesendet an Lena\.$/, from);
+  engines.model = () => reply('In Ordnung.');
+});
+
+test('12 · strangers (docs/plan-m3.md, acceptance 12): before C1 UCAP says that neither is in Clara’s contacts, "Maria (Tochter)" on WhatsApp nor "Maria" by email from another address; declined, nothing is sent', async () => {
+  await home(clara);
+  let from = await mark(clara);
+  expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ service: 'whatsapp', chat: 'maria', text: 'Hallo Mama, ich habe eine neue Nummer.' }) })).ok).toBe(true);
+  await said(clara, /^Neue Nachricht von Maria \(Tochter\) auf WhatsApp\.$/, from);
+  engines.model = asked(/Antworte Maria auf WhatsApp/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Maria (Tochter)', text: 'Ruf mich bitte an.', service: 'WhatsApp' }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Antworte Maria auf WhatsApp: Ruf mich bitte an');
+  await said(clara, /^Achtung: Maria \(Tochter\) ist nicht in deinen Kontakten\. Nachricht an Maria \(Tochter\) über WhatsApp: „Ruf mich bitte an\.“\. Senden\?$/, from);
+  await talk(clara, engines, 'Nein');
+  await said(clara, /^Nicht gesendet\. Der Entwurf ist gespeichert\.$/, from);
+
+  // Maria's mail from an address Clara has not saved (step L2).
+  engines.model = asked(/Antworte Maria per E-Mail/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Maria', text: 'Wer bist du?', service: 'E-Mail' }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Antworte Maria per E-Mail: Wer bist du?');
+  await said(clara, /^Achtung: Maria ist nicht in deinen Kontakten\. .*„Wer bist du\?“\. Senden\?$/, from);
+  await talk(clara, engines, 'Nein');
+  await said(clara, /^Nicht gesendet\. Der Entwurf ist gespeichert\.$/, from);
+  // Declined: nothing went out to either.
+  expect(sql(`select count(*) from messaging_outbound where text in ('Ruf mich bitte an.', 'Wer bist du?')`)).toBe('0');
+  engines.model = () => reply('In Ordnung.');
+});
+
+test('13 · disconnecting (docs/plan-m3.md, acceptance 13): WhatsApp and email go, with what UCAP kept of them, and the stand-in’s link with them; the SMS role goes back, and the services page says so', async () => {
+  const kept = (service: string) =>
+    sql(`select count(*) from messaging_messages m join messaging_conversations v on v.id = m.conversation_id join messaging_connections k on k.id = v.connection_id where k.service = '${service}'`);
+  const ids = Object.fromEntries(['whatsapp', 'email'].map((s) => [s, sql(`select id from messaging_connections where service = '${s}'`)]));
+  for (const s of ['whatsapp', 'email']) expect(Number(kept(s)), s).toBeGreaterThan(0);
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Nachrichtendienste', exact: true }).click();
+  for (const name of ['WhatsApp', 'E-Mail (clara.test@gmx.de)']) {
+    const from = await mark(clara);
+    await clara.getByRole('button', { name: `${name} trennen`, exact: true }).click();
+    const quoted = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await said(clara, new RegExp(`^${quoted} trennen\\? UCAP löscht dann, was es davon gespeichert hat; beim Dienst selbst bleibt alles\\.$`), from);
+    await clara.getByRole('button', { name: 'Ja, trennen', exact: true }).click();
+    await said(clara, new RegExp(`^${quoted} ist getrennt\\.$`), from);
+  }
+  // Nothing of them is kept; the stand-in logged out of both (its link and state gone, as Baileys' and the email
+  // process's are).
+  for (const s of ['whatsapp', 'email']) expect(kept(s), s).toBe('0');
+  expect(sql(`select count(*) from messaging_connections where service in ('whatsapp', 'email')`)).toBe('0');
+  const left = execFileSync('docker', ['compose', '--profile', 'e2e', 'exec', '-T', 'connectors-e2e', 'ls', '/data/tdlib'], { cwd: REPO }).toString();
+  for (const id of Object.values(ids)) expect(left).not.toContain(`fake-${id}.json`);
+
+  // The SMS role goes back to Google Messages on the phone (its history stays there: on the emulator, K4).
+  await ph.roleGone();
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  const from = await mark(clara);
+  await clara.getByRole('button', { name: 'Nachrichtendienste', exact: true }).click();
+  // Signal's previews (step 8c) stay: they are the phone's own, not the SMS app's.
+  await said(clara, /^Nachrichtendienste\. Telegram: verbunden\. SMS: auf dem Telefon ausgeschaltet\. Signal: verbunden\.$/, from);
+  await home(clara);
+});
+
+test('14 · help needs none of it (docs/plan-m3.md, acceptance 14): with the messaging stand-in stopped, as every connector process, help by touch reaches Maria, and an appointment’s reminder comes at its time', async () => {
+  // Past the half hour in which a press would reopen the last request (step 9's).
+  await clocks.advance(31 * 60_000);
+  // An appointment of Clara's own, in two hours: reminded an hour before.
+  const later = (await clocks.now()) + 2 * 3_600_000;
+  const at = later - (later % 60_000);
+  const berlin = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(at)).map((x) => [x.type, x.value]));
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Termine', exact: true }).click();
+  await clara.getByRole('button', { name: 'Termin eintragen' }).click();
+  await clara.getByLabel('Was', { exact: true }).fill('Fußpflege');
+  await clara.getByLabel('Tag', { exact: true }).fill(`${berlin.year}-${berlin.month}-${berlin.day}`);
+  await clara.getByLabel('Uhrzeit', { exact: true }).fill(`${berlin.hour}:${berlin.minute}`);
+  await clara.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(clara.getByRole('heading', { name: 'Fußpflege', exact: true })).toBeVisible();
+  await home(clara);
+
+  execFileSync('docker', ['compose', '--profile', 'e2e', 'stop', 'connectors-e2e'], { cwd: REPO, stdio: 'ignore' });
+  try {
+    // Help by touch, as in step 4.
+    await home(maria);
+    await maria.getByRole('button', { name: 'Hilferufe', exact: true }).click();
+    let from = await mark(clara);
+    await clara.getByRole('button', { name: 'Hilfe', exact: true }).click();
+    await said(clara, /^Dein Hilferuf wurde gesendet\. Ich benachrichtige jetzt deine Helfer\.$/, from);
+    await expect(heading(maria)).toHaveText('Hilferuf von Clara');
+    await maria.getByRole('button', { name: 'Annehmen', exact: true }).click();
+    await said(clara, /^Maria hat deinen Hilferuf angenommen\.$/, from);
+    await maria.getByRole('button', { name: 'Erledigt', exact: true }).click();
+    await said(clara, /^Maria hat deinen Hilferuf als erledigt markiert\./, from);
+    await home(maria);
+
+    // The appointment's reminder, an hour before it, on the home screen (the resolved request's screen stays until left).
+    await home(clara);
+    const due = at - 3_600_000;
+    await clocks.moveTo(due - 30_000, { messaging: false });
+    from = await mark(clara);
+    await clocks.moveTo(due + 1_000, { messaging: false });
+    await expect(heading(clara)).toHaveText(/Fußpflege/);
+    await said(clara, /Fußpflege/, from);
+  } finally {
+    execFileSync('docker', ['compose', '--profile', 'e2e', 'start', 'connectors-e2e'], { cwd: REPO, stdio: 'ignore' });
+  }
+  // Back, with the servers' time.
+  await expect.poll(async () => (await fetch(`${MESSAGING}/clock`, { method: 'POST', body: JSON.stringify({ at: await clocks.now() }) }).catch(() => null))?.ok ?? false, { timeout: 30_000 }).toBe(true);
+  await home(clara);
 });
 
 test('10 · recovery: on a new device the English words recover the same account; the other device is told; signed out, it loses its connection at once', async ({ browser }) => {

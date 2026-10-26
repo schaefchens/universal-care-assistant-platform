@@ -12,10 +12,13 @@ import android.content.Intent;
  *   fetch's result, as MmsFetchedReceiver gets it.
  * - DEBUG_SELF: whether the SIM carries the phone's own number (logged by its length only), which a group MMS's
  *   conversation needs (MmsFetch.self).
+ * - DEBUG_SMS_CRASH: the SMS process fails on purpose, for the check that help needs none of it (plan-m3.md,
+ *   acceptance 14).
  */
 public class DebugMmsReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent i) {
+        if ("de.schaefchens.ucap.DEBUG_SMS_CRASH".equals(i.getAction())) throw new IllegalStateException("sms: fails on purpose (debug)");
         if ("de.schaefchens.ucap.DEBUG_SELF".equals(i.getAction())) {
             // Whether the SIM carries the phone's own number: its length only.
             String self = MmsFetch.self(ctx, -1);

@@ -111,8 +111,10 @@ export function MessagingServices(p: {
     setAsking(null);
     try {
       await p.session.call(`/api/v1/messaging/connections/${c.id}`, { method: 'DELETE' });
-      // This phone's previews process stops watching that app.
+      // This phone's previews process stops watching that app; its SMS code stops reporting (Android's SMS store stays
+      // as it is: the person's, K9).
       if (c.service === 'notifications' && c.deviceId === p.session.ref.deviceId && has('Previews')) await Previews.disconnect({ connectionId: c.id }).catch(() => {});
+      if (c.service === 'sms' && c.deviceId === p.session.ref.deviceId && has('Sms')) await Sms.disconnect().catch(() => {});
       report(tr('messaging.disconnected', { name: `${c.name}${account(c)}` }));
       await load();
     } catch (e) {

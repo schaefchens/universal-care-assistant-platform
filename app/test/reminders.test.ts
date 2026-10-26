@@ -2,7 +2,7 @@ import { t } from '@ucap/shared';
 import { describe, expect, it } from 'vitest';
 import type { Occurrence, ResponseRow } from '../src/reminders/api.ts';
 import { alarmFor } from '../src/reminders/sync.ts';
-import { afterAnswer, promptOf, question, responseText, scheduleText } from '../src/reminders/words.ts';
+import { afterAnswer, clockFor, promptOf, question, responseText, scheduleText } from '../src/reminders/words.ts';
 
 const de = (form: 'du' | 'Sie' = 'du') => (key: string, params?: Record<string, string | number | Date>) => t('de', key, params, form);
 const en = (key: string, params?: Record<string, string | number | Date>) => t('en', key, params, 'du');
@@ -39,6 +39,12 @@ describe('what a reminder says', () => {
     expect(question(de(), { ...occ({ title: 'Zahnarzt', category: 'appointment', appointment: dentist }), prompts: 1 }, new Date(2026, 9, 27, 9, 0))).toBe(
       'Es ist 09:00 Uhr. Erinnerung: Zahnarzt. Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber.',
     );
+    // Its alarm a moment early (96 ms on the emulator): the reminder's own time, never the minute before it. Late, or
+    // opened long before, it is the clock's.
+    const due = { dueAt: '2026-10-26T19:50:00.000Z' };
+    expect(clockFor(due, Date.parse('2026-10-26T19:49:59.904Z')).toISOString()).toBe('2026-10-26T19:50:00.000Z');
+    expect(clockFor(due, Date.parse('2026-10-26T19:52:10.000Z')).toISOString()).toBe('2026-10-26T19:52:10.000Z');
+    expect(clockFor(due, Date.parse('2026-10-26T19:45:00.000Z')).toISOString()).toBe('2026-10-26T19:45:00.000Z');
   });
 
   it('says what was recorded, and whether it has left the device', () => {

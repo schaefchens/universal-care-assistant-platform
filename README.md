@@ -20,6 +20,13 @@ fingers, the 48-hour push soak), the ntfy app, joining herde, and a Telegram log
 [docs/decisions.md](docs/decisions.md). Running a server: [docs/operator.md](docs/operator.md); for helpers:
 [docs/helper-onboarding.md](docs/helper-onboarding.md).
 
+Milestone 2 ([docs/plan-m2.md](docs/plan-m2.md)) added LIVE mode: the assistant listening for its name, saying what
+came in by itself. Milestone 3 ([docs/plan-m3.md](docs/plan-m3.md)) added WhatsApp, email, UCAP as the phone's SMS app
+and previews from other apps' notifications, each said with its service; the person's contacts and calls; appointments
+and tasks; and two permissions for helpers to manage contacts and appointments.
+[docs/acceptance-m3.md](docs/acceptance-m3.md) says where its checks stand and what waits for a real phone;
+[docs/play.md](docs/play.md) holds the declarations and disclosures Google Play asks for.
+
 ## Running the development stack
 
 Requirements: Docker Desktop, Node 24 or newer.

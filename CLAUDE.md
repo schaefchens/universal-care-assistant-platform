@@ -128,7 +128,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   `docker compose stop whatsapp`.
 
 **Email (imapflow, nodemailer, mailparser; docs/spikes/m3.md)**
-- At their debug levels imapflow and nodemailer log commands, and LOGIN carries the password: always `logger: false`.
+- At their debug levels imapflow and nodemailer log commands and responses, a mail's text and addresses among them
+  (imapflow 2.3.0 masks the password; not relied on): always `logger: false`. `connectors/test/log-canary.test.ts`
+  runs UCAP's options with everything else at its loudest, in a process of its own, and checks its whole output.
 - imapflow never reconnects: after `close` make a new client (the old one refuses: `InstanceReused`). Without QRESYNC
   a flag change heard in IDLE has no UID.
 - imapflow goes into IDLE only after `autoIdleDelay` without a command (15 s by default): a mail that comes meanwhile
@@ -173,6 +175,8 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   features in a build. A library's inline style is refused unless its hash is in `app/src/csp.ts`; script URLs
   (workers, worklets) go through `scriptUrl()` (Trusted Types).
 - A setting that arrives after a timer started (Android's recommended timeout) must restart the timer.
+- The browser walk's pages load the app from Vite on the host: an edit under `app/` or `packages/` while it runs
+  reloads them mid-step (a question unanswered, a step timed out). Edit only docs, `server/` or `e2e/` meanwhile.
 - End-to-end tests: a link with only a new `#…` does not reload the app, so an invitation link is opened after
   `about:blank`; a new help alert takes the helper's whole screen; wait for a list to load before deciding from it.
   A reload empties the app's debug record: `listen(page)` keeps what was said in the test. A React Aria radio's label

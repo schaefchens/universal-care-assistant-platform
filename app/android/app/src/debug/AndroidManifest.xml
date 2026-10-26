@@ -24,6 +24,7 @@
                 <action android:name="de.schaefchens.ucap.DEBUG_MMS_PUSH" />
                 <action android:name="de.schaefchens.ucap.DEBUG_MMS_FETCHED" />
                 <action android:name="de.schaefchens.ucap.DEBUG_SELF" />
+                <action android:name="de.schaefchens.ucap.DEBUG_SMS_CRASH" />
             </intent-filter>
         </receiver>
         <!-- Previews (K5): the previews process fails on purpose, for the check that help lives on. -->

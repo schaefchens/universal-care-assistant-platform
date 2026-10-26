@@ -26,6 +26,15 @@ export const promptOf = (tr: Tr, o: { prompt: string; category: Category; appoin
 export const question = (tr: Tr, o: { title: string; prompt: string; category: Category; prompts: number }, now?: Date) =>
   `${now && o.prompts <= 1 ? `${tr('reminder.at', { time: now })} ` : ''}${tr(o.prompts > 1 ? 'reminder.again' : 'reminder.announce', { title: titleOf(tr, o) })} ${promptOf(tr, o)}`;
 
+/**
+ * The clock LIVE says before a reminder's first prompt: now, or the reminder's own time when its alarm came a moment
+ * early. A timer can fire early: 96 ms before 20:50 the emulator said "Es ist 20:49 Uhr" (docs/decisions.md, K9).
+ */
+export function clockFor(o: { dueAt: string }, now = Date.now()): Date {
+  const due = Date.parse(o.dueAt);
+  return new Date(due > now && due - now < 60_000 ? due : now);
+}
+
 /** The word for "done" in this kind of reminder: getrunken, gegessen, eingenommen … */
 export const doneWord = (tr: Tr, c: Category) => tr(`reminder.doneWord.${c}`);
 

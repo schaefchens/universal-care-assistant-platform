@@ -1,7 +1,7 @@
 # For helpers
 
 A helper supports a person who uses UCAP: answers their help requests, and, where the person allows it, sets up their
-reminders and their device. The app's own words are German by default; they are quoted here as the app shows them.
+reminders, their device, their contacts and their appointments. The app's own words are German by default; they are quoted here as the app shows them.
 
 ## Joining
 
@@ -21,9 +21,11 @@ What you may do is one permission each, and none implies another:
 | Erinnerungen verwalten | making and changing the person's reminders |
 | Antworten auf Erinnerungen sehen | seeing what the person answered ("Anna hat angegeben: getrunken") |
 | Bedienung der Geräte einstellen | setting up the person's device: how it looks, touch, the home screen's areas |
+| Kontakte verwalten | listing, adding, changing and deleting the person's saved contacts |
+| Termine und Aufgaben verwalten | the person's appointments (with their reminders) and tasks: adding, changing, deleting, marking done |
 
-No permission lets you read the person's messages or notes, or see their recovery words. The person can see who may
-do what at any time ("Wer darf was?"), change it, or end it.
+No permission lets you read the person's messages or notes, or see their recovery words; contacts and appointments
+never lead to them either. The person can see who may do what at any time ("Wer darf was?"), change it, or end it.
 
 ## Alarms on your phone
 
@@ -61,6 +63,32 @@ Helfer page. A helper added later is alerted last until someone places them.
 With "Erinnerungen verwalten": Helfer → "Erinnerungen von …" (the person's name): what, when (once, daily on chosen days, every few
 hours), how often the device asks again, and whether you are told when the person did not answer. A follow-up never
 rings like an alarm. What the person answers is shown as their own report, not as checked.
+
+## Contacts
+
+With "Kontakte verwalten": Helfer → the person → **"Kontakte von …"**. You see the person's saved contacts and can add
+one (a name, phone numbers with a label such as "Handy" or "Praxis", email addresses), change one or delete one. Only
+what is saved: the names UCAP suggests from the person's conversations ("dieselbe Person?") are the person's to answer,
+and you never see them.
+
+A number is kept as Germany writes it or with its country code; UCAP reads it back digit by digit when the person asks
+for it. The same number or address is never two contacts. Each change is said on the person's device ("Maria hat den
+Kontakt „Physiotherapie“ hinzugefügt.") and kept in their history. Right after a change, "Rückgängig" on your page
+takes it back, and the device says that too.
+
+## Appointments and tasks
+
+With "Termine und Aufgaben verwalten": Helfer → the person → **"Termine von …"** and **"Aufgaben von …"**.
+
+- **An appointment:** what, the day, the time (or all day), how long, where, a note, weekly on chosen days, and when
+  the person is reminded (an hour before, by default). Saving reads it back as stored ("Termin gespeichert: Dienstag,
+  20. Oktober, 10 Uhr: Zahnarzt, Praxis Weber. Ich erinnere Clara eine Stunde vorher."). Its reminders are the person's
+  usual ones: the device's alarm, with "Hilfe holen" among the answers.
+- **A task:** what is to be done, by which day, and whether it is done.
+- What came from a message shows as "aus einer Nachricht", never the message. What the person marked private is not
+  shown to you at all.
+- Each change is said on the person's device ("Maria hat den Termin „Zahnarzt“ eingetragen.") and kept in their
+  history.
 
 ## Setting up the person's device
 

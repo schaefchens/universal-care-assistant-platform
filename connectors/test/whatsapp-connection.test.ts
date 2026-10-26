@@ -1,9 +1,10 @@
 /**
  * One person's WhatsApp, driven by a fake Baileys socket (docs/plan-m3.md, K2): linking by pairing code, the history
  * WhatsApp sends at linking (30 days kept, names from the address book only), sends that are "sent" only at WhatsApp's
- * acknowledgement, read states, edits and deletions, voice messages fetched on request, and an unlink on the phone.
+ * acknowledgement, read states, edits and deletions, voice messages fetched on request, an unlink on the phone, and a
+ * restore with and without the WhatsApp volume (K9).
  */
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -359,5 +360,27 @@ describe('a WhatsApp connection', () => {
     // Its keys go a moment later (longer under a full test run's load).
     await expect.poll(() => existsSync(dir)).toBe(false);
     await conn.stop();
+  });
+
+  it('after a restore (K9): with the WhatsApp volume (`--with-connectors`) the link holds; without it the number is asked again, and the person links WhatsApp anew', async () => {
+    const key = Buffer.alloc(32, 7).toString('base64');
+    const { conn, store, dir, open, of } = await setup({ linked: true });
+    await open();
+    await store.saveCreds();
+    await conn.stop();
+    // The volume as a backup holds it, back on a new server; the store key comes from the restored database.
+    const restored = mkdtempSync(join(tmpdir(), 'ucap-wa-restored-'));
+    cpSync(dir, restored, { recursive: true });
+    expect((await openStore(restored, key)).linked()).toBe(true);
+    expect(of('conn.state').map((e) => e.state)).toEqual(['starting', 'ready']);
+
+    // Without the volume: an empty store, so the connection waits for the person's number as at the first link.
+    const empty = await openStore(mkdtempSync(join(tmpdir(), 'ucap-wa-empty-')), key);
+    expect(empty.linked()).toBe(false);
+    const events: FromConnectors[] = [];
+    const again = new WhatsappConnection({ id: 'c1', lang: 'de', store: empty, filesRoot: dir, makeSocket: () => new FakeSocket(), fetchAudio: async () => Readable.from([]), emit: (e) => events.push(e), log: () => {} });
+    await again.start();
+    expect(events).toEqual([{ t: 'conn.state', id: 'c1', state: 'wait_phone' }]);
+    await again.stop();
   });
 });

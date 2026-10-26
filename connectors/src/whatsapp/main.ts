@@ -3,10 +3,10 @@
  * per connection on a volume of its own (/data/whatsapp). The frame (dialing the assistant, hello, events kept while
  * it is away) is process.ts; the measurements behind this are docs/spikes/m3.md, A.
  *
- * Nothing goes to the console from here but this process's own lines: Baileys' logger is off (at its debug levels it
- * writes frames and content), and libsignal, under Baileys, prints whole session records with their private keys
- * ("Closing session: SessionEntry {…}", spike A), so the console is replaced and its lines only counted.
+ * Nothing goes to the console from here but this process's own lines: quiet.ts, imported before Baileys, turns Baileys'
+ * logger off and replaces the console (libsignal prints session records with their private keys there).
  */
+import { lastHour, logger } from './quiet.ts';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ToConnectors } from '@ucap/shared';
@@ -15,37 +15,10 @@ import { runProcess } from '../process.ts';
 import { type SocketLike, WhatsappConnection } from './connection.ts';
 import { openStore } from './store.ts';
 
-const consoleLines = new Map<string, number>();
-for (const m of ['log', 'info', 'warn', 'error', 'debug', 'trace', 'dir'] as const) {
-  console[m] = (...args: unknown[]) => {
-    const first = typeof args[0] === 'string' ? args[0] : `‹${typeof args[0]}›`;
-    const key = first.replace(/\S*@\S*/g, '<jid>').replace(/\d+/g, '#').slice(0, 40);
-    consoleLines.set(key, (consoleLines.get(key) ?? 0) + 1);
-  };
-}
-
 const STORE_DIR = process.env.UCAP_WHATSAPP_DIR ?? '/data/whatsapp';
 const FILES_DIR = process.env.UCAP_FILES_DIR ?? '/data/files';
 const SAFE_DIR = /^[a-z0-9-]{1,64}$/;
 const SAFE_DEST = /^incoming\/[a-z0-9-]{1,64}\/[a-z0-9-]{1,64}$/;
-
-/** Baileys' logger: nothing written; warnings counted by their wording (digits and ids blanked), for the hourly line. */
-const warnings = new Map<string, number>();
-const count = (obj: unknown, msg?: string) => {
-  const text = typeof obj === 'string' ? obj : (msg ?? 'unnamed');
-  const key = text.replace(/\S*@\S*/g, '<jid>').replace(/\d+/g, '#').slice(0, 80);
-  warnings.set(key, (warnings.get(key) ?? 0) + 1);
-};
-interface Logger {
-  level: string;
-  child(obj: Record<string, unknown>): Logger;
-  trace(obj: unknown, msg?: string): void;
-  debug(obj: unknown, msg?: string): void;
-  info(obj: unknown, msg?: string): void;
-  warn(obj: unknown, msg?: string): void;
-  error(obj: unknown, msg?: string): void;
-}
-const logger: Logger = { level: 'warn', child: () => logger, trace: () => {}, debug: () => {}, info: () => {}, warn: count, error: count };
 
 /**
  * The web version WhatsApp expects: fetched from web.whatsapp.com once a day, else Baileys' own. An old one is refused
@@ -181,8 +154,6 @@ await refreshVersion();
 setInterval(() => void refreshVersion(), 86_400_000).unref();
 // Once an hour, how many lines Baileys and libsignal wanted to write: their wording only.
 setInterval(() => {
-  const all = [...warnings, ...[...consoleLines].map(([k, n]) => [`console: ${k}`, n] as const)];
-  if (all.length) log(`last hour: ${all.map(([k, n]) => `${n}× "${k}"`).join(', ')}`);
-  warnings.clear();
-  consoleLines.clear();
+  const line = lastHour();
+  if (line) log(line);
 }, 3_600_000).unref();

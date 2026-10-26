@@ -28,6 +28,7 @@ import { audit } from '../lib/audit.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
 import { AppError } from '../lib/errors.ts';
+import { checkLimit, countFailure } from '../lib/rate-limit.ts';
 import type { FileStore } from '../lib/files.ts';
 import { enqueue } from '../lib/jobs.ts';
 import { emit } from '../lib/outbox.ts';
@@ -55,6 +56,15 @@ const FRESH_MS = 15 * 60_000;
 const NEWS_MS = 24 * 3_600_000;
 const TELEGRAM_SETTINGS = 'telegram_api';
 const WHATSAPP_POLICY = 'whatsapp_policy';
+/**
+ * Limits where UCAP acts on the person's accounts elsewhere (K9). Each pairing code is a request to WhatsApp, and an
+ * unofficial client asking often puts the person's number at risk (plan-m3.md, Risks): five a connection an hour. Each
+ * email account connected logs in at its provider, which locks an account after a few wrong passwords: ten tries a
+ * person an hour, and ten accounts.
+ */
+const PAIRING_LIMIT = { windowS: 3600, max: 5 };
+const EMAIL_TRIES = { windowS: 3600, max: 10 };
+const MAX_EMAIL_ACCOUNTS = 10;
 /** The states in which a server-side connection runs, or should: started again when its process comes back. */
 const LIVE_STATES = ['starting', 'wait_phone', 'wait_code', 'wait_password', 'wait_qr', 'wait_pairing', 'ready'];
 
@@ -708,6 +718,11 @@ export function createMessaging(d: {
         if (made.created) await audit(d.db, d.clock, { actorUser: userId, subjectUser: userId, action: 'messaging.whatsapp.risk_accepted', targetType: 'messaging_connection', targetId: made.c.id });
       } else {
         const address = input.address.trim().toLowerCase();
+        const accounts = await sql<{ account: string }>`select account from messaging_connections where user_id = ${userId} and service = 'email'`.execute(d.db);
+        if (accounts.rows.length >= MAX_EMAIL_ACCOUNTS && !accounts.rows.some((r) => r.account === address)) throw new AppError('conflict', { params: { reason: 'too_many_accounts' } });
+        const tries = { bucket: `messaging:email:${userId}`, ...EMAIL_TRIES };
+        await checkLimit(d.db, d.clock, tries);
+        await countFailure(d.db, d.clock, tries);
         made = await create(userId, 'email', { account: address, secret: JSON.stringify({ password: input.password, imap: input.imap, smtp: input.smtp }), state: 'starting' });
         // Connecting again (a new password, other servers): the new ones count.
         if (!made.created)
@@ -730,6 +745,11 @@ export function createMessaging(d: {
         whatsapp: { phone: ['wait_phone'], resend: ['wait_pairing'] },
       };
       if (!isServerService(c.service) || !fits[c.service]?.[step]?.includes(c.state)) throw new AppError('conflict', { params: { reason: 'login_state', state: c.state } });
+      if (c.service === 'whatsapp') {
+        const pairing = { bucket: `messaging:pairing:${c.id}`, ...PAIRING_LIMIT };
+        await checkLimit(d.db, d.clock, pairing);
+        await countFailure(d.db, d.clock, pairing);
+      }
       const h = hub();
       if (!h?.send(c.service, { t: 'login', id: c.id, step, value })) throw new AppError('unavailable', { params: { reason: 'connectors' } });
       // A new try clears the last error.
@@ -737,8 +757,11 @@ export function createMessaging(d: {
     },
 
     /**
-     * Logs out of the service and deletes UCAP's copies (for Telegram its database too). `loggedOut` false: the service's
-     * process was away, so the session must also be ended on the service.
+     * Logs out of the service and deletes UCAP's copies (K9): its conversations, people, messages, their files, its sends
+     * and suggestions; its process deletes its keys and state (TDLib's database, WhatsApp's keys, the email UIDs); a
+     * phone stops reporting (SMS, previews). Notes, appointments and tasks made from its messages stay the person's,
+     * with where they came from. `loggedOut` false: the service's process was away, so the session must also be ended
+     * on the service.
      */
     async disconnect(userId: string, connectionId: string): Promise<{ loggedOut: boolean }> {
       const c = await connRow({ id: connectionId });
@@ -751,6 +774,10 @@ export function createMessaging(d: {
       await d.db.transaction().execute(async (trx) => {
         await d.files.remove(trx, f.rows.map((x) => x.file_id));
         await sql`delete from messaging_connections where id = ${c.id}`.execute(trx);
+        // A new message's words kept with a contact (K6) for a service the person no longer has: gone with it (K9).
+        await sql`
+          delete from messaging_contact_drafts g where g.person_id = ${userId} and g.service = ${c.service}
+            and not exists (select 1 from messaging_connections k where k.user_id = ${userId} and k.service = ${c.service})`.execute(trx);
         await audit(trx, d.clock, { actorUser: userId, subjectUser: userId, action: 'messaging.disconnected', targetType: 'messaging_connection', targetId: c.id, detail: { loggedOut, service: c.service } });
       });
       await rm(join(d.filesDir, 'incoming', c.id), { recursive: true, force: true });

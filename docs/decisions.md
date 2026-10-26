@@ -1016,6 +1016,13 @@ The plan: [plan-m3.md](plan-m3.md).
     - The other choice: K6's suggestions for preview names too ("Anna auf Signal: dieselbe Person wie dein Kontakt
       „Anna“?"), kept with the contact as a handle of its own, after which the warning is not said.
 
+20. **Deleted notes, contacts, appointments and tasks are kept with their versions, without end** (K9's retention).
+    - plan-m3.md, K6 and K7: "versions for undo"; plan.md keeps M1's notes the same way, and nothing purges them.
+    - So a contact deleted a year ago still holds its numbers in its versions, and the person's history still names it.
+    - What goes with a disconnect is listed in operator.md; these are the person's own, not a service's.
+    - The other choice: a deleted one goes for good 30 days after it was deleted (its versions too; the history keeps
+      the line "… hat den Kontakt „…“ gelöscht").
+
 ### Decided (within the plan)
 
 - **History is said from a day on.** plan-m3.md: "how much history it has: all of it, from a date, or previews only".
@@ -1361,6 +1368,50 @@ The plan: [plan-m3.md](plan-m3.md).
     WhatsApp is not offered while it is linked: every message would come twice. A debug build also offers the emulator
     checks' stand-in messenger.
   - Codes Android hides in notifications stay hidden, and the page says so.
+
+- **The log canary (K9) runs each library in a process of its own, as in production, and checks that process's
+  whole output** (`connectors/test/log-canary.test.ts`). A library's own logger can write to the file descriptor directly
+  (imapflow's default is pino), which a console patched in the test process would miss.
+  - imapflow and nodemailer get UCAP's options (now `imapOptions` and `smtpOptions` in clients.ts) with everything else
+    at its loudest: imapflow's raw socket data and its entries as events, nodemailer's debug and transaction log. They
+    run against TLS servers in the test that answer just what the exchange asks.
+  - Baileys runs at its loudest level ('trace'), under the WhatsApp process's quiet logger and console, now a module
+    of their own (`whatsapp/quiet.ts`, imported before Baileys). With Baileys' own code, two Signal sessions for one
+    person make libsignal dump the first, private keys and all, as spike A saw; a message is encrypted and decrypted;
+    a warning names a number.
+  - The canary words: the password (also as AUTH PLAIN sends it), subjects, texts, addresses, numbers, the session's
+    keys, each as written, in hex and in base64. The test also checks that they really passed through each library.
+- **A bounce's action is read as RFC 3464's words only (K9):** failed, delayed, delivered, relayed, expanded. It goes
+  to the log, and whoever wrote the report chose it. Any other is no action, as a missing one was.
+- **Backups (K9):** `--with-connectors` takes the three connector volumes, refused while their processes run. A restore
+  (`--connectors`) writes a volume only while its process is stopped and the volume is empty (a new server): keys of
+  two times mixed would break a link. `--with-tdlib` stays as M1 had it. The tool prints only a refusal's reason.
+- **Retention (K9):**
+  - A disconnect also deletes the drafts to contacts (K6, item 13) kept for that service, once the person has no other
+    connection of it.
+  - Disconnecting SMS on the phone itself stops its SMS code at once (`Sms.disconnect`); before, it stopped at its next
+    report, on the server's 404.
+  - A source-scan test keeps the app from asking any content provider to delete (`tools/test/sms-store.test.ts`).
+- **Email text is inert at both ends** (K9). The email process turns HTML into words (now tested with scripts, frames, a page
+  head and pixels), and a source-scan test keeps the app from handing any string to the page as HTML, besides its
+  Trusted Types policy (`tools/test/inert-text.test.ts`).
+- **Limits (K9)**, with M1's limiter, where UCAP acts on the person's accounts elsewhere: five WhatsApp pairing codes a
+  connection an hour (plan-m3.md, Risks: an unofficial client asking often risks the number), ten email connects a
+  person an hour and ten accounts (providers lock an account after a few wrong passwords). The email page says the
+  last one in its own words ("Mehr als zehn E-Mail-Konten verbindet UCAP nicht. …").
+- **Accessibility (K9):** the browser walk runs axe on each M3 screen it opens, the person's and the helpers', 14 in all,
+  and fails on anything serious (`axe()` in e2e/app.ts, as tools/android/axe.ts on the emulator).
+- **Play (K9)**, in docs/play.md:
+  - The declarations for the SMS role and the contacts, with the video's contents; the disclosures as the app shows
+    them; the Data safety lines.
+  - Two texts are new. The SMS page now says that what an SMS says goes to the person's UCAP server and that the
+    address book names who wrote. A disclosure stands above "Kontakte vom Telefon übernehmen", which copies the whole
+    address book.
+- **The browser walk covers the rest of the script (K9):** 7i (acceptance 5, as "Bernd": the stand-in's people), 8c (previews,
+  the phone simulated), 12 (strangers), 13 (disconnecting) and 14 (help with the messaging stand-in stopped, as every
+  connector process). The simulated phone reports previews and replies through apps as the previews process does.
+- **A debug build's SMS process can fail on purpose** (`DEBUG_SMS_CRASH`, as K5's previews), for acceptance 14 on
+  the emulator.
 
 ### Measured
 
@@ -1731,3 +1782,55 @@ The plan: [plan-m3.md](plan-m3.md).
     none hidden on this image); "Eingeschränkte Einstellungen zulassen" (the app came from adb, which Android does not
     restrict).
 
+- **K9, the log canary (2026-10-26):**
+  - With UCAP's options, neither child process wrote a single canary word, in any form.
+  - That it bites: with imapflow's logger left on and nodemailer's set on, the texts, the subject, the addresses and
+    the server's refusal reached stdout. With the console left in place under libsignal, the closed session's root key
+    and private key reached it in hex.
+  - imapflow 2.3.0 masks the password in its own entries, raw ones too, and nodemailer in its AUTH lines: measured,
+    not relied on. Baileys at 'trace' passes only ids and counts from its key store; frames and content reach its
+    logger on a live socket alone.
+  - The hourly line of the WhatsApp process read `9× "USync fetch yielded no results for pending PNs", 1× "Invalid
+    LID-PN mapping: <jid> <jid>", 1× "console: Closing session:"`: wording only.
+- **K9, backups on the dev stack (2026-10-26):**
+  - `backup:check` as before: 59 tables, 21,517 rows, all equal after the restore; 985 files.
+  - With `--with-connectors`, the three processes stopped for it: TDLib's volume 3 files, WhatsApp's 2,221 (the owner's
+    sealed keys), email's 1, each tarball listing as many files as its volume held. The tarballs lived in a temporary
+    folder that the check deletes.
+  - A restore with `--connectors` refused the dev stack's volumes ("not empty: tdlib, whatsapp, email"), before making
+    any database, and refused again while the processes ran. WhatsApp's tarball, put into a new empty volume, gave back
+    all 2,221 files; that volume and the backup were deleted after.
+- **K9 on the emulator, acceptance 14 (2026-10-26)**, Wanda in LIVE mode, with the build of K5:
+  - The dev stack's three connector processes stopped; UCAP given the SMS role (`cmd role add-role-holder`); its SMS
+    process crashed on purpose (`am crash`: a fatal exception in ":sms", no dialog, the app's own process ran on in
+    front).
+  - **Help by touch:** "Hilferuf wird gesendet." after 0.7 s, "Dein Hilferuf wurde gesendet. Ich benachrichtige jetzt
+    deine Helfer." after 0.9 s, with the help earcon; cancelled at once (A13), "Hilferuf abgebrochen. Ich sage deinen
+    Helfern Bescheid."; on the server "cancelled", source "touch". Wanda has no helper at present, so nobody was alerted
+    (the walk's step 14 has Maria accept and resolve with the messaging stand-in stopped).
+  - **Help by key:** F12 chosen on the help key page ("Die Taste „F12“ ruft jetzt Hilfe."); pressed on the home screen,
+    the request was sent at once and confirmed 0.1 s later; cancelled, source "key"; the key removed again (Wanda had
+    none).
+  - **An appointment's reminder:** "K9 Fußpflege" entered on Wanda's own page for 21:50 ("Ich erinnere dich eine Stunde
+    vorher."); at 20:50 the reminder took the screen and said "Es ist 20:49 Uhr. Erinnerung: K9 Fußpflege. Der Termin ist
+    in einer Stunde, um 21:50 Uhr."; "Erledigt" was recorded on the server ("answered"). axe on the appointment form:
+    nothing at any impact.
+  - **Found and fixed: the reminder said the minute before its own.** It began 96 ms before 20:50:00, and LIVE's "Es
+    ist …" said the clock at that moment. It now says the later of now and the prompt's own time (CLAUDE.md: a timer
+    can fire early).
+  - Afterwards: the appointment deleted, the SMS role back with Google Messages (which ended UCAP's processes, as
+    Android does), the connector processes started, UCAP opened again; LIVE came back by itself ("waiting").
+- **K9, the browser walk (2026-10-26):** 28 of 28, with five new steps (7i, 8c, 12, 13, 14) and axe on 14 screens,
+  nothing serious on any. Three runs failed first:
+  - My own edits to the app's texts while the walk ran: its pages load the app from Vite, which reloaded Clara's
+    page mid-question (step 7). Noted in CLAUDE.md.
+  - Step 8c's reading stopped after five messages, with eight unread from the steps before it.
+  - Step 14's reminder found Clara still on the resolved help request's screen, which a reminder does not take; the
+    step now goes home first, as step 6 does.
+- **K9 on the emulator, the new build (2026-10-26):**
+  - `DEBUG_SMS_CRASH` ended ":sms" with its exception; the app stayed in front.
+  - The SMS page shows its new text (what goes to the server, the address book naming senders); axe: nothing at any
+    impact.
+  - With the SMS role, which grants the address book, the contacts page shows the new disclosure above "Kontakte vom
+    Telefon übernehmen"; axe: nothing at any impact. The role went back to Google Messages afterwards, UCAP was opened
+    again, LIVE came back ("waiting"), and the storage setting was removed.

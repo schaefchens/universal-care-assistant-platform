@@ -5,6 +5,7 @@
  * clocks. Recovery words are read from the screen into memory and never printed.
  */
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page } from '@playwright/test';
 import type { Engines } from './engines.ts';
@@ -24,6 +25,23 @@ export function invitation(admin = false): string {
   const code = /#invite=(\S+)/.exec(cli(admin ? 'admin-invite' : 'account-invite', '--label', 'e2e'))?.[1];
   if (!code) throw new Error('no invitation from the CLI');
   return code;
+}
+
+const AXE = readFileSync(new URL('../node_modules/axe-core/axe.min.js', import.meta.url), 'utf8');
+
+/**
+ * The accessibility audit of what the page shows (docs/plan.md, UI-01; docs/plan-m3.md, K9: "accessibility audits of
+ * the new screens"): axe-core evaluated in the page over DevTools, as tools/android/axe.ts does on the emulator, so the
+ * app's security policy stays as it is. A serious or critical violation fails, named by its rule and where.
+ */
+export async function axe(page: Page, what: string): Promise<void> {
+  if (!(await page.evaluate(() => 'axe' in window))) await page.evaluate(AXE);
+  const found = await page.evaluate(async () => {
+    type Result = { violations: { id: string; impact?: string; nodes: { target: string[] }[] }[] };
+    const r = await (window as unknown as { axe: { run(c: Document, o: unknown): Promise<Result> } }).axe.run(document, { resultTypes: ['violations'] });
+    return r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${v.impact} ${v.id}: ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join(', ')}`);
+  });
+  expect(found, `axe on ${what}`).toEqual([]);
 }
 
 /** SQL in the e2e database, for what no screen shows (a link between records). */
@@ -170,13 +188,14 @@ export const clocks = {
   async now(): Promise<number> {
     return ((await (await fetch(`${ORIGIN}/__test/clock`)).json()) as { now: number }).now;
   },
-  async moveTo(at: number): Promise<void> {
+  /** `messaging` false: the messaging stand-in is stopped (acceptance 14) and keeps its time. */
+  async moveTo(at: number, o: { messaging?: boolean } = {}): Promise<void> {
     for (const path of ['/__test/clock', '/__test/assistant/clock']) {
       const r = await fetch(`${ORIGIN}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ at }) });
       expect(r.ok, path).toBe(true);
     }
     // The messaging stand-in keeps the same time, or new messages would look hours old.
-    expect((await fetch(`${MESSAGING}/clock`, { method: 'POST', body: JSON.stringify({ at: await clocks.now() }) })).ok).toBe(true);
+    if (o.messaging !== false) expect((await fetch(`${MESSAGING}/clock`, { method: 'POST', body: JSON.stringify({ at: await clocks.now() }) })).ok).toBe(true);
   },
   async advance(ms: number): Promise<void> {
     await clocks.moveTo((await clocks.now()) + ms);

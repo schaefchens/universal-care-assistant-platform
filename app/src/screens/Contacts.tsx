@@ -309,6 +309,8 @@ export function ContactsPage(p: { session: Session; personId: string; personName
           <Button className="button primary" onPress={() => setEditing('new')}>
             {tr('contacts.add')}
           </Button>
+          {/* What the whole address book's import does, before its button (Play's prominent disclosure: docs/play.md). */}
+          {phoneBook === 'all' && <p className="muted">{tr('contacts.phone.disclosure')}</p>}
           {phoneBook && (
             <Button className="button" onPress={() => void fromPhone()}>
               {tr(phoneBook === 'all' ? 'contacts.phone.all' : 'contacts.phone.pick')}

@@ -182,6 +182,8 @@ export async function smsPhone(name: string, words: readonly string[], origin = 
   const forward = (events: DeviceEvent[]) => signed('POST', '/api/v1/messaging/device/events', { connectionId, events: events as unknown as Json[] });
   /** SMS threads by number, as Android's store numbers them. */
   const threads = new Map<string, string>();
+  /** The apps whose previews this phone reports, by package: their connections. */
+  const previews = new Map<string, string>();
   let nextId = 1000;
 
   return {
@@ -230,6 +232,46 @@ export async function smsPhone(name: string, words: readonly string[], origin = 
     },
     /** The SMS role went back to another app: the phone stops running the connection. */
     roleGone: () => forward([{ t: 'conn.state', state: 'off' }]),
+    /**
+     * Previews (K5): another app's notification on this phone shows a message, and the previews process reports it, as
+     * PreviewLogic does: a conversation known by its notification, its sender by the name shown, never a contact. The
+     * app is connected on the first one (the person chose it on the phone).
+     */
+    async preview(app: { package: string; name: string }, from: string, text: string, at = Date.now()) {
+      let id = previews.get(app.package);
+      if (!id) {
+        id = (await call<{ connection: { id: string } }>('POST', '/api/v1/messaging/connections', { service: 'notifications', app })).connection.id;
+        previews.set(app.package, id);
+      }
+      const conv = `c-${app.package}-${from}`;
+      const externalId = `m${++nextId}`;
+      await signed('POST', '/api/v1/messaging/device/events', {
+        connectionId: id,
+        events: [
+          { t: 'user.upsert', user: { externalId: `p-${from}`, name: from, isContact: false, isBot: false } },
+          { t: 'chat.upsert', chat: { externalId: conv, title: from, kind: 'private', userId: `p-${from}`, muted: false, unread: 1, readInboxMaxId: null, readOutboxMaxId: null } },
+          { t: 'msg.upsert', msg: { chatId: conv, externalId, fromId: `p-${from}`, outgoing: false, date: Math.floor(at / 1000), editDate: null, kind: 'text', text, file: null, fileName: null }, live: true },
+        ] as unknown as Json[],
+      });
+      return externalId;
+    },
+    /**
+     * Replies through the apps' notifications (K5), as the previews process sends them: taken once, handed to the app
+     * (pending), then sent once the app shows each as the person's own message in its conversation.
+     */
+    async replyThroughApps(): Promise<DeviceSend[]> {
+      const { sends } = await signed<{ sends: DeviceSend[] }>('POST', '/api/v1/messaging/device/outbound', { service: 'notifications' });
+      for (const s of sends) {
+        const report = (events: DeviceEvent[]) => signed('POST', '/api/v1/messaging/device/events', { connectionId: s.connectionId, events: events as unknown as Json[] });
+        await report([{ t: 'send.result', requestId: s.id, state: 'pending_service' }]);
+        const externalId = `m${++nextId}`;
+        await report([
+          { t: 'msg.upsert', msg: { chatId: s.chatId, externalId, fromId: null, outgoing: true, date: Math.floor(Date.now() / 1000), editDate: null, kind: 'text', text: s.text, file: null, fileName: null } },
+          { t: 'send.result', requestId: s.id, state: 'sent', externalId },
+        ]);
+      }
+      return sends;
+    },
   };
 }
 

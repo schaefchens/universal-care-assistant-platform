@@ -134,7 +134,8 @@ export async function parseMail(source: Buffer | string): Promise<Mail> {
     bounce = {
       original: idOf(/^Message-ID:\s*(<[^>\r\n]+>)/im.exec(originalText)?.[1]),
       status: /^Status:\s*(\d\.\d{1,3}\.\d{1,3})/im.exec(fields)?.[1] ?? null,
-      action: /^Action:\s*(\S+)/im.exec(fields)?.[1]?.toLowerCase() ?? null,
+      // RFC 3464's actions only: whoever wrote the report chose its words, and the action goes to the log.
+      action: /^Action:\s*(failed|delayed|delivered|relayed|expanded)\b/im.exec(fields)?.[1]?.toLowerCase() ?? null,
     };
   }
   const attachments = isReport

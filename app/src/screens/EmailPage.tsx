@@ -109,7 +109,7 @@ export function EmailPage(p: { session: Session; refresh: number; connectionId: 
   const failed = (e: unknown) => {
     const reason = e instanceof ApiError ? String(e.params.reason ?? '') : '';
     if (reason === 'connectors') return report(tr('email.notRunning'));
-    if (reason === 'mail_server' || reason === 'mail_account') return report(tr(`email.error.${reason}`));
+    if (reason === 'mail_server' || reason === 'mail_account' || reason === 'too_many_accounts') return report(tr(`email.error.${reason}`));
     report(tr(`error.${e instanceof ApiError ? e.code : 'internal'}`));
   };
 

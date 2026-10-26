@@ -80,4 +80,11 @@ describe('an email, read', () => {
     expect(htmlToText('<p>Hallo <img src="x.png" alt="ein Herz"> <span style="display: none">versteckt</span><a href="https://x.example">https://x.example</a></p><p hidden>weg</p>')).toBe('Hallo ein Herz');
     expect(split('Neu\n\n___________\nVon: A\nGesendet: B\n\nAlt')).toEqual({ fresh: 'Neu', quoted: '___________\nVon: A\nGesendet: B\n\nAlt', signature: '' });
   });
+
+  it('HTML is made inert (K9): scripts, styles, frames, objects, a page head (its refresh too), links to scripts and tracking pixels leave only the words; nothing is fetched', () => {
+    expect(htmlToText('<p>Hallo<script>alert(1)</script><style>p{color:red}</style></p>')).toBe('Hallo');
+    expect(htmlToText('<p>Klick <a href="javascript:alert(1)">hier</a> <img src="http://tracker.example/p.gif" width="1" height="1"></p>')).toBe('Klick hier');
+    expect(htmlToText('<iframe src="https://x.example"></iframe><object data="x"></object><p>Text</p><noscript>ns</noscript><template>t</template>')).toBe('Text');
+    expect(htmlToText('<head><title>Titel</title><meta http-equiv="refresh" content="0;url=https://x.example"></head><p>Body</p>')).toBe('Body');
+  });
 });

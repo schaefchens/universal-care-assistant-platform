@@ -140,6 +140,25 @@ again. Nothing to set up on the server.
 - **Not yet:** sending MMS, a new SMS to a number by voice (with K6's contacts), and what only a real phone with a SIM
   shows (RCS after the switch, a carrier's MMS centre and reports, dual SIM).
 
+### Previews from other apps
+
+For apps UCAP cannot connect to (Signal, Threema, Instagram, Facebook Messenger, and WhatsApp for people without its
+link), UCAP on the person's phone reads what their message notifications show and reads it aloud as a preview ("Vorschau
+von Signal: …"); it replies through the notification's own reply action, "Gesendet" once the app shows the reply as the
+person's own. Nothing to set up on the server: the person chooses the apps on their phone (Settings →
+Nachrichtendienste → Vorschauen anderer Apps), after UCAP's explanation and Android's own page for notification access
+(docs/play.md). An app installed from a file needs "Eingeschränkte Einstellungen zulassen" first. A preview knows only
+what a notification shows: no history, and the sender only by the name shown, so the person's contacts never include
+them by themselves. Codes Android hides in notifications stay hidden. Like SMS, a reply confirmed on another device
+waits for the phone, woken by a push.
+
+### Contacts, appointments and tasks
+
+They are core's, like reminders, and work without the assistant. Each person keeps their own; a helper may manage
+them with the permissions "Kontakte verwalten" and "Termine und Aufgaben verwalten" (helper-onboarding.md), and every
+change is said on the person's device and kept in their history. An appointment's reminders are ordinary reminders:
+they ring with the assistant and the connectors stopped.
+
 ### herde
 
 KI und Stimmen verwalten → herde → invitation: the page shows `herde join <address> <code>`. On the machine that runs
@@ -172,9 +191,28 @@ node tools/backup/backup.ts restore <dir> --into <new database> [--files]
 
 A restore goes into a new database, never over the live one; point `DATABASE_URL` at it once checked. Without the
 master key the sealed values cannot be opened after a restore; the secrets never change, so one safe copy is enough.
-Add `--with-tdlib` with the connectors stopped to keep the Telegram sessions. WhatsApp's keys (the volume
-`ucap-whatsapp`) are not in a backup yet (docs/plan-m3.md, K9): restored without them, each person links WhatsApp again.
-The email volume (`ucap-email`) needs none: without it, the email process fetches each account's 30 days again.
+
+**The connectors' volumes** hold what keeps each person linked: TDLib's databases (`ucap-tdlib`), WhatsApp's keys
+(`ucap-whatsapp`) and the email process's UIDs (`ucap-email`). Each is sealed with a key in the database, so it opens
+only together with it and the master key.
+
+```sh
+docker compose stop connectors whatsapp email
+npm run backup -- <dir> --with-secrets --with-connectors
+docker compose start connectors whatsapp email
+node tools/backup/backup.ts check --with-connectors          # the same, checked: each volume's tarball holds all its files
+node tools/backup/backup.ts restore <dir> --into <new database> --files --connectors   # on a new server, processes stopped
+```
+
+- They are refused while their processes run: TDLib holds its databases open, and WhatsApp's keys change with every
+  message, so a copy taken meanwhile may mix two states. Stopping and starting `whatsapp` is a new connection to
+  WhatsApp, which is fine now and then.
+- A restore writes a connector volume only while its process is stopped and the volume is empty (a new server): keys
+  of two times mixed would break the link.
+- **Restored without them**, each person links WhatsApp again (their number and a new pairing code; the page offers it
+  by itself) and Telegram again; the email process fetches each account's 30 days again. Messages already in the
+  database stay, and what came meanwhile arrives with the new link.
+- `--with-tdlib` (M1) is TDLib's volume alone.
 
 ## What is kept, and for how long
 
@@ -182,17 +220,41 @@ The email volume (`ucap-email`) needs none: without it, the email process fetche
 - A conversation's last exchanges (for follow-up questions) 30 minutes; what an assistant action held, a day after it
   ended; actions 30 days.
 - Speech clips 7 days; voice-message copies 30 days (fetched again when played later); messages as long as the person
-  stays connected (disconnecting deletes the copies; Telegram keeps its own).
+  stays connected, from 30 days before connecting on (for previews, what the notifications showed since).
+- **Disconnecting a service** deletes everything UCAP kept of that connection, and nothing of the others: its
+  conversations, the people in them, messages, attachments and their files, its sends and drafts, and the names it
+  suggested for contacts (a test checks each service). Its process deletes its own state too: TDLib's database,
+  WhatsApp's keys (and UCAP is gone from the phone's linked devices), the email UIDs; a phone stops reporting its SMS or
+  an app's previews and forgets its own record of them. A new message's words kept for a contact (a day) go with the
+  last connection of their service. The services keep their own: Telegram, WhatsApp and the mailbox lose nothing.
+- **Android's SMS store is the person's.** As the SMS app, UCAP writes what it receives and sends there and marks it
+  read; it never deletes from it (a test checks the app's code), so the history stays when the role goes back.
+- Notes, appointments and tasks made from a message stay the person's after the message is gone, with where they came
+  from (service, sender, time); "Lies die Nachricht dazu" then says it is no longer kept.
+- Contacts, appointments and tasks until they are deleted. A deleted one is kept with its earlier versions, as notes
+  are, for undo and the person's history (docs/decisions.md, M3, To confirm 20).
+- A WhatsApp pairing code is never stored. An email password is kept sealed with its connection and goes to the email
+  process only when it starts it; the email process holds it in memory only.
 - Events for devices 30 days; sign-in challenges a day after expiring; sessions a week after ending; invitations 30
   days after expiring; finished jobs a week.
 - Logs never hold content: no words, message texts, recovery words, tokens or request bodies; Postgres logs no
-  statements or values.
+  statements or values. The connector processes write states, codes and counts only: Baileys', imapflow's and
+  nodemailer's own logging is off, and libsignal's console lines (which dump keys) are only counted, by their first
+  words. A canary test runs those libraries at their loudest and checks every line they could write
+  (`connectors/test/log-canary.test.ts`).
 
 ## Limits
 
 Failed sign-in proofs, invitation codes, recovery starts, challenges without a session and failed WebSocket hellos are
 limited per address. Help requests, alarm receipts and their actions are never limited: repeated presses join the open
 request instead.
+
+Where UCAP acts on a person's accounts elsewhere (M3): five WhatsApp pairing codes a connection an hour (each is a
+request to WhatsApp, and an unofficial client asking often puts the number at risk); ten tries to connect email
+accounts a person an hour (a provider locks an account after a few wrong passwords), and ten email accounts. A phone's
+reports come in batches of at most 200, each text at most 64 KiB. Of an email, the first megabyte is fetched (its
+words come first; attachments beyond it are named from its structure), and its HTML is turned into plain text: nothing
+in it is shown as a page or fetched.
 
 ## When a device loses its app data
 

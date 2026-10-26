@@ -729,4 +729,73 @@ describe('messaging across services', () => {
     const news = ((await as(anna, 'POST', '/api/v1/assistant/live/news', { asked: false, lang: 'de' })).json() as { segments: { kind: string; text: string }[] }).segments;
     expect(news).toEqual([{ kind: 'original', text: 'Mama schrieb per SMS: „Bist du wach?“', source: { message: expect.any(String) } }]);
   });
+
+  it('K9, limits where UCAP acts on accounts elsewhere: five WhatsApp pairing codes a connection an hour; ten email tries a person an hour, and ten accounts', async () => {
+    // WhatsApp: each number given or code asked again is a request to WhatsApp.
+    await client.renew(bernd);
+    const made = (await as(bernd, 'POST', '/api/v1/messaging/connections', { service: 'whatsapp', acceptedRisk: true })).json() as { connection: View };
+    expect(made).toHaveProperty('connection');
+    const w = made.connection;
+    wa.emit({ t: 'conn.state', id: w.id, state: 'wait_phone' });
+    await until(async () => (await connections(bernd)).connections.find((x) => x.id === w.id)?.state === 'wait_phone', 'wait_phone');
+    const pair = () => as(bernd, 'POST', `/api/v1/messaging/connections/${w.id}/login`, { step: 'phone', value: '+49 170 1234567' });
+    for (let i = 0; i < 5; i++) expect((await pair()).statusCode).toBe(200);
+    const refused = await pair();
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json()).toEqual({ error: { code: 'rate_limited', params: { retryAfter: 3600 } } });
+    expect(wa.got.filter((x) => x.t === 'login' && x.id === w.id)).toHaveLength(5);
+    clock.advance(3_600_000);
+    await client.renew(bernd);
+    expect((await pair()).statusCode).toBe(200);
+
+    // Email: ten accounts; an eleventh is refused as such, a new password for one of them still goes in.
+    const tries: number[] = [];
+    for (let i = 1; i <= 10; i++) tries.push((await as(bernd, 'POST', '/api/v1/messaging/connections', email(`bernd${i}@example.org`, 'pw'))).statusCode);
+    expect(tries).toEqual(Array(10).fill(200));
+    clock.advance(3_600_000);
+    await client.renew(bernd);
+    expect((await as(bernd, 'POST', '/api/v1/messaging/connections', email('bernd11@example.org', 'pw'))).json()).toEqual({ error: { code: 'conflict', params: { reason: 'too_many_accounts' } } });
+    for (let i = 0; i < 10; i++) expect((await as(bernd, 'POST', '/api/v1/messaging/connections', email('bernd1@example.org', `pw-${i}`))).statusCode).toBe(200);
+    // Ten tries this hour (the refused eleventh account counted none): the next waits.
+    expect((await as(bernd, 'POST', '/api/v1/messaging/connections', email('bernd1@example.org', 'pw-x'))).json()).toEqual({ error: { code: 'rate_limited', params: { retryAfter: 3600 } } });
+    for (const c of (await connections(bernd)).connections) await as(bernd, 'DELETE', `/api/v1/messaging/connections/${c.id}`);
+  });
+
+  it('K9, retention: a disconnect deletes what UCAP kept of that connection and nothing of the others; a server service’s process is told to remove it (its keys and state), a phone hears it is gone; a draft to a contact goes with the last connection of its service', async () => {
+    await client.renew(anna);
+    const held = async (id: string) =>
+      (
+        await sql<{ n: number }>`
+          select ((select count(*) from messaging_conversations where connection_id = ${id})
+            + (select count(*) from messaging_participants where connection_id = ${id})
+            + (select count(*) from messaging_messages m join messaging_conversations v on v.id = m.conversation_id where v.connection_id = ${id})
+            + (select count(*) from messaging_outbound where connection_id = ${id})
+            + (select count(*) from contact_suggestions_dismissed where connection_id = ${id}))::int as n`.execute(db)
+      ).rows[0]!.n;
+    const contact = ((await core.app.inject({ method: 'POST', url: `/api/v1/people/${anna.userId}/contacts`, payload: { name: 'Gerda Entwurf', handles: [{ kind: 'email', value: 'gerda@example.org' }] }, headers: { authorization: `Bearer ${anna.token}` } })).json() as { id: string }).id;
+    for (const service of ['email', 'sms']) await sql`insert into messaging_contact_drafts (person_id, contact_id, service, text, saved_at) values (${anna.userId}, ${contact}, ${service}, 'Bis morgen', now())`.execute(db);
+    const drafts = async () => (await sql<{ service: string }>`select service from messaging_contact_drafts where contact_id = ${contact} order by service`.execute(db)).rows.map((r) => r.service);
+    const processOf = { telegram: tg, whatsapp: wa, email: mail } as Record<string, FakeConnectors>;
+
+    let left = (await connections(anna)).connections;
+    // Every service Anna has, each with something kept.
+    expect(new Set(left.map((c) => c.service))).toEqual(new Set(['email', 'whatsapp', 'telegram', 'sms', 'notifications']));
+    for (const c of left.filter((x) => x.service !== 'whatsapp' && x.service !== 'notifications')) expect(await held(c.id), c.service).toBeGreaterThan(0);
+    while (left.length) {
+      const c = left[0]!;
+      const others = await Promise.all(left.slice(1).map(async (x) => [x.id, await held(x.id)] as const));
+      const f = processOf[c.service];
+      const n = f?.got.length ?? 0;
+      expect((await as(anna, 'DELETE', `/api/v1/messaging/connections/${c.id}`)).statusCode, c.service).toBe(200);
+      if (f) expect(await f.next('remove', n)).toEqual({ t: 'remove', id: c.id });
+      else expect((await events('messaging.connection')).at(-1)).toMatchObject({ connectionId: c.id, state: 'removed' });
+      expect(await held(c.id), c.service).toBe(0);
+      for (const [id, kept] of others) expect(await held(id), `${c.service}: another connection's`).toBe(kept);
+      left = (await connections(anna)).connections;
+      // A draft by email stays while another email account is left; gone with the last one.
+      expect(await drafts(), c.service).toEqual(['email', 'sms'].filter((s) => left.some((x) => x.service === s)));
+    }
+    expect((await sql<{ n: number }>`select count(*)::int as n from messaging_connections where user_id = ${anna.userId}`.execute(db)).rows[0]!.n).toBe(0);
+    expect(logs.join('\n')).not.toContain('Bis morgen');
+  });
 });
