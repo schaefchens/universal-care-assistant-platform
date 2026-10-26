@@ -554,7 +554,7 @@ describe('messaging across services', () => {
     for (const c of [mama, clara]) await contacts('DELETE', `/${c}`);
   });
 
-  it('a new message to a contact with no conversation (K6): an SMS to their mobile number, an email to their address with a subject the model proposes; several numbers asked about; named by the contact; no draft claimed', async () => {
+  it('a new message to a contact with no conversation (K6): an SMS to their mobile number, an email to their address with a subject the model proposes; several numbers asked about; named by the contact; what is not sent kept with the contact and offered again', async () => {
     const contacts = (method: 'POST' | 'DELETE', path: string, body?: unknown) =>
       core.app.inject({ method, url: `/api/v1/people/${anna.userId}/contacts${path}`, payload: body as Record<string, unknown>, headers: { authorization: `Bearer ${anna.token}` } });
     const physio = ((await contacts('POST', '', {
@@ -570,7 +570,7 @@ describe('messaging across services', () => {
     // No conversation anywhere: SMS, Telegram and email could, so the service is asked; named, it is that one.
     expect(await find('Physiotherapie')).toEqual({ services: ['SMS', 'Telegram', 'E-Mail'] });
     // By SMS to the mobile number, never the practice's landline; said with which one it is.
-    expect(await find('Physiotherapie', 'per SMS')).toEqual({ conversationId: null, name: 'Physiotherapie (Handy)', service: 'sms', label: null, subject: null, contact: true, to: { connectionId: smsId, address: '+491707654321' } });
+    expect(await find('Physiotherapie', 'per SMS')).toEqual({ conversationId: null, name: 'Physiotherapie (Handy)', service: 'sms', label: null, subject: null, contact: true, to: { connectionId: smsId, address: '+491707654321', contactId: physio } });
     // Two mobile numbers: named back, and the one the person said is taken.
     expect(await find('Tom', 'SMS')).toEqual({ addresses: ['Handy', 'Arbeit'] });
     expect(await find('Tom', 'SMS', 'die Arbeit')).toMatchObject({ name: 'Tom Neu (Arbeit)', to: { address: '+491513334444' } });
@@ -578,7 +578,7 @@ describe('messaging across services', () => {
     // On Telegram too (the owner, 2026-10-23): to the user Telegram finds for the number, or to a saved Telegram id.
     expect(await find('Tom', 'Telegram', 'Handy')).toMatchObject({ service: 'telegram', to: { connectionId: telegramId, address: '+491511112222' } });
     const ida = ((await contacts('POST', '', { name: 'Ida', handles: [{ kind: 'phone', value: '+491603334444' }, { kind: 'telegram', value: '77' }] })).json() as { id: string }).id;
-    expect(await find('Ida', 'Telegram')).toEqual({ conversationId: null, name: 'Ida', service: 'telegram', label: null, subject: null, contact: true, to: { connectionId: telegramId, address: 'user:77' } });
+    expect(await find('Ida', 'Telegram')).toEqual({ conversationId: null, name: 'Ida', service: 'telegram', label: null, subject: null, contact: true, to: { connectionId: telegramId, address: 'user:77', contactId: ida } });
     expect(await find('Ida', 'WhatsApp')).toBeNull();
     // Never for reading.
     expect(await assistant.messaging.find(anna.userId, 'Tom', { forSending: false })).toBeNull();
@@ -613,10 +613,10 @@ describe('messaging across services', () => {
     await as(anna, 'POST', `/api/v1/assistant/actions/${e.id}/confirm`, { contentHash: e.contentHash, via: 'voice' });
     const cmd = await mail.next('send', n);
     expect(cmd).toMatchObject({ chatId: '', to: 'info@physio.example', subject: 'Termin am Freitag', text: 'Haben Sie am Freitag einen Termin frei?' });
-    // Refused: not sent, and no draft is promised, since there is no conversation to keep one in.
+    // Refused: not sent, and the words kept with the contact for that service (the owner, 2026-10-25).
     mail.emit({ t: 'send.result', id: emailId, requestId: cmd.requestId, state: 'failed', error: 'smtp_550' });
     await until(async () => (await outbound(e.id)).state === 'failed', 'failed');
-    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'de'))?.say).toBe('Nicht gesendet: der Mailserver hat sie abgelehnt.');
+    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'de'))?.say).toBe('Nicht gesendet: der Mailserver hat sie abgelehnt. Der Entwurf ist gespeichert.');
     // On Telegram: the command goes to its process with the number; Telegram finds nobody, and says so.
     script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Physiotherapie', service: 'Telegram', text: 'Hallo?' }], help: false });
     const tgAsk = (await turn(anna, 'Schreib der Physiotherapie auf Telegram: Hallo?')).find((x) => x.t === 'action') as unknown as { id: string; contentHash: string; prompt: string };
@@ -627,13 +627,27 @@ describe('messaging across services', () => {
     expect(tgCmd).toMatchObject({ id: telegramId, chatId: '', to: '+491707654321', text: 'Hallo?' });
     tg.emit({ t: 'send.result', id: telegramId, requestId: tgCmd.requestId, state: 'failed', error: 'tg_not_found' });
     await until(async () => (await outbound(tgAsk.id)).state === 'failed', 'failed');
-    expect((await assistant.messaging.outbound(anna.userId, tgCmd.requestId, 'de'))?.say).toBe('Nicht gesendet: Telegram findet niemanden mit dieser Nummer.');
+    expect((await assistant.messaging.outbound(anna.userId, tgCmd.requestId, 'de'))?.say).toBe('Nicht gesendet: Telegram findet niemanden mit dieser Nummer. Der Entwurf ist gespeichert.');
     await contacts('DELETE', `/${ida}`);
-    // Declined or unanswered: nothing sent, and no draft promised either.
+    // Declined: nothing sent, the words kept with Tom for SMS; said in the overview, offered when writing to him again.
     script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Tom', service: 'SMS', address: 'Handy', text: 'Hallo Tom.' }], help: false });
     const t1 = (await turn(anna, 'Schreib Tom per SMS aufs Handy: Hallo Tom.')).find((x) => x.t === 'action') as unknown as { id: string; prompt: string };
     expect(t1.prompt).toBe('SMS an Tom Neu (Handy): „Hallo Tom.“. Senden?');
-    expect((await as(anna, 'POST', `/api/v1/assistant/actions/${t1.id}/cancel`, { why: 'no' })).json()).toEqual({ ok: true, say: 'Nicht gesendet.' });
+    expect((await as(anna, 'POST', `/api/v1/assistant/actions/${t1.id}/cancel`, { why: 'no' })).json()).toEqual({ ok: true, say: 'Nicht gesendet. Der Entwurf ist gespeichert.' });
+    expect(await assistant.messaging.contactDrafts(anna.userId, 'de')).toEqual(expect.arrayContaining([{ to: 'Tom Neu', service: 'SMS', text: 'Hallo Tom.' }]));
+    script = (req) =>
+      req.messages.at(-1)!.content.startsWith('DATEN')
+        ? { say: [{ kind: 'reply', text: 'Du hast noch „Hallo Tom.“. Diese senden oder die neue?', ref: null }], calls: [], help: false }
+        : { say: [], calls: [{ tool: 'messages.send', chat: 'Tom', service: 'SMS', address: 'Handy', text: 'Bist du da?', draft: null }], help: false };
+    seen.length = 0;
+    await turn(anna, 'Schreib Tom per SMS aufs Handy: Bist du da?');
+    expect(seen.at(-1)!.messages.at(-1)!.content).toContain('draft_exists: Hallo Tom.');
+    // "Die von vorhin": the kept words are read back in full.
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Tom', service: 'SMS', address: 'Handy', text: '', draft: 'send' }], help: false });
+    const t1b = (await turn(anna, 'Die von vorhin')).find((x) => x.t === 'action') as unknown as { id: string; prompt: string };
+    expect(t1b.prompt).toBe('SMS an Tom Neu (Handy): „Hallo Tom.“. Senden?');
+    expect((await as(anna, 'POST', `/api/v1/assistant/actions/${t1b.id}/cancel`, { why: 'silence' })).json()).toEqual({ ok: true, say: 'Keine Antwort, deshalb habe ich nichts gesendet. Der Entwurf ist gespeichert.' });
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Tom', service: 'SMS', address: 'Handy', text: 'Hallo Tom.' }], help: false });
     // Only to a number the person keeps with a contact: deleted meanwhile, nothing is written.
     const t2 = (await turn(anna, 'Schreib Tom per SMS aufs Handy: Hallo Tom.')).find((x) => x.t === 'action') as unknown as { id: string; contentHash: string };
     await contacts('DELETE', `/${tom}`);

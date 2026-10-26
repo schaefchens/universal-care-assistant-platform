@@ -159,8 +159,11 @@ export interface Found {
   subject: string | null;
   /** Whether the other side is in the person's contacts (private chats). */
   contact: boolean | null;
-  /** A new message's connection and where it goes: a number (E.164), an email address, a Telegram id ("user:123"). */
-  to: { connectionId: string; address: string } | null;
+  /**
+   * A new message's connection, where it goes (a number in E.164, an email address, a Telegram id "user:123") and the
+   * contact it goes to.
+   */
+  to: { connectionId: string; address: string; contactId: string } | null;
 }
 
 /** One of the person's contacts with no conversation on a service that can write to them anew (K6). */
@@ -339,11 +342,16 @@ export function createMessaging(d: {
     return 'queued';
   }
 
-  /** Kept as its conversation's draft; a new message (K6) has none to keep it in. */
+  /** Kept as its conversation's draft for a day; a new message's (K6) with its contact, for the service it was meant for. */
   async function saveDraft(outboundId: string) {
     await sql`
       update messaging_conversations v set draft = o.text, draft_at = ${now()} from messaging_outbound o
       where o.id = ${outboundId} and v.id = o.conversation_id`.execute(d.db);
+    await sql`
+      insert into messaging_contact_drafts (person_id, contact_id, service, text, saved_at)
+      select o.user_id, o.contact_id, k.service, o.text, ${now()} from messaging_outbound o join messaging_connections k on k.id = o.connection_id
+      where o.id = ${outboundId} and o.conversation_id is null and o.contact_id is not null
+      on conflict (person_id, contact_id, service) do update set text = excluded.text, saved_at = excluded.saved_at`.execute(d.db);
   }
 
   /** The services the person has connected (ready once), in the order they were connected, named in their language. */
@@ -1067,7 +1075,7 @@ export function createMessaging(d: {
         if (Array.isArray(h)) return { addresses: h };
         // Said with the number or address it goes to, where the contact has more than one.
         const name = x.fresh.handles.length > 1 ? `${x.title} (${h.label ?? displayOf(h)})` : x.title;
-        return { conversationId: null, name, service: x.service, label: x.label, subject: null, contact: true, to: { connectionId: x.fresh.connectionId, address: addressOf(h) } };
+        return { conversationId: null, name, service: x.service, label: x.label, subject: null, contact: true, to: { connectionId: x.fresh.connectionId, address: addressOf(h), contactId: x.fresh.contactId } };
       };
       const conversations: Candidate[] = r.rows.map((x) => ({ ...x, fresh: null }));
       if (ref) {
@@ -1111,8 +1119,8 @@ export function createMessaging(d: {
       deviceId: string;
       actionId: string | null;
       conversationId: string | null;
-      /** A new message's connection, address and the contact's name as C1 said it. */
-      to?: { connectionId: string; address: string; recipient: string } | null;
+      /** A new message's connection, address, contact, and the contact's name as C1 said it. */
+      to?: { connectionId: string; address: string; recipient: string; contactId?: string | null } | null;
       text: string;
       subject?: string | null;
     }): Promise<SendOutcome> {
@@ -1126,14 +1134,18 @@ export function createMessaging(d: {
         : o.to
           ? // Only to a number or address the person keeps with a contact.
             await sql<{ id: string }>`
-            insert into messaging_outbound (id, connection_id, conversation_id, to_address, recipient, user_id, action_id, device_id, text, subject, state, created_at, updated_at)
-            select ${id}, k.id, null, ${o.to.address}, ${o.to.recipient}, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, 'queued', ${now()}, ${now()}
-            from messaging_connections k where k.id = ${o.to.connectionId} and k.user_id = ${o.userId} and k.service in ('sms', 'email', 'whatsapp', 'telegram')
-              and exists (select 1 from contact_handles h join contacts c on c.id = h.contact_id
-                where h.person_id = ${o.userId} and c.deleted_at is null and (
-                  (k.service = 'email' and h.kind = 'email' and h.value = ${o.to.address})
-                  or (k.service <> 'email' and h.kind in ('phone', 'whatsapp') and h.value = ${o.to.address})
-                  or (k.service = 'telegram' and h.kind = 'telegram' and 'user:' || h.value = ${o.to.address})))
+            insert into messaging_outbound (id, connection_id, conversation_id, to_address, recipient, contact_id, user_id, action_id, device_id, text, subject, state, created_at, updated_at)
+            select ${id}, k.id, null, ${o.to.address}, ${o.to.recipient}, m.contact_id, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, 'queued', ${now()}, ${now()}
+            from messaging_connections k
+            join lateral (
+              select h.contact_id from contact_handles h join contacts c on c.id = h.contact_id
+              where h.person_id = ${o.userId} and c.deleted_at is null and (
+                (k.service = 'email' and h.kind = 'email' and h.value = ${o.to.address})
+                or (k.service <> 'email' and h.kind in ('phone', 'whatsapp') and h.value = ${o.to.address})
+                or (k.service = 'telegram' and h.kind = 'telegram' and 'user:' || h.value = ${o.to.address}))
+              order by (h.contact_id = ${o.to.contactId ?? null}::uuid) desc nulls last limit 1
+            ) m on true
+            where k.id = ${o.to.connectionId} and k.user_id = ${o.userId} and k.service in ('sms', 'email', 'whatsapp', 'telegram')
             on conflict (action_id) do nothing returning id`.execute(d.db)
           : { rows: [] };
       if (!r.rows[0]) {
@@ -1141,8 +1153,12 @@ export function createMessaging(d: {
         if (!again.rows[0]) throw new AppError('not_found');
         return again.rows[0].state === 'queued' ? 'queued' : 'attempting';
       }
-      // The draft is now this message.
+      // The draft is now this message: its conversation's, or the one kept with its contact for that service.
       if (o.conversationId) await sql`update messaging_conversations set draft = null, draft_at = null where id = ${o.conversationId}`.execute(d.db);
+      else
+        await sql`
+          delete from messaging_contact_drafts g using messaging_outbound o join messaging_connections k on k.id = o.connection_id
+          where o.id = ${id} and g.person_id = o.user_id and g.contact_id = o.contact_id and g.service = k.service`.execute(d.db);
       return attempt(id);
     },
 
@@ -1164,6 +1180,33 @@ export function createMessaging(d: {
       await sql`
         update messaging_conversations v set draft = ${text}, draft_at = ${now()} from messaging_connections k
         where v.id = ${conversationId} and k.id = v.connection_id and k.user_id = ${userId}`.execute(d.db);
+    },
+
+    /**
+     * A new message (K6) the person did not confirm: kept with its contact, for the service it was meant for, for a day
+     * (C7, C8; the owner, 2026-10-25: "Keep a draft with the contact").
+     */
+    async keepContactDraft(userId: string, contactId: string, service: Service, text: string) {
+      await sql`
+        insert into messaging_contact_drafts (person_id, contact_id, service, text, saved_at)
+        select c.person_id, c.id, ${service}, ${text}, ${now()} from contacts c where c.id = ${contactId} and c.person_id = ${userId}
+        on conflict (person_id, contact_id, service) do update set text = excluded.text, saved_at = excluded.saved_at`.execute(d.db);
+    },
+
+    /** The words kept with a contact for a service (a new message not sent), while they are kept. */
+    async contactDraft(userId: string, contactId: string, service: Service): Promise<string | null> {
+      const r = await sql<{ text: string }>`
+        select text from messaging_contact_drafts
+        where person_id = ${userId} and contact_id = ${contactId} and service = ${service} and saved_at > ${new Date(d.clock() - DRAFT_MS)}`.execute(d.db);
+      return r.rows[0]?.text ?? null;
+    },
+
+    /** Every draft kept with a contact, for the overview: to whom, on which service, the words. */
+    async contactDrafts(userId: string, lang: Lang = 'de'): Promise<{ to: string; service: string; text: string }[]> {
+      const r = await sql<{ name: string; service: Service; text: string }>`
+        select c.name, g.service, g.text from messaging_contact_drafts g join contacts c on c.id = g.contact_id
+        where g.person_id = ${userId} and c.deleted_at is null and g.saved_at > ${new Date(d.clock() - DRAFT_MS)} order by g.saved_at desc limit 10`.execute(d.db);
+      return r.rows.map((x) => ({ to: x.name, service: serviceName(x.service, null, lang), text: x.text }));
     },
 
     /**
@@ -1215,9 +1258,9 @@ export function createMessaging(d: {
 
     /** What to tell the person about a message they sent (C3–C6), in their words. */
     async outbound(userId: string, id: string, lang?: Lang): Promise<{ state: string; told: Told[]; say: string | null } | null> {
-      // A new message (K6) is named by the contact it was confirmed with.
-      const r = await sql<{ state: string; told: Told[]; error: string | null; title: string; service: Service; label: string | null; fresh: boolean }>`
-        select o.state, o.told, o.error, coalesce(o.recipient, ${TITLE}) as title, k.service, k.label, o.conversation_id is null as fresh
+      // A new message (K6) is named by the contact it was confirmed with, and its draft kept with them.
+      const r = await sql<{ state: string; told: Told[]; error: string | null; title: string; service: Service; label: string | null; nowhere: boolean }>`
+        select o.state, o.told, o.error, coalesce(o.recipient, ${TITLE}) as title, k.service, k.label, o.conversation_id is null and o.contact_id is null as nowhere
         from messaging_outbound o left join messaging_conversations v on v.id = o.conversation_id
         join messaging_connections k on k.id = o.connection_id where o.id = ${id} and o.user_id = ${userId}`.execute(d.db);
       const o = r.rows[0];
@@ -1231,8 +1274,8 @@ export function createMessaging(d: {
       const key = o.state === 'sent' ? 'C3' : o.state === 'failed' ? 'C4' : o.state === 'uncertain' ? 'C6' : o.state === 'bounced' ? 'C13' : last === 'C5' ? 'C5' : null;
       // "Slow" says what the service has not done yet: confirmed it, accepted it (a mail server), sent it (the phone), shown it (another app).
       const sent = CAPABILITIES[o.service].sent;
-      // Not sent, and nowhere to keep a draft (a new message): C4 without the draft.
-      const variant = key === 'C5' && sent !== 'service' ? `C5.${sent}` : key === 'C4' && o.fresh ? 'C4.noDraft' : key;
+      // Not sent, and nowhere to keep a draft (neither a conversation nor a contact): C4 without the draft.
+      const variant = key === 'C5' && sent !== 'service' ? `C5.${sent}` : key === 'C4' && o.nowhere ? 'C4.noDraft' : key;
       return { state: o.state, told: o.told, say: variant ? t(L, `messages.${variant}`, params, p.form) : null };
     },
 
@@ -1300,6 +1343,7 @@ export function createMessaging(d: {
         await told(o.id, 'C4');
       }
       await sql`update messaging_conversations set draft = null, draft_at = null where draft_at < ${new Date(d.clock() - DRAFT_MS)}`.execute(d.db);
+      await sql`delete from messaging_contact_drafts where saved_at < ${new Date(d.clock() - DRAFT_MS)}`.execute(d.db);
       await sql`delete from messaging_outbound where state in ('sent', 'failed', 'uncertain', 'bounced') and updated_at < ${new Date(d.clock() - 30 * 86_400_000)}`.execute(d.db);
       await d.files.sweep(d.db, 'message_media');
     },

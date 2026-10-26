@@ -106,8 +106,11 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
     args: {},
     async run(ctx) {
       const list = await messaging(ctx).overview(ctx.userId, 10);
+      // New messages not sent, kept with their contacts (K6): the person's own words, for a day.
+      const drafts = await messaging(ctx).contactDrafts(ctx.userId, ctx.lang);
       return {
         data: {
+          ...(drafts.length ? { draftsToContacts: drafts } : {}),
           conversations: list.map((c) => ({
             ref: `chat:${c.id}`,
             name: c.name,
@@ -197,10 +200,14 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
       service: nullableStr('The service, when the person named one ("auf WhatsApp", "per SMS", "per E-Mail"); else null.'),
       subject: nullableStr("An email's subject: for a new email (UCAP answers subject_missing), a short one you propose from the message; in a thread only when the person wants their own, else null for the thread's (\"Re: …\")."),
       address: nullableStr('Which of the contact\'s numbers or addresses, when UCAP asked (address_ambiguous): as UCAP named it ("Handy"); else null.'),
+      draft: nullableStr('Only after UCAP answered draft_exists: "send" sends the words kept from before instead, "replace" sends this text and drops them; else null.'),
     },
     async prepare(ctx, args) {
       const r = await conversationOf(ctx, args.chat, { forSending: true, service: args.service, address: args.address });
-      const text = cleanText(typeof args.text === 'string' ? args.text : '');
+      // Words not sent to this contact before are kept with them (K6): offered before anything new goes out.
+      const kept = r.to ? await messaging(ctx).contactDraft(ctx.userId, r.to.contactId, r.service) : null;
+      const text = cleanText(kept && args.draft === 'send' ? kept : typeof args.text === 'string' ? args.text : '');
+      if (kept && text !== kept && args.draft !== 'replace') throw new ToolError(`draft_exists: ${kept}`);
       if (!text) throw new ToolError('text_missing');
       if (text.length > MAX_TEXT) throw new ToolError('text_too_long');
       const written = typeof args.subject === 'string' ? args.subject : null;
@@ -210,7 +217,7 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
       const ask = tr(ctx, C1[r.service] ?? 'messages.C1', { recipient: r.name, service: serviceName(r.service, r.label), text, subject: subject ?? '' });
       // Someone renamed "Maria (Tochter)" is still not Maria: a stranger's chat is named as such (Appendix E).
       const confirm = r.contact === false ? `${tr(ctx, 'messages.C1.notContact', { name: r.name })} ${ask}` : ask;
-      const to = r.to ? { connectionId: r.to.connectionId, to: r.to.address } : {};
+      const to = r.to ? { connectionId: r.to.connectionId, to: r.to.address, contactId: r.to.contactId } : {};
       return { args: { conversationId: r.conversationId, ...to, recipient: r.name, text, service: r.service, ...(subject ? { subject } : {}) }, confirm };
     },
     async run(ctx, args) {
@@ -221,7 +228,7 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
         deviceId: ctx.deviceId,
         actionId: ctx.actionId ?? null,
         conversationId,
-        to: typeof args.to === 'string' ? { connectionId: String(args.connectionId), address: args.to, recipient: String(args.recipient) } : null,
+        to: typeof args.to === 'string' ? { connectionId: String(args.connectionId), address: args.to, recipient: String(args.recipient), contactId: typeof args.contactId === 'string' ? args.contactId : null } : null,
         text: String(args.text),
         subject: typeof args.subject === 'string' ? args.subject : null,
       });
@@ -230,9 +237,10 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
       return { say: tr(ctx, out === 'attempting' ? 'messages.C2' : waiting), ...(conversationId ? { focus: { chat: { id: conversationId, title: String(args.recipient) } } } : {}) };
     },
     async cancelled(ctx, args, why) {
-      // A new message (K6) has no conversation to keep its draft in.
-      if (typeof args.conversationId !== 'string') return tr(ctx, why === 'silence' ? 'messages.C8.noDraft' : 'messages.C7.noDraft');
-      await ctx.messaging?.keepDraft(ctx.userId, args.conversationId, String(args.text));
+      // A new message (K6) is kept with its contact, a reply with its conversation.
+      if (typeof args.conversationId === 'string') await ctx.messaging?.keepDraft(ctx.userId, args.conversationId, String(args.text));
+      else if (typeof args.contactId === 'string') await ctx.messaging?.keepContactDraft(ctx.userId, args.contactId, String(args.service) as Service, String(args.text));
+      else return tr(ctx, why === 'silence' ? 'messages.C8.noDraft' : 'messages.C7.noDraft');
       return tr(ctx, why === 'silence' ? 'messages.C8' : 'messages.C7');
     },
   },

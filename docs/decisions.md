@@ -966,17 +966,25 @@ The plan: [plan-m3.md](plan-m3.md).
     Antwort, deshalb habe ich nichts gesendet." Appendix F's C4, C7 and C8 end with "Der Entwurf ist gespeichert.",
     which is kept for replies; a new message has no conversation to keep its draft in. The other choice: a draft per
     contact and service, offered when the person writes to them again.
+    - **The owner chose the other choice, 2026-10-25** ("Keep a draft with the contact"). Built: a new message that was
+      not sent (declined, unanswered, refused, waited too long) is kept with its contact for the service it was meant
+      for, for a day, and C4, C7 and C8 say "Der Entwurf ist gespeichert." as for replies. It is in the model's overview
+      ("draftsToContacts"); when the person writes to that contact on that service again, UCAP names the kept words
+      first ("draft_exists"), and the model asks whether to send those or the new message. Sending to them clears it.
+      Replies' drafts are as before (kept with their conversation, in the overview).
 
 14. **A call from the contacts page is placed at the press**, without a question first: the page is for screen readers
     and keyboards, and its button names whom and which number ("Physiotherapie anrufen (Praxis)"). plan-m3.md, K6:
     "„Ruf Anna an": … asked first („Anna anrufen, Handy?")", said of the voice command; the areas ask first as the
     voice does. The other choice: the page asks too.
+    - **Confirmed by the owner, 2026-10-25:** the page's button calls straight away.
 15. **The device editor sets what a home area opens** (Nachrichten, Notizen, Kontakte, Assistent), so the contacts screen
     in areas can be put on the home screen. K7 names this for its screens ("the device editor offers them as areas
     for the home screen"); M1's editor changed an area's look and place only (decision 4 above: adding and removing
     areas come with M4). The task's own words and its kind's colour come with it, the person's words for the old task
     go; it is said as "Maria hat aus dem Feld „Notizen“ das Feld „Kontakte“ gemacht." A screen the app draws itself
     is no longer warned about when no area leads to it. The other choice: the contacts screen waits for K7's editor.
+    - **Confirmed by the owner, 2026-10-25:** kept; K7 adds Termine and Aufgaben to the same choice.
 
 ### Decided (within the plan)
 
