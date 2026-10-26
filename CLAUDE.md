@@ -179,6 +179,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   takes the press (`check()` hits the hidden input): `setChoice`/`choose`. Moving the servers' clock moves the messaging
   stand-in too (a message stamped with the real time looks hours old and is not announced). Enter on the twelfth
   recovery word submits the words. Speech in a server voice is in the debug record as the device voice's is.
+  There every utterance ends by its stall cut, which counts as cut short: LIVE waits behind each one (allow a minute
+  or more), and of news in several parts says only the first (M2: the rest of what was cut is not said). Read the
+  whole answer from the server's response (`page.waitForResponse`).
 - TalkBack gestures on the emulator: `adb emu event mouse <x> <y> 0 1|0` (screen pixels) is a real finger to TalkBack;
   a double tap needs both taps on one console connection (`tools/android/finger.ts`): separate `adb emu` calls are too
   slow. `sendevent` is refused on this image. TalkBack's speech is not in the log.

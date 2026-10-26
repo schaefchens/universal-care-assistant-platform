@@ -1,10 +1,11 @@
 /**
  * LIVE mode's settings (docs/plan-m2.md, L1): on or off, how long the conversation may be quiet before the keyword is
- * needed again, quiet times, what UCAP says by itself; part of the device configuration, so helpers with
- * device.configure change them too (the owner's decision). On the person's own page also the assistant's name, which
- * is the keyword, or a keyword of their own (CONCEPT §19: "might have a key word to unlock").
+ * needed again, quiet times, what UCAP says by itself, per service (docs/plan-m3.md, K8); part of the device
+ * configuration, so helpers with device.configure change them too (the owner's decision). On the person's own page also
+ * the assistant's name, which is the keyword, or a keyword of their own (CONCEPT §19: "might have a key word to
+ * unlock").
  */
-import { type DeviceConfig, type LiveConfig, liveOf } from '@ucap/shared';
+import { type DeviceConfig, LIVE_SERVICES, type LiveConfig, liveOf } from '@ucap/shared';
 import { type FormEvent, useEffect, useState } from 'react';
 import { Button, Checkbox, Form, Input, Label, Slider, SliderOutput, SliderThumb, SliderTrack, Switch, Text, TextField } from 'react-aria-components';
 import { useUi } from '../ui.tsx';
@@ -97,9 +98,23 @@ export function LiveSettings(p: {
         <Checkbox className="choice-option checkbox" isSelected={live.say.messages} onChange={(messages) => set({ say: { ...live.say, messages } })}>
           {tr('live.say.messages')}
         </Checkbox>
-        <Checkbox className="choice-option checkbox" isSelected={live.say.reminders} onChange={(reminders) => set({ say: { ...live.say, reminders } })}>
-          {tr('live.say.reminders')}
-        </Checkbox>
+        {/* Per service (docs/plan-m3.md, K8): every service is offered, so a helper's page shows nothing of which
+            the person uses. */}
+        <div className="stack choice-group" role="group" aria-label={tr('live.say.services')}>
+          {LIVE_SERVICES.map((s) => (
+            <Checkbox
+              key={s}
+              className="choice-option checkbox"
+              isDisabled={!live.say.messages}
+              isSelected={live.say.services?.[s] !== false}
+              onChange={(on) => set({ say: { ...live.say, services: { ...live.say.services, [s]: on } } })}
+            >
+              {tr(`live.say.service.${s}`)}
+            </Checkbox>
+          ))}
+        </div>
+        <p className="muted">{tr('live.say.always')}</p>
+        <p className="muted">{tr('live.say.asked')}</p>
       </div>
       <QuietTimes value={live.quietTimes} onChange={(quietTimes) => set({ quietTimes })} />
       <p role="status" className="status">

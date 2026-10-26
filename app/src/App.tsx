@@ -8,7 +8,7 @@
  * another device, goes back to onboarding and says why.
  */
 import { App as CapApp } from '@capacitor/app';
-import { type DeviceConfig, isLang, liveOf } from '@ucap/shared';
+import { type DeviceConfig, isLang, liveOf, liveSkips } from '@ucap/shared';
 import type { Intent } from '@ucap/speech-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChoiceGrid } from './areas/ChoiceGrid.tsx';
@@ -81,7 +81,7 @@ import { VoiceController, type VoiceState } from './voice/controller.ts';
 import { LiveController, type LiveState } from './voice/live.ts';
 import { nativeLiveCapture } from './voice/live-native.ts';
 import { webLiveCapture } from './voice/live-web.ts';
-import { inQuietTime, NewsAnnouncer } from './voice/news.ts';
+import { inQuietTime, NewsAnnouncer, saysByItself } from './voice/news.ts';
 import { micInput } from './voice/mic.ts';
 import { currentVoice } from './voice/screen.ts';
 import { VoiceContext } from './voice/TalkButton.tsx';
@@ -473,7 +473,16 @@ export function App() {
     fetch: async (asked) => {
       const s = sessionRef.current;
       if (!s) return [];
-      return (await s.call<{ segments: { kind: 'original' | 'summary' | 'system'; text: string; source?: { message: string } }[] }>('/api/v1/assistant/live/news', { method: 'POST', body: { asked, lang: uiRef.current.lang } })).segments;
+      // By itself, not the services this device leaves to the person (K8); asked, everything. The model's summaries may
+      // take the server up to 25 s (a model still loading): longer than a call's usual 15 s.
+      const skip = asked ? [] : liveSkips(liveOf(configRef.current));
+      return (
+        await s.call<{ segments: { kind: 'original' | 'summary' | 'system'; text: string; source?: { message: string } }[] }>('/api/v1/assistant/live/news', {
+          method: 'POST',
+          body: { asked, lang: uiRef.current.lang, ...(skip.length ? { skip } : {}) },
+          signal: AbortSignal.timeout(45_000),
+        })
+      ).segments;
     },
     say: async (seg) => {
       const u = uiRef.current;
@@ -974,7 +983,8 @@ export function App() {
       // a quiet time or with messages not to be said, nothing (CONCEPT §19: "its live until disabled/paused").
       if (liveRef.current?.listening) {
         const news = newsRef.current!;
-        if (!news.allowed()) return;
+        // Nor what LIVE leaves for when the person asks (K8): a stranger's email, a service set so on this device.
+        if (!news.allowed() || !saysByItself(liveOf(configRef.current), data)) return;
         u.earcons.play('message');
         return news.arrived();
       }

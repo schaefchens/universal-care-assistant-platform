@@ -51,6 +51,8 @@ const QUEUED_MS = 24 * 3_600_000;
 const DRAFT_MS = 24 * 3_600_000;
 /** A new message older than this (fetched after a restart) is not announced. */
 const FRESH_MS = 15 * 60_000;
+/** LIVE's news reach back this far (docs/plan-m2.md, L4). */
+const NEWS_MS = 24 * 3_600_000;
 const TELEGRAM_SETTINGS = 'telegram_api';
 const WHATSAPP_POLICY = 'whatsapp_policy';
 /** The states in which a server-side connection runs, or should: started again when its process comes back. */
@@ -115,6 +117,10 @@ export interface Item {
   quoted: string | null;
   /** The person's own message is on the other side's phone (a delivery report). */
   delivered: boolean;
+  /** It carries a one-time code (K8): never said by itself. */
+  code: boolean;
+  /** Who sent it is in the person's contacts, or known to the service (the stranger warning's rule, Appendix E). */
+  known: boolean;
 }
 
 interface ConnRow {
@@ -519,10 +525,20 @@ export function createMessaging(d: {
         const up = await store.upsertMessage(c.id, e.msg, e.live ? {} : { history: c.created_at });
         if (up.inserted && e.msg.kind === 'voice') await requestDownload(c, up.id, e.msg.file);
         if (up.inserted && e.live) {
-          const v = await sql<{ kind: string; muted: boolean }>`select kind, muted from messaging_conversations where id = ${up.conversationId}`.execute(d.db);
+          const v = await sql<{ kind: string; muted: boolean; known: boolean | null }>`
+            select v.kind, v.muted, (select p.contact_id is not null or p.is_contact from messaging_people p where p.connection_id = ${c.id} and p.external_id = ${e.msg.fromId}) as known
+            from messaging_conversations v where v.id = ${up.conversationId}`.execute(d.db);
           const fresh = !e.msg.outgoing && v.rows[0]?.kind !== 'channel' && d.clock() - e.msg.date * 1000 < FRESH_MS;
-          // Muted chats are shown but not announced (Appendix F).
-          await notify(c.user_id, 'messaging.message', { conversationId: up.conversationId, messageId: up.id, incoming: !e.msg.outgoing, announce: fresh && !v.rows[0]?.muted });
+          // Muted chats are shown but not announced (Appendix F). LIVE says by itself only email from someone the person
+          // knows (K8: "Emails: from contacts"); the device leaves out the services it is set to.
+          await notify(c.user_id, 'messaging.message', {
+            conversationId: up.conversationId,
+            messageId: up.id,
+            incoming: !e.msg.outgoing,
+            announce: fresh && !v.rows[0]?.muted,
+            service: c.service,
+            ...(c.service === 'email' && v.rows[0]?.known !== true ? { liveQuiet: true } : {}),
+          });
         } else if (up.changed) await notify(c.user_id, 'messaging.message', { conversationId: up.conversationId, messageId: up.id, changed: true });
         return;
       }
@@ -582,9 +598,12 @@ export function createMessaging(d: {
       heard_at: Date | null;
       service: Service;
       label: string | null;
+      one_time_code: boolean;
+      known: boolean;
     }>`
       select m.id, m.conversation_id, v.connection_id, ${TITLE} as title, v.kind as ckind, m.sender_external_id, coalesce(p.contact_name, p.name) as sender_name, m.direction, m.sent_at,
-        m.kind, m.text, m.file_name, m.subject, m.quoted, m.delivered_at, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label
+        m.kind, m.text, m.file_name, m.subject, m.quoted, m.delivered_at, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label,
+        m.one_time_code, (p.contact_id is not null or coalesce(p.is_contact, false)) as known
       from messaging_messages m
       join messaging_conversations v on v.id = m.conversation_id
       join messaging_connections k on k.id = v.connection_id
@@ -614,6 +633,8 @@ export function createMessaging(d: {
       subject: x.subject,
       quoted: x.quoted,
       delivered: x.direction === 'out' && x.delivered_at !== null,
+      code: x.one_time_code,
+      known: x.known,
     }));
   }
 
@@ -955,17 +976,36 @@ export function createMessaging(d: {
     },
 
     /**
-     * LIVE mode's news (docs/plan-m2.md, L4): incoming messages of the last day not read or heard yet, in
-     * conversations neither muted nor channels, oldest first; those announced already only when asked for.
+     * LIVE mode's news (docs/plan-m2.md, L4; docs/plan-m3.md, K8): incoming messages of the last day not read or heard
+     * yet, in conversations neither muted nor channels, oldest first. By itself: those not announced yet, not on a
+     * service the device leaves to the person (`skip`), and an email only from someone the person knows ("Emails: from
+     * contacts"). Asked ("Was gibt's Neues?"): all of them, those announced already too.
      */
-    async pending(userId: string, o: { announced?: boolean; limit?: number } = {}): Promise<Item[]> {
-      const since = new Date(d.clock() - 24 * 3_600_000);
+    async pending(userId: string, o: { asked?: boolean; skip?: Service[]; limit?: number } = {}): Promise<Item[]> {
+      const since = new Date(d.clock() - NEWS_MS);
+      const byItself = o.asked
+        ? sql``
+        : sql`and m.live_announced_at is null ${o.skip?.length ? sql`and k.service <> all(${o.skip}::text[])` : sql``}
+            and (k.service <> 'email' or p.contact_id is not null or coalesce(p.is_contact, false))`;
       return items(
         userId,
-        sql`m.direction = 'in' and m.read_at is null and m.heard_at is null ${o.announced ? sql`` : sql`and m.live_announced_at is null`} and v.kind <> 'channel' and not v.muted and m.sent_at > ${since}`,
+        sql`m.direction = 'in' and m.read_at is null and m.heard_at is null and v.kind <> 'channel' and not v.muted and m.sent_at > ${since} ${byItself}`,
         sql`m.sent_at, m.sort_key`,
         o.limit ?? 30,
       );
+    },
+
+    /**
+     * What LIVE counts when asked (K8: "Lists and newsletters are never said by themselves, only counted when asked"):
+     * the new messages of the last day from email lists and newsletters, and in the person's muted chats.
+     */
+    async quietCounts(userId: string): Promise<{ lists: number; muted: number }> {
+      const since = new Date(d.clock() - NEWS_MS);
+      const r = await sql<{ lists: number; muted: number }>`
+        select count(*) filter (where k.service = 'email')::int as lists, count(*) filter (where k.service <> 'email')::int as muted
+        from messaging_messages m join messaging_conversations v on v.id = m.conversation_id join messaging_connections k on k.id = v.connection_id
+        where k.user_id = ${userId} and m.direction = 'in' and m.read_at is null and m.heard_at is null and v.kind <> 'channel' and v.muted and m.sent_at > ${since}`.execute(d.db);
+      return r.rows[0] ?? { lists: 0, muted: 0 };
     },
 
     /** Announced by LIVE mode: never again by itself. */

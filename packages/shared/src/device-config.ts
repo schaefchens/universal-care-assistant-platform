@@ -107,6 +107,10 @@ export type VisualConfig = Type.Static<typeof VisualConfig>;
 
 const TimeOfDay = Type.String({ pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' });
 
+/** The messaging services LIVE mode names by itself, each switched on its own (docs/plan-m3.md, K8). */
+export const LIVE_SERVICES = ['telegram', 'whatsapp', 'email', 'sms', 'notifications'] as const;
+export type LiveService = (typeof LIVE_SERVICES)[number];
+
 /**
  * LIVE mode (docs/plan-m2.md; CONCEPT §19: "a toggleble continous assistance mode"): the microphone stays open and
  * UCAP speaks by itself. Switched on and off by the person, and directly by helpers with device.configure (the
@@ -118,12 +122,36 @@ export const LiveConfig = Type.Object({
   quietS: Type.Integer({ minimum: 10, maximum: 1800 }),
   /** When UCAP says nothing by itself, from–to (across midnight too); help requests and reminders marked so excepted. */
   quietTimes: Type.Array(Type.Object({ from: TimeOfDay, to: TimeOfDay }), { maxItems: 4 }),
-  /** What UCAP says by itself (CONCEPT §19's examples: new messages, and reminders at their time); help requests always. */
-  say: Type.Object({ messages: Type.Boolean(), reminders: Type.Boolean() }),
+  /**
+   * What UCAP says by itself (CONCEPT §19's examples: new messages, and reminders at their time); help requests always.
+   * `reminders` stays for the versions that have it: reminders and appointments are M1's and always come at their time,
+   * so the settings no longer offer it (K8). `services`: false, that service's new messages are not said by themselves
+   * ("Was gibt's Neues?" still says them); a service not named is said (docs/plan-m3.md, K8: "what LIVE says by itself,
+   * per service").
+   */
+  say: Type.Object({
+    messages: Type.Boolean(),
+    reminders: Type.Boolean(),
+    services: Type.Optional(
+      Type.Object(
+        {
+          telegram: Type.Optional(Type.Boolean()),
+          whatsapp: Type.Optional(Type.Boolean()),
+          email: Type.Optional(Type.Boolean()),
+          sms: Type.Optional(Type.Boolean()),
+          notifications: Type.Optional(Type.Boolean()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  }),
 });
 export type LiveConfig = Type.Static<typeof LiveConfig>;
 
 export const DEFAULT_LIVE: LiveConfig = { enabled: false, quietS: 180, quietTimes: [], say: { messages: true, reminders: true } };
+
+/** The services whose new messages LIVE leaves to the person: not said by themselves (K8). */
+export const liveSkips = (l: LiveConfig): LiveService[] => LIVE_SERVICES.filter((s) => l.say.services?.[s] === false);
 
 export const DeviceConfig = Type.Object({
   v: Type.Literal(1),

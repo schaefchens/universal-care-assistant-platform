@@ -985,6 +985,23 @@ The plan: [plan-m3.md](plan-m3.md).
     go; it is said as "Maria hat aus dem Feld „Notizen“ das Feld „Kontakte“ gemacht." A screen the app draws itself
     is no longer warned about when no area leads to it. The other choice: the contacts screen waits for K7's editor.
     - **Confirmed by the owner, 2026-10-25:** kept; K7 adds Termine and Aufgaben to the same choice.
+16. **LIVE says an email by itself only when it comes from someone the person knows**; one from anyone else waits until
+    they ask ("Was gibt's Neues?"). plan-m3.md, K8: "Emails: from contacts, summed up with their subject."
+    - Built: "contacts" as the stranger warning has them: someone in the person's contacts, or someone they wrote to in
+      the last year (the email connector's rule, item 5).
+    - With LIVE off, M1's announcement is unchanged ("Neue Nachricht von … per E-Mail."), so with LIVE on the person
+      hears less of such mail.
+    - The other choice: LIVE names such a mail by itself without summing it up ("E-Mail von Shop Beispiel, Betreff
+      „Bestellung 4711“.").
+17. **A one-time code is named by who sent it, never read out by LIVE**: "Amazon hat per SMS einen Code geschickt. Codes
+    lese ich nur vor, wenn du darum bittest." That holds by itself and when asked; the code itself is read only when
+    the person asks for that message (the assistant, the messages screen). plan-m3.md, K8: "One-time codes are never
+    said by themselves." The other choice: nothing of it at all by itself, not even the earcon; only when asked.
+18. **LIVE's "Erinnerungen zu ihrer Zeit" switch is gone from its settings.** It never changed anything: reminders and
+    appointments are M1's, and they come at their time with LIVE on or off (M2's "Reminders keep their time in quiet
+    times"). The settings now say so ("Erinnerungen und Termine sage ich immer zu ihrer Zeit."), and the switches are
+    per service (K8: "what LIVE says by itself, per service"). The configuration keeps the field for the versions that
+    have it. The other choice: a switch that, in LIVE mode, leaves a reminder to its alarm without its words.
 
 ### Decided (within the plan)
 
@@ -1257,6 +1274,42 @@ The plan: [plan-m3.md](plan-m3.md).
   than the 15 s limit under memory pressure ("Der Assistent ist gerade nicht erreichbar.").
 - **An empty reply from the model is asked again**, as a tool's error is (one round of the turn's four), instead of
   ending the turn in "Das hat nicht geklappt.": the model sometimes answered `{"calls": [], "help": false, "say": []}`.
+- **LIVE says each service's news as M2 says Telegram's** (K8), with the service once the person has more than one.
+  - A summary gets where it came from before it: "Auf WhatsApp: Anna fragt, …", "In „Familie“ auf WhatsApp: …". The
+    model's sentence begins with who wrote, so UCAP says the rest; M2 named neither the group nor the service there.
+  - A sender named as its service is not followed by it again: "Telegram hat einen Code geschickt."
+- **An email is said by who sent it and its subject, then summed up**: "E-Mail von Anna, Betreff „Besuch am Samstag“."
+  "Anna fragt, ob …". A short one is summed up too: what a mail says sits between a greeting and a signature.
+  - Its subject goes to the model with its words.
+  - Without a sentence from the model, only who and the subject are said.
+  - Summed up is not heard: the mail stays unread on the server until its original is.
+- **A one-time code is a mark on the message** (`one_time_code`; plan-m3.md, Data: "a mark for one-time codes"), set
+  as the message is stored, from its words and an email's subject.
+  - The rule: a code word ("Code", "TAN", "PIN", "OTP", "Passwort", "password" …) within 80 characters of a code (four
+    to eight digits, also in two groups, or capitals with at least two digits).
+  - Not a QR code, a voucher, an error code or a postcode, nor a date, a time, a price or part of a phone number. A
+    door code from a friend counts too, and is as private.
+  - Messages stored before K8 carry no mark; LIVE's news reach back a day.
+  - A code never goes to the summary model; the rest of what its sender wrote is said as ever.
+- **Lists and newsletters are counted when asked** ("Von Newslettern und Verteilern: 2 neue E-Mails."), and so are the
+  person's muted chats ("In stummgeschalteten Unterhaltungen: …"). Both are shown and never announced (K3, Appendix F),
+  and "Was gibt's Neues?" covers everything; never what they say.
+- **A preview says it is one**: "Vorschau von Signal: Anna Beispiel schrieb: „…“", without "auf Signal", as the
+  messages screen frames previews (K1).
+- **"Was gibt's Neues?" names the open tasks due today** after the messages ("Heute zu erledigen: Rezept abholen und
+  Blumen gießen."), not those of other days; with no message, "Keine neuen Nachrichten." comes first. Appointments are
+  said at their reminder (K7's reminders, in LIVE mode with the time first), not in the news.
+- **What LIVE says by itself is set per service and per device** (`live.say.services` in the device configuration,
+  under "Neue Nachrichten"): Telegram, WhatsApp, email from contacts, SMS, and previews.
+  - Every service is offered on every page, so a helper with "Bedienung der Geräte einstellen" learns nothing of which
+    ones the person uses.
+  - A service left to the person brings neither the earcon nor an announcement; "Was gibt's Neues?" still covers it.
+  - The new-message event names its service, and marks a mail LIVE keeps until the person asks (`liveQuiet`).
+- **LIVE's news wait at most 25 s for the model's summaries, all of them together**; after that, who wrote and how much
+  (for an email, who and its subject) are said instead. The device waits 45 s for its news, where other calls wait
+  15 s, and a device that gave up marks nothing as announced, so the news comes again (found on the emulator, below).
+- **A summary speaks to the person and never names them.** The prompt names the pronouns, with an example: "ob ihr
+  euch seht"; for "Sie", "fragt, ob Sie Zeit haben"; in English, "asks whether you are free". Measured below.
 
 ### Measured
 
@@ -1523,3 +1576,55 @@ The plan: [plan-m3.md](plan-m3.md).
   tries (2 of 5 with the time near the top again: the order makes it likelier, not the cause). With the empty reply
   asked again it passed 5 of 6, and the full evaluation gave 72 of 74, median 4.0 s; the walk 22 of 22. The two left:
   12 × 13 wrong, and a reminder for Petra's visit at 15:00 set for 14:00, an hour before (the case now takes either).
+- **K8, the judgement tests (2026-10-26)** with a scripted model (`server/test/live-news.test.ts`): every service with
+  its name, a preview as one, three conversations at a time; an email from someone known by who and its subject, then
+  summed up, the subject given to the model; one from anyone else, lists and muted chats only when asked, counted; a
+  code never said and never given to the model; a group and its service before a summary; a slow model and a device
+  that gave up; the services a device leaves to the person; "Was gibt's Neues?" with today's tasks, in German and
+  English. The code rule (`server/test/codes.test.ts`): 15 codes worded as services send them found, 12 look-alikes not.
+- **K8, the browser walk (2026-10-26):** 23 of 23, with a new step L2.
+  - By itself: Anna's WhatsApp message word for word with its service; a code by SMS named, never read.
+  - Not by itself, and no "Neue Nachricht" either: a newsletter, Maria's mail from an address Clara has not saved, and
+    WhatsApp once Clara left it to herself on her settings page.
+  - "Was gibt's Neues?": the server's answer held all of it (the code named, Maria's mail by who and subject and then
+    summed up, Anna's WhatsApp, the newsletter counted, today's task last), and its first part was said.
+  - Found: in the walk's browser every utterance ends by its stall cut, which counts as cut short, so LIVE waited
+    behind each one and said only the first part of news in several parts (M2's rule). The step reads the whole answer
+    from the server's response (CLAUDE.md).
+- **K8 on the emulator (2026-10-26)**, Wanda in LIVE mode, the real model (qwen3.6). The dev stack's WhatsApp process
+  was stopped for the run, so no real WhatsApp message was said or marked read. UCAP was the SMS app for the run.
+  - An SMS: "555-1234 schrieb per SMS: „Bist du wach?“", 4.4 s after it arrived.
+  - A code by SMS: "22000 hat per SMS einen Code geschickt. Codes lese ich nur vor, wenn du darum bittest." The code
+    was in nothing said; the message was marked as a code and stayed unread.
+  - Mails put into Wanda's test mailbox (IMAP APPEND). From the other test mailbox, whom Wanda wrote to: "E-Mail von
+    Anna Tester, Betreff „…“.", then the model's summary. A newsletter (List-Id) and a stranger's mail: nothing, not
+    even the earcon.
+  - Email switched off for LIVE on the device's settings page: a known sender's mail was not said and stayed new;
+    switched on again, it came with the next one.
+  - axe on the settings page with the new section: nothing at any impact.
+  - **Found and fixed: news lost when the model was slow.** The first mail's summary failed at the model's 15 s idle
+    limit (the model was loading). The server answered 23 ms after the app's 15 s limit for any call, and had already
+    marked the mail announced, so it was never said. Now the summaries have their budget, the app waits 45 s for news,
+    and nothing is announced for a device that gave up.
+  - **Found and fixed: the summary named the person in the third person** ("Anna Tester fragt, ob Wanda Test am
+    Samstag um drei Zeit … hat").
+    - On the dev model, two runs each of four messages: with "Sprich … mit „du“ an", the mail named her both times,
+      and a chat said "ob sie sich … sehen" both times.
+    - With the pronouns and an example: "ob du … Zeit hast" and "ob ihr euch … seht" every time. A practice's formal
+      mail kept its "Ihres Termins" in 3 of 4.
+    - A rule "auch wenn die Nachricht „Sie“ sagt" bent that mail's meaning, and was left out.
+    - For "Sie", with "fragt, ob Sie Zeit haben", every summary addressed the person. In English, "asks whether you are
+      free" did the same, where a rule alone did not.
+    - On the emulator after it: "Anna Tester fragt, ob du am Samstag um drei Zeit für einen Kaffee hast …".
+  - Not checked on the emulator:
+    - "Was gibt's Neues?": it covers everything, so it would have said Wanda's eleven unread real WhatsApp messages of
+      the day. The walk and the tests cover it.
+    - WhatsApp and Telegram by themselves: the stand-ins in the walk.
+    - Previews, which come with K5.
+    - An appointment at its reminder, seen in K7's run ("Es ist 13:16 Uhr. Erinnerung: Friseurtermin. …").
+  - Afterwards:
+    - The test mails were deleted from the mailbox; UCAP keeps its copies for their days.
+    - The SMS role went back to Google Messages, and Wanda's SMS connection is "off".
+    - The host microphone is on again, and the storage threshold removed.
+    - The WhatsApp process was started again, and Wanda's WhatsApp is ready.
+    - The emulator was shut down, as it was found.

@@ -3,8 +3,9 @@
  * said together; never while someone talks; nothing when it may not speak; originals reported heard only when said
  * to their end.
  */
+import { DEFAULT_LIVE } from '@ucap/shared';
 import { describe, expect, it } from 'vitest';
-import { GATHER_MS, inQuietTime, NewsAnnouncer, type NewsSegment } from '../src/voice/news.ts';
+import { GATHER_MS, inQuietTime, NewsAnnouncer, type NewsSegment, saysByItself } from '../src/voice/news.ts';
 
 const at = (hh: number, mm: number) => new Date(2026, 9, 15, hh, mm);
 
@@ -65,6 +66,19 @@ function setup(o: { allowed?: () => boolean; free?: () => boolean; cut?: number 
   };
   return { a, fetched, said, heard, advance };
 }
+
+describe('what LIVE says by itself (docs/plan-m3.md, K8)', () => {
+  it('every service unless the device leaves it to the person; never what the server keeps for when they ask', () => {
+    expect(saysByItself(DEFAULT_LIVE, { service: 'whatsapp' })).toBe(true);
+    expect(saysByItself(DEFAULT_LIVE, { service: 'email', liveQuiet: true })).toBe(false);
+    const live = { ...DEFAULT_LIVE, say: { ...DEFAULT_LIVE.say, services: { whatsapp: false, sms: true } } };
+    expect(saysByItself(live, { service: 'whatsapp' })).toBe(false);
+    expect(saysByItself(live, { service: 'sms' })).toBe(true);
+    expect(saysByItself(live, { service: 'telegram' })).toBe(true);
+    // An event from before K8 names no service: said, as before.
+    expect(saysByItself(live, {})).toBe(true);
+  });
+});
 
 describe('announcing what came in', () => {
   it('waits a moment so several come together, then says them and reports the original heard', async () => {

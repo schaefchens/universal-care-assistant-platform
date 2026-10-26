@@ -35,6 +35,10 @@ describe('what a reminder says', () => {
     const dentist = { time: '10:00', place: 'Praxis Weber', before: 60 };
     expect(question(de(), { ...occ({ title: 'Zahnarzt', category: 'appointment', appointment: dentist }), prompts: 1 })).toBe('Erinnerung: Zahnarzt. Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber.');
     expect(promptOf(en, occ({ title: 'Dentist', category: 'appointment', appointment: { ...dentist, before: 1440 } }))).toBe('The appointment is tomorrow at 10:00, Praxis Weber.');
+    // In LIVE mode an appointment is said at its reminder, the time first (K8; CONCEPT §19: "Its 8 o clock, …").
+    expect(question(de(), { ...occ({ title: 'Zahnarzt', category: 'appointment', appointment: dentist }), prompts: 1 }, new Date(2026, 9, 27, 9, 0))).toBe(
+      'Es ist 09:00 Uhr. Erinnerung: Zahnarzt. Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber.',
+    );
   });
 
   it('says what was recorded, and whether it has left the device', () => {

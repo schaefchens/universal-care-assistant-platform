@@ -5,7 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import { checkConfig, depths, protectConfig, warningKey } from '../src/config-rules.ts';
 import { describeChange } from '../src/config-diff.ts';
-import { DEFAULT_DEVICE_CONFIG, type DeviceConfig, liveOf } from '../src/device-config.ts';
+import { Value } from 'typebox/value';
+import { DEFAULT_DEVICE_CONFIG, DeviceConfig, liveOf, liveSkips } from '../src/device-config.ts';
 
 const base = (): DeviceConfig => structuredClone(DEFAULT_DEVICE_CONFIG);
 const home = (c: DeviceConfig) => c.screens[c.home]!;
@@ -145,6 +146,22 @@ describe('a change as the person hears it', () => {
     const old = structuredClone(DEFAULT_DEVICE_CONFIG);
     delete old.live;
     expect(say(old, DEFAULT_DEVICE_CONFIG)).toEqual([]);
+  });
+
+  it('K8: what LIVE says by itself, per service; a service not named is said, and a version without them says all', () => {
+    const on = structuredClone(DEFAULT_DEVICE_CONFIG);
+    on.live = { ...liveOf(on), enabled: true };
+    expect(Value.Check(DeviceConfig, on)).toBe(true);
+    expect(liveSkips(liveOf(on))).toEqual([]);
+    const quiet = structuredClone(on);
+    quiet.live = { ...liveOf(on), say: { ...liveOf(on).say, services: { whatsapp: false, email: true, notifications: false } } };
+    expect(Value.Check(DeviceConfig, quiet)).toBe(true);
+    expect(liveSkips(liveOf(quiet))).toEqual(['whatsapp', 'notifications']);
+    expect(say(on, quiet)).toEqual(['Maria hat geändert, was ich von selbst sage.']);
+    // Only the services there are.
+    const other = structuredClone(on);
+    (other.live!.say as Record<string, unknown>).services = { signal: false };
+    expect(Value.Check(DeviceConfig, other)).toBe(false);
   });
 
   it('nothing changed says nothing; a description or a sound says the screen changed', () => {

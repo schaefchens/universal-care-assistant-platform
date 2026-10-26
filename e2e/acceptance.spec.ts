@@ -928,6 +928,94 @@ test('L · LIVE mode in a browser (docs/plan-m2.md): Maria switches it on for Cl
   engines.model = () => reply('In Ordnung.');
 });
 
+test('L2 · LIVE across services (docs/plan-m3.md, K8): what came in is said by itself with its service; a code named, never read; a newsletter, an email from someone Clara does not know and a service she leaves to herself only when asked; "Was gibt’s Neues?" covers everything, today’s tasks too', async () => {
+  // LIVE speaks only when nothing else is being said, and the browser's speech here ends only when it is cut, after
+  // about twice its time (src/audio/speech.ts): each announcement may wait for the one before.
+  test.setTimeout(480_000);
+  const LIVE_WAIT = 90_000;
+  await home(clara);
+  // What earlier steps left unread is no news here: heard, so this step's are the only ones.
+  sql(`update messaging_messages set heard_at = now() where heard_at is null`);
+  // A task due today, on Clara's own page.
+  const today = new Date(await clocks.now()).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Aufgaben', exact: true }).click();
+  await clara.getByRole('button', { name: 'Aufgabe eintragen' }).click();
+  await clara.getByLabel('Was zu tun ist', { exact: true }).fill('Rezept abholen');
+  await clara.getByLabel('Fällig am', { exact: true }).fill(today);
+  await clara.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(clara.getByRole('heading', { name: 'Rezept abholen', exact: true })).toBeVisible();
+  await home(clara);
+  // LIVE on again, by Clara's voice (L ended with it off); a browser waits for a touch, not the name.
+  let from = await mark(clara);
+  await talk(clara, engines, 'LIVE an');
+  await said(clara, /^LIVE-Modus ist an\. Hier kann ich nicht auf meinen Namen warten/, from);
+  await expect(clara.locator('.voice-status').first()).toHaveText('LIVE: Berühre „Sprechen“');
+  // The model sums up what is to be summed up, beginning with who wrote (the summary's rule).
+  engines.model = (req) => {
+    const who = /zusammen, was (.+?) geschrieben hat/.exec(req.system)?.[1];
+    return who ? ({ text: `${who} schreibt etwas Neues.` } as unknown as ReturnType<Engines['model']>) : reply('In Ordnung.');
+  };
+
+  // Anna on WhatsApp: said by itself, word for word, with its service (Clara has more than one).
+  from = await mark(clara);
+  expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ service: 'whatsapp', chat: 'anna', text: 'Kommst du morgen zum Kaffee?' }) })).ok).toBe(true);
+  await said(clara, /^Anna schrieb auf WhatsApp: „Kommst du morgen zum Kaffee\?“$/, from, LIVE_WAIT);
+  // A code by SMS: who sent it, never the code.
+  from = await mark(clara);
+  await ph.receive({ number: '+4922000', name: 'Bank' }, 'Ihre mTAN lautet 482913. Geben Sie sie nicht weiter.', await clocks.now());
+  await said(clara, /^Bank hat per SMS einen Code geschickt\. Codes lese ich nur vor, wenn du darum bittest\.$/, from, LIVE_WAIT);
+
+  // Clara leaves WhatsApp to herself on this device, on her own settings page.
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  const live = clara.locator('section').filter({ has: clara.getByRole('heading', { name: 'LIVE-Modus', exact: true }) });
+  await setChoice(live.getByRole('checkbox', { name: 'WhatsApp', exact: true }), false);
+  await home(clara);
+  // Not by themselves: a newsletter, a mail from Maria's address (no contact of Clara's), and WhatsApp now.
+  from = await mark(clara);
+  for (const m of [
+    { service: 'email', chat: 'newsletter', text: 'Tipps für den Herbst: Laub als Mulch.' },
+    { service: 'email', chat: 'maria', text: 'Hallo, das ist meine neue Adresse.', subject: 'Neue Adresse' },
+    { service: 'whatsapp', chat: 'anna', text: 'Ich bringe Kuchen mit.' },
+  ])
+    expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify(m) })).ok).toBe(true);
+  await expect.poll(() => sql(`select count(*) from messaging_messages where text in ('Tipps für den Herbst: Laub als Mulch.', 'Hallo, das ist meine neue Adresse.', 'Ich bringe Kuchen mit.')`)).toBe('3');
+  // Longer than LIVE gathers news and waits for what is still being said: none of them, nor M1's "Neue Nachricht".
+  await new Promise((r) => setTimeout(r, 30_000));
+  expect((await spoken(clara)).slice(from).filter((t) => /Herbst|Adresse|Kuchen|Maria|Gartenfreunde|Neue Nachricht|E-Mail von/.test(t))).toEqual([]);
+
+  // "Was gibt's Neues?": a touch opens LIVE, and the answer covers everything, WhatsApp too, the newsletter counted, the
+  // task. This browser's speech ends only when it is cut, and LIVE says no more of news cut short (M2): its first part
+  // is heard here, the whole answer read from the server's response.
+  const answer = clara.waitForResponse((r) => r.url().endsWith('/api/v1/assistant/live/news') && (r.request().postDataJSON() as { asked?: boolean }).asked === true, { timeout: LIVE_WAIT });
+  engines.heard.push('Was gibt’s Neues?');
+  await clara.getByRole('button', { name: 'Sprechen', exact: true }).click();
+  const texts = ((await (await answer).json()) as { segments: { text: string }[] }).segments.map((x) => x.text);
+  for (const part of [
+    /^Bank hat per SMS einen Code geschickt\./,
+    /^E-Mail von Maria, Betreff „Neue Adresse“\.$/,
+    /^Maria schreibt etwas Neues\.$/,
+    // Anna's two on WhatsApp summed up, or her second alone when the first was heard to its end by itself.
+    /^(Anna schrieb auf WhatsApp: „Ich bringe Kuchen mit\.“|Auf WhatsApp: Anna schreibt etwas Neues\.)$/,
+    /^Von Newslettern und Verteilern: eine neue E-Mail\.$/,
+  ])
+    expect(texts.some((t) => part.test(t)), String(part)).toBe(true);
+  expect(texts.at(-1)).toBe('Heute zu erledigen: Rezept abholen.');
+  expect(texts.join('\n')).not.toMatch(/482913|Laub/);
+  await said(clara, new RegExp(`^${texts[0]!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), from, LIVE_WAIT);
+  expect((await spoken(clara)).slice(from).join('\n')).not.toMatch(/482913|Laub/);
+
+  // As it was: WhatsApp said by itself again, LIVE off.
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await setChoice(clara.locator('section').filter({ has: clara.getByRole('heading', { name: 'LIVE-Modus', exact: true }) }).getByRole('checkbox', { name: 'WhatsApp', exact: true }), true);
+  await home(clara);
+  engines.heard.push('LIVE aus');
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Sprechen', exact: true }).click();
+  await said(clara, /^LIVE-Modus ist aus\. /, from, LIVE_WAIT);
+  engines.model = () => reply('In Ordnung.');
+});
+
 test('10 · recovery: on a new device the English words recover the same account; the other device is told; signed out, it loses its connection at once', async ({ browser }) => {
   const german = words.get('Clara')!;
   const phrase = fromWords(german);

@@ -253,7 +253,8 @@ export class Session {
     this.token = null;
   }
 
-  async call<T>(path: string, o: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
+  /** `signal`: a limit of the caller's own instead of the usual 15 s (what may take longer: LIVE's news). */
+  async call<T>(path: string, o: { method?: string; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}): Promise<T> {
     try {
       return await api<T>(this.ref.serverUrl, path, { ...o, token: await this.accessToken() });
     } catch (e) {

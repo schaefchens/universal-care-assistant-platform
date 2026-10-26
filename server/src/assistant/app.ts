@@ -74,6 +74,8 @@ export async function buildAssistant(o: {
   claimTimeoutMs?: number;
   /** Tests: ffmpeg's path for voice messages. */
   ffmpeg?: string;
+  /** Tests: how long LIVE's news wait for the model's summaries. */
+  liveSummaryMs?: number;
 }) {
   const app = createHttp(o.config, { logger: o.logger, logStream: o.logStream });
   const log = (msg: string) => app.log.warn(msg);
@@ -151,7 +153,8 @@ export async function buildAssistant(o: {
   registerSpeechRoutes(app, { speech, providers, stt });
   registerTurnRoutes(app, { turns, stt, llm });
   registerModelRoutes(app, { modelsDir: o.config.modelsDir, log });
-  registerLiveRoutes(app, { news: createLiveNews({ db: o.db, clock: o.clock, llm, messaging, log }) });
+  const liveNews = createLiveNews({ db: o.db, clock: o.clock, llm, messaging, agenda, log, summaryBudgetMs: o.liveSummaryMs });
+  registerLiveRoutes(app, { news: liveNews });
   registerAssistantRoutes(app, { actions, llm, contextFor });
   registerMessagingRoutes(app, { messaging, identity, actions, contextFor, requireSigned });
   registerAiAdminRoutes(app, { db: o.db, clock: o.clock, identity, providers, speech, stt, llm, herde, publicUrl: o.config.publicUrl });
@@ -216,6 +219,7 @@ export async function buildAssistant(o: {
     identity,
     files,
     messaging,
+    liveNews,
     async start() {
       await stt.ensureConfigured();
       await llm.ensureConfigured();

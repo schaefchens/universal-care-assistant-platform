@@ -360,6 +360,16 @@ h3 {
   outline-offset: 2px;
 }
 
+.choice-option[data-disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Options that belong to the one above them (LIVE's services under "Neue Nachrichten"): set in from it. */
+.choice-group {
+  margin-inline-start: 1.5rem;
+}
+
 .range {
   display: grid;
   grid-template-columns: 1fr auto;

@@ -8,6 +8,7 @@ import { uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import type { Clock } from '../lib/clock.ts';
 import type { Db, Exec } from '../lib/db.ts';
+import { oneTimeCode } from './codes.ts';
 
 const at = (seconds: number) => new Date(seconds * 1000);
 /** Telegram's message ids are integers in order; another service's are not, and then sort by time. */
@@ -79,12 +80,14 @@ export function createMessageStore(d: { db: Db; clock: Clock }) {
         const fromHistory = !m.outgoing && o.history !== undefined && m.date * 1000 < o.history.getTime();
         const read = fromHistory || (readMax !== null && BigInt(key) <= BigInt(readMax)) ? now() : null;
         const before = await sql<{ text: string }>`select text from messaging_messages where conversation_id = ${conv.id} and external_id = ${m.externalId}`.execute(trx);
+        // A one-time code is never said by itself (K8): marked from the words, an email's subject with them.
+        const code = !m.outgoing && oneTimeCode(m.subject ? `${m.subject}\n${m.text}` : m.text);
         const r = await sql<{ id: string; inserted: boolean }>`
-          insert into messaging_messages (id, conversation_id, external_id, sort_key, sender_external_id, direction, kind, text, file_name, subject, quoted, sent_at, edited_at, read_at, created_at, updated_at)
-          values (${uuidv7(d.clock())}, ${conv.id}, ${m.externalId}, ${key}, ${m.fromId}, ${m.outgoing ? 'out' : 'in'}, ${m.kind}, ${m.text}, ${m.fileName}, ${m.subject ?? null}, ${m.quoted ?? null},
+          insert into messaging_messages (id, conversation_id, external_id, sort_key, sender_external_id, direction, kind, text, file_name, subject, quoted, one_time_code, sent_at, edited_at, read_at, created_at, updated_at)
+          values (${uuidv7(d.clock())}, ${conv.id}, ${m.externalId}, ${key}, ${m.fromId}, ${m.outgoing ? 'out' : 'in'}, ${m.kind}, ${m.text}, ${m.fileName}, ${m.subject ?? null}, ${m.quoted ?? null}, ${code},
                   ${at(m.date)}, ${m.editDate ? at(m.editDate) : null}, ${read}, ${now()}, ${now()})
           on conflict (conversation_id, external_id) do update set kind = excluded.kind, text = excluded.text, file_name = excluded.file_name, subject = excluded.subject,
-            quoted = excluded.quoted, edited_at = excluded.edited_at, updated_at = excluded.updated_at
+            quoted = excluded.quoted, one_time_code = excluded.one_time_code, edited_at = excluded.edited_at, updated_at = excluded.updated_at
           returning id, (xmax = 0) as inserted`.execute(trx);
         const { id, inserted } = r.rows[0]!;
         if (m.file) {

@@ -19,8 +19,10 @@
  * id); a number ending in 0000 is on neither. A text with
  * "#fail", or any to "Maria (Tochter)" (as if she had blocked the person), is refused; "#slow" is confirmed after 20 s,
  * "#lost" is never answered. Control on 127.0.0.1:8823 (POST, JSON):
- *   /incoming {service?, chat: "anna"|"familie"|"maria", text, subject?, quoted?}  a new message (Telegram unless
- *                                                                          named; an email's subject and quoted part)
+ *   /incoming {service?, chat: "anna"|"familie"|"maria"|"newsletter", text, subject?, quoted?}  a new message
+ *                                                                          (Telegram unless named; an email's subject and
+ *                                                                          quoted part); "newsletter" is a muted chat,
+ *                                                                          by email a list's thread
  *   /voice {service?, chat, ogg: <base64>, seconds}                        a new voice message (Ogg/Opus; not by email)
  *   /delete {service?, chat, id}                                           a message deleted for everyone
  *   /pair {}                                                               WhatsApp: the code typed on the phone now
@@ -55,7 +57,8 @@ function secret(name: string): string {
   throw new Error(`missing secret ${name}`);
 }
 
-type ChatKey = 'anna' | 'familie' | 'maria';
+type ChatKey = 'anna' | 'familie' | 'maria' | 'newsletter';
+const CHAT_KEYS: readonly ChatKey[] = ['anna', 'familie', 'maria', 'newsletter'];
 interface ChatDef {
   externalId: string;
   title: string;
@@ -63,6 +66,8 @@ interface ChatDef {
   subject?: string;
   kind: 'private' | 'group';
   userId: string | null;
+  /** Shown, never announced: a muted group, or by email a list or newsletter (K3). */
+  muted?: boolean;
 }
 /** The same people on each service, as each service names them. Maria is no contact anywhere. */
 const PEOPLE: Record<ServerService, { anna: string; bernd: string; maria: string; maria_name: string }> = {
@@ -75,16 +80,19 @@ const CHATS: Record<ServerService, Record<ChatKey, ChatDef>> = {
     anna: { externalId: '777001', title: 'Anna Beispiel', kind: 'private', userId: PEOPLE.telegram.anna },
     familie: { externalId: '-100500', title: 'Familie', kind: 'group', userId: null },
     maria: { externalId: '888001', title: 'Maria (Tochter)', kind: 'private', userId: PEOPLE.telegram.maria },
+    newsletter: { externalId: '-100600', title: 'Gartenverein', kind: 'group', userId: null, muted: true },
   },
   whatsapp: {
     anna: { externalId: '4915112345678@s.whatsapp.net', title: 'Anna Beispiel', kind: 'private', userId: PEOPLE.whatsapp.anna },
     familie: { externalId: '120363000000000001@g.us', title: 'Familie', kind: 'group', userId: null },
     maria: { externalId: '4917699999999@s.whatsapp.net', title: 'Maria (Tochter)', kind: 'private', userId: PEOPLE.whatsapp.maria },
+    newsletter: { externalId: '120363000000000002@g.us', title: 'Gartenverein', kind: 'group', userId: null, muted: true },
   },
   email: {
     anna: { externalId: 'thread:anna', title: 'Anna Beispiel', subject: 'Besuch am Sonntag', kind: 'private', userId: PEOPLE.email.anna },
     familie: { externalId: 'thread:familie', title: 'Familientreffen', subject: 'Familientreffen im Mai', kind: 'group', userId: null },
     maria: { externalId: 'thread:maria', title: 'Maria', subject: 'Neue Nummer', kind: 'private', userId: PEOPLE.email.maria },
+    newsletter: { externalId: 'thread:newsletter', title: 'Gartenfreunde', subject: 'Newsletter Oktober', kind: 'group', userId: null, muted: true },
   },
 };
 /** A little history on each, read already. */
@@ -154,7 +162,7 @@ function ready(a: Account) {
   emit({ t: 'user.upsert', id: a.id, user: { externalId: p.bernd, name: 'Bernd Beispiel', isContact: true, isBot: false } });
   emit({ t: 'user.upsert', id: a.id, user: { externalId: p.maria, name: p.maria_name, isContact: false, isBot: false } });
   for (const c of Object.values(CHATS[a.service]))
-    emit({ t: 'chat.upsert', id: a.id, chat: { externalId: c.externalId, title: c.title, ...(c.subject ? { subject: c.subject } : {}), kind: c.kind, userId: c.userId, muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } });
+    emit({ t: 'chat.upsert', id: a.id, chat: { externalId: c.externalId, title: c.title, ...(c.subject ? { subject: c.subject } : {}), kind: c.kind, userId: c.userId, muted: c.muted === true, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } });
   for (const h of HISTORY[a.service]) emit({ t: 'msg.upsert', id: a.id, msg: message(a, h.chat, { text: h.text, outgoing: h.outgoing === true, date: now() - h.ago }) });
   for (const c of Object.values(CHATS[a.service])) emit({ t: 'chat.read', id: a.id, chatId: c.externalId, inboxMaxId: String(a.nextId), outboxMaxId: String(a.nextId), unread: 0 });
   log(`${a.service} connection ${a.id} ready`);
@@ -308,7 +316,7 @@ createServer(async (req, res) => {
   const service: ServerService = SERVICES.includes(b.service as ServerService) ? (b.service as ServerService) : 'telegram';
   const ofService = [...accounts.values()].filter((x) => x.service === service);
   const a = accounts.get(String(b.connection ?? lastReady.get(service) ?? '')) ?? ofService.find((x) => x.ready);
-  const chat: ChatKey = ['anna', 'familie', 'maria'].includes(String(b.chat)) ? (String(b.chat) as ChatKey) : 'anna';
+  const chat: ChatKey = CHAT_KEYS.includes(String(b.chat) as ChatKey) ? (String(b.chat) as ChatKey) : 'anna';
   const done = (code: number, v: unknown) => {
     res.writeHead(code, { 'content-type': 'application/json' });
     res.end(JSON.stringify(v));
