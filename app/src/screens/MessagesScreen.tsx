@@ -13,7 +13,7 @@ import type { Session } from '../identity/account.ts';
 import { useUi } from '../ui.tsx';
 import { useScreenVoice } from '../voice/screen.ts';
 import { TalkButton, VoiceContext } from '../voice/TalkButton.tsx';
-import { keepInFront } from './messages-list.ts';
+import { keepInFront, nextIndex } from './messages-list.ts';
 
 export interface MessageItem {
   id: string;
@@ -151,15 +151,11 @@ export function MessagesScreen(p: {
 
   function next() {
     if (!items?.length) return say(tr('messages.empty'), 'system');
-    if (i + 1 >= items.length) {
-      setI(0);
-      // Through all of them: the next round goes in the queue's own order again.
-      shownHere.current.clear();
-      say(tr('messages.noMore'), 'system');
-      return;
-    }
-    setI(i + 1);
-    void readItem(items[i + 1]!);
+    // Through all of them: the last one stays in front ("Wiederholen" says it again), nothing starts over.
+    const n = nextIndex(items, i, shownHere.current);
+    if (n === null) return say(tr('messages.noMore'), 'system');
+    setI(n);
+    void readItem(items[n]!);
   }
 
   async function reply() {

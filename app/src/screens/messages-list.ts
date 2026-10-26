@@ -12,3 +12,13 @@ export function keepInFront<T extends { id: string }>(fresh: T[], shown: T | und
   const rest = fresh.filter((x) => x.id !== shown.id);
   return [fresh.find((x) => x.id === shown.id) ?? shown, ...rest.filter((x) => !seen.has(x.id)), ...rest.filter((x) => seen.has(x.id))];
 }
+
+/**
+ * Where "Nächste" goes from `i`: the next message not shown yet on this visit, or null at the end. Through all of
+ * them, it stays at the last one and never begins again from the first (the owner, 2026-10-26: "when user is through
+ * all messages it shouldnt start from the beginning"); a refresh puts what was shown last, so the end is reached there.
+ */
+export function nextIndex(list: readonly { id: string }[], i: number, seen: ReadonlySet<string>): number | null {
+  const n = i + 1;
+  return n < list.length && !seen.has(list[n]!.id) ? n : null;
+}

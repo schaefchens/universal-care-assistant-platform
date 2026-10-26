@@ -1072,6 +1072,17 @@ test('8c · previews (docs/plan-m3.md, K5; acceptance 8): Clara’s phone reads 
     if (!(await spoken(clara)).slice(from).some((t) => read.test(t))) await clara.getByRole('button', { name: 'Nächste', exact: true }).click();
   }
   expect((await spoken(clara)).slice(from).some((t) => read.test(t))).toBe(true);
+  // On to the end: "Nächste" then says it was the last, and never begins again from the first (the owner, 2026-10-26).
+  const end = /^Das war die letzte Nachricht\.$/;
+  for (let n = 0; n < 30 && !(await spoken(clara)).slice(from).some((t) => end.test(t)); n++) {
+    const before = (await spoken(clara)).length;
+    await clara.getByRole('button', { name: 'Nächste', exact: true }).click();
+    await expect.poll(async () => (await spoken(clara)).length, { message: `"Nächste" ${n + 1} said something` }).toBeGreaterThan(before);
+  }
+  const reads = (await spoken(clara)).slice(from).filter((t) => / schrieb /.test(t)).length;
+  await clara.getByRole('button', { name: 'Nächste', exact: true }).click();
+  await expect.poll(async () => (await spoken(clara)).slice(from).filter((t) => end.test(t)).length).toBe(2);
+  expect((await spoken(clara)).slice(from).filter((t) => / schrieb /.test(t)).length).toBe(reads);
   await home(clara);
 
   // The reply: Lena is known only by what Signal's notifications show, so she is no contact (decisions.md, M3, 19).
@@ -1192,6 +1203,28 @@ test('14 · help needs none of it (docs/plan-m3.md, acceptance 14): with the mes
   }
   // Back, with the servers' time.
   await expect.poll(async () => (await fetch(`${MESSAGING}/clock`, { method: 'POST', body: JSON.stringify({ at: await clocks.now() }) }).catch(() => null))?.ok ?? false, { timeout: 30_000 }).toBe(true);
+  await home(clara);
+});
+
+test('15 · removed for good (docs/decisions.md, M3, 20: "we keep messages forever until user decides to purge deleted"): what Clara deleted is kept and named in her settings; asked first, she removes it for good; her history still says what Maria did, without its name', async () => {
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  const section = clara.locator('section').filter({ has: clara.getByRole('heading', { name: 'Gelöschtes', exact: true }) });
+  // The first "Physiotherapie", undone in step 7d, is kept.
+  await expect(section.getByText(/^Gelöscht und noch aufbewahrt, damit du es zurückholen kannst: .*ein Kontakt/)).toBeVisible();
+  await axe(clara, 'Einstellungen with what was deleted');
+  const from = await mark(clara);
+  await section.getByRole('button', { name: 'Gelöschtes endgültig entfernen', exact: true }).click();
+  await said(clara, /^Endgültig entfernen: .*ein Kontakt.*\? Danach lässt es sich nicht mehr zurückholen\.$/, from);
+  await section.getByRole('button', { name: 'Ja, endgültig entfernen', exact: true }).click();
+  await said(clara, /^Endgültig entfernt: .*ein Kontakt.*\.$/, from);
+  await expect(section.getByText('Nichts Gelöschtes ist aufbewahrt.', { exact: true })).toBeVisible();
+  expect(sql(`select count(*) from contacts where deleted_at is not null`)).toBe('0');
+  // The history: what Maria did with the contact now gone, without its name; the one she added again by its name.
+  await helpersPage(clara);
+  await expect(clara.getByText('Maria hat einen Kontakt hinzugefügt (inzwischen endgültig entfernt)').first()).toBeVisible();
+  await expect(clara.getByText('Maria hat den Kontakt „Physiotherapie“ hinzugefügt').first()).toBeVisible();
+  await expect(clara.getByText('Du hast Gelöschtes endgültig entfernt').first()).toBeVisible();
   await home(clara);
 });
 

@@ -870,6 +870,14 @@ The plan: [plan-m3.md](plan-m3.md).
     plan-m3.md, K2, said "never push names".
 11. **K5 (previews from other apps) comes after K8**, so the order is K4, K6, K7, K8, K5, K9 (the owner, 2026-10-22:
     "lets make k5 after k8").
+12. **Through all messages, "Nächste" stops at the last one** (the owner, 2026-10-26: "also when user is through all
+    messages it shouldnt start from the beginning").
+    - Before, the messages screen began again from the first ("„Nächste“ beginnt wieder von vorn."): M1's own choice,
+      not the plan's.
+    - Built: at the end, and at a message already heard on this visit (a refresh puts those last), it says "Das war
+      die letzte Nachricht." and the last one stays in front ("Wiederholen" says it again). A message that comes
+      meanwhile is still next. Opening the screen again starts afresh, unread first.
+    - The appointments and tasks screens still go round: To confirm, item 22.
 
 ### To confirm
 
@@ -1022,6 +1030,21 @@ The plan: [plan-m3.md](plan-m3.md).
     - What goes with a disconnect is listed in operator.md; these are the person's own, not a service's.
     - The other choice: a deleted one goes for good 30 days after it was deleted (its versions too; the history keeps
       the line "… hat den Kontakt „…“ gelöscht").
+    - **The owner, 2026-10-26:** "we keep messages forever until user decides to purge deleted". Built: kept without
+      end, as before, until the person removes it for good in Einstellungen → Gelöschtes.
+      - The section names what is kept ("ein Kontakt, ein Termin und drei Notizen") and asks first ("Endgültig
+        entfernen: …? Danach lässt es sich nicht mehr zurückholen."; CONCEPT §5, deleting content is confirmed).
+      - It covers the person's notes, contacts, appointments and tasks with all their versions. An appointment's
+        reminders, ended with it, go with it, their answers too.
+      - Only the person may, from their own settings; no helper can.
+      - The history keeps who did what, without the name: "Maria hat einen Kontakt hinzugefügt (inzwischen endgültig
+        entfernt)". The purge is audited by counts only.
+21. **A message its sender deleted for everyone is removed from UCAP at once** (M1, S10), not kept until the person
+    removes deleted things for good. The owner's answer to item 20 speaks of "messages"; it is read as the person's own
+    notes, contacts, appointments and tasks, which item 20 asked about. The other choice: such a message is kept,
+    marked as deleted by its sender, until the person removes what was deleted.
+22. **The appointments and tasks screens still begin again from the first after the last** ("Nächster", K7), where the
+    messages screen now stops (decided item 12). The other choice: they stop at the last too.
 
 ### Decided (within the plan)
 
@@ -1834,3 +1857,14 @@ The plan: [plan-m3.md](plan-m3.md).
   - With the SMS role, which grants the address book, the contacts page shows the new disclosure above "Kontakte vom
     Telefon übernehmen"; axe: nothing at any impact. The role went back to Google Messages afterwards, UCAP was opened
     again, LIVE came back ("waiting"), and the storage setting was removed.
+- **After the owner's answers on item 20 and the messages' end (2026-10-26):**
+  - The browser walk: 29 of 29. Step 15 had Clara remove what she deleted for good, after the question; her history
+    then said "Maria hat einen Kontakt hinzugefügt (inzwischen endgültig entfernt)" beside the contact Maria added
+    again, by its name. Step 8c went on through the messages to the end: "Das war die letzte Nachricht." once more at
+    the next press, and no message read again.
+  - On the emulator, the new build: the settings' section named what Wanda's account keeps as the server counts it
+    ("6 Kontakte, 5 Termine und 2 Aufgaben") and asked "Endgültig entfernen: …? Danach lässt es sich nicht mehr
+    zurückholen."; "Nein" kept all of it. axe on the settings page: nothing at any impact.
+  - **Found and fixed:** after "Nein" the question stayed in the section's status line, as if still open.
+  - The messages screen's end was not tried on the emulator: going through Wanda's messages would mark the owner's
+    real WhatsApp messages read. The walk checks it; the code is the same in the app.

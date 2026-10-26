@@ -181,7 +181,8 @@ export function Helpers(p: {
   const link = invitation ? `${p.server.url}/#invite=${invitation.code}` : '';
   /** One sentence per entry; one's own actions have their own sentence ("Du hast …", not "Du hat …"). */
   const historyText = (e: AuditEvent) => {
-    const key = `audit.${e.action}`;
+    // Removed for good since (DeletedSetting): who did what, without its name.
+    const key = e.detail.gone === true && hasMessage(ui.lang, `audit.${e.action}.gone`) ? `audit.${e.action}.gone` : `audit.${e.action}`;
     // What the entry names, as the server read it from the person's own data (a contact's name: never in the log).
     const named: Record<string, string> = typeof e.detail.name === 'string' ? { name: e.detail.name } : {};
     if (e.actor?.self && hasMessage(ui.lang, `${key}.self`)) return tr(`${key}.self`, named);

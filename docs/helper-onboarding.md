@@ -26,6 +26,7 @@ What you may do is one permission each, and none implies another:
 
 No permission lets you read the person's messages or notes, or see their recovery words; contacts and appointments
 never lead to them either. The person can see who may do what at any time ("Wer darf was?"), change it, or end it.
+What you delete stays kept for undo until the person removes it for good; only they can.
 
 ## Alarms on your phone
 

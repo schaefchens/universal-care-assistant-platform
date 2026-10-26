@@ -144,7 +144,7 @@ Check each line against Play's guidance at the release: whether data sent to a s
 |---|---|---|---|---|---|---|
 | Messages: SMS or MMS | UCAP is the SMS app and connected | no | app functionality | yes | yes | when the person disconnects SMS |
 | Messages: other in-app messages | previews of the apps the person chose | no | app functionality | yes | yes | when the person stops an app |
-| Contacts | an SMS sender's name; the import on the person's press | no | app functionality | yes | yes | the person deletes a contact, or their account |
+| Contacts | an SMS sender's name; the import on the person's press | no | app functionality | yes | yes | the person deletes a contact and removes it for good (Einstellungen → Gelöschtes), or their account |
 
 Telegram, WhatsApp and email are connected by the person's server, not by the app; the app shows and sends what the
 server holds.

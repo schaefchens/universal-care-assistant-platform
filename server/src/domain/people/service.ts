@@ -276,7 +276,7 @@ export function createPeopleService(d: PeopleDeps) {
     /**
      * What happened to this person's account and permissions, newest first, as ids and action names. A contact's name
      * is not in the log (no text a person wrote is): it is read from that version of the contact, the appointment or the
-     * task, the person's own.
+     * task, the person's own. Once the person removed it for good (domain/deleted), there is none: `gone`.
      */
     async auditFor(personId: string, limit = 50) {
       const r = await sql<{ at: Date; action: string; actor_user: string | null; actor_name: string | null; target_type: string | null; detail: Record<string, unknown>; item_name: string | null }>`
@@ -292,7 +292,7 @@ export function createPeopleService(d: PeopleDeps) {
         action: x.action,
         actor: x.actor_user ? { id: x.actor_user, displayName: x.actor_name, self: x.actor_user === personId } : null,
         targetType: x.target_type,
-        detail: x.item_name === null ? x.detail : { ...x.detail, name: x.item_name },
+        detail: x.item_name !== null ? { ...x.detail, name: x.item_name } : ['contact', 'appointment', 'task'].includes(x.target_type ?? '') ? { ...x.detail, gone: true } : x.detail,
       }));
     },
   };

@@ -3,7 +3,7 @@
  * ones and never skips them.
  */
 import { describe, expect, it } from 'vitest';
-import { keepInFront } from '../src/screens/messages-list.ts';
+import { keepInFront, nextIndex } from '../src/screens/messages-list.ts';
 
 describe('the messages screen, fetched again', () => {
   // The queue as the server orders it: the unread first (oldest first), then the newest of each other conversation.
@@ -35,5 +35,19 @@ describe('the messages screen, fetched again', () => {
 
   it('takes the queue as it is when nothing is in front', () => {
     expect(keepInFront(fresh, undefined)).toBe(fresh);
+  });
+
+  it('"Nächste" through all of them ends at the last one, never at the first again; a new one is still next', () => {
+    const queue = [1, 2, 3].map((n) => ({ id: `u${n}` }));
+    expect(nextIndex(queue, 0, new Set(['u1']))).toBe(1);
+    expect(nextIndex(queue, 1, new Set(['u1', 'u2']))).toBe(2);
+    expect(nextIndex(queue, 2, new Set(['u1', 'u2', 'u3']))).toBeNull();
+    // A new message comes while the last is in front: the refresh puts it next, and after it is the end again.
+    const seen = new Set(['u1', 'u2', 'u3']);
+    const again = keepInFront([...queue, { id: 'new' }], queue[2], seen);
+    expect(again.map((x) => x.id)).toEqual(['u3', 'new', 'u1', 'u2']);
+    expect(nextIndex(again, 0, seen)).toBe(1);
+    seen.add('new');
+    expect(nextIndex(again, 1, seen)).toBeNull();
   });
 });

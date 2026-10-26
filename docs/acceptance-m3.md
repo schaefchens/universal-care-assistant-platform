@@ -6,7 +6,7 @@ automated test, in the browser walk, by a run on the Android emulator or by hand
 [acceptance.md](acceptance.md). State of 2026-10-26.
 
 ```sh
-npm run typecheck && npm test        # 574 tests; opt-in: the Telegram test-DC suite, the email live suite (below)
+npm run typecheck && npm test        # 576 tests; opt-in: the Telegram test-DC suite, the email live suite (below)
 npm run test:e2e                     # M1's and M3's acceptance scripts in browsers, axe on each M3 screen they open
 tools/android/unit-test.sh           # the app's JVM tests: SMS events, MMS PDUs, previews (GRADLE_OFFLINE=1 offline)
 node tools/android/axe.ts            # accessibility audit of the screen the emulator shows
@@ -19,7 +19,7 @@ npm run evals                        # the assistant against the dialogue model,
 *emulator* = run on the Android emulator, with the step it is recorded under; *by hand* = with the owner's own
 account; *open* = not yet, with the reason.
 
-**The browser walk** (`npm run test:e2e`, about eleven minutes, 28 steps): as in M1, a stack of its own with the
+**The browser walk** (`npm run test:e2e`, about eleven minutes, 29 steps): as in M1, a stack of its own with the
 servers' clock moved where the script waits. Telegram, WhatsApp and email are played by `tools/dev/fake-services.ts`.
 Clara's phone is simulated (`e2e/phone.ts`): UCAP its SMS app and Signal's previews, every report signed by its key.
 The language model is scripted, so the walk checks what UCAP does with its answers, not the answers.
@@ -118,6 +118,8 @@ owner's own account by hand only, and nothing automated ever reaches it.
 | Email text inert; nothing handed to the page as HTML | `email-mail.test.ts`, `tools/test/inert-text.test.ts` | test |
 | Limits: pairing codes, email tries and accounts | `messaging-services.test.ts` | test |
 | Accessibility of the new screens | axe in steps 1, 7b–7h, 8b, L2 (14 screens, the person's and the helpers'); on the emulator in K5, K6, K8 and K9 (the SMS page, the contacts page with its disclosure, the appointment form) | e2e, emulator |
+| What was deleted kept until the person removes it for good (item 20) | `server/test/deleted.test.ts`; step 15 | test, e2e |
+| Through all messages, "Nächste" stops at the last one (decided item 12) | `app/test/messages-list.test.ts`; step 8c | test, e2e |
 | Play's disclosures | `docs/play.md`; the texts on the SMS, previews and contacts pages, shown on the emulator (K5, K9) | written; the Play Console with M9 |
 
 ## The acceptance script (plan-m3.md)

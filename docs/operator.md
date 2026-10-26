@@ -231,8 +231,10 @@ node tools/backup/backup.ts restore <dir> --into <new database> --files --connec
   read; it never deletes from it (a test checks the app's code), so the history stays when the role goes back.
 - Notes, appointments and tasks made from a message stay the person's after the message is gone, with where they came
   from (service, sender, time); "Lies die Nachricht dazu" then says it is no longer kept.
-- Contacts, appointments and tasks until they are deleted. A deleted one is kept with its earlier versions, as notes
-  are, for undo and the person's history (docs/decisions.md, M3, To confirm 20).
+- Notes, contacts, appointments and tasks as long as the person keeps them. What they delete stays kept, with its
+  earlier versions, for undo and their history, until they remove it for good (Settings → Gelöschtes, asked first;
+  docs/decisions.md, M3, item 20). An appointment's ended reminders and their answers go with it; the history keeps who
+  did what, without the name. Only the person can, never a helper.
 - A WhatsApp pairing code is never stored. An email password is kept sealed with its connection and goes to the email
   process only when it starts it; the email process holds it in memory only.
 - Events for devices 30 days; sign-in challenges a day after expiring; sessions a week after ending; invitations 30

@@ -53,6 +53,7 @@ import { EmailPage } from './screens/EmailPage.tsx';
 import { PreviewsPage } from './screens/PreviewsPage.tsx';
 import { SmsPage } from './screens/SmsPage.tsx';
 import { Devices } from './screens/Devices.tsx';
+import { DeletedSetting } from './screens/DeletedSetting.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
 import { NewWords } from './screens/NewWords.tsx';
@@ -1382,6 +1383,7 @@ export function App() {
       >
         <HelpKeySetting />
         <AndroidPushSetup session={session} server={server} />
+        <DeletedSetting session={session} />
       </Settings>
     );
   else
