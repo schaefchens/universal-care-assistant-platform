@@ -5,8 +5,11 @@
  * notes, and the access overview always says so.
  */
 export const M1_SCOPES = ['care.respond', 'care.configure', 'reminders.manage', 'reminders.responses.read', 'device.configure'] as const;
-/** M3 (docs/plan-m3.md): "Kontakte verwalten", the saved contacts and never anything of messages (K6). */
-export const M3_SCOPES = ['contacts.manage'] as const;
+/**
+ * M3 (docs/plan-m3.md): "Kontakte verwalten", the saved contacts (K6), and "Termine und Aufgaben verwalten", the
+ * appointments and tasks the person did not mark private (K7); neither ever reaches messages or notes.
+ */
+export const M3_SCOPES = ['contacts.manage', 'agenda.manage'] as const;
 /** Every scope a person can grant, in the order they are named. */
 export const SCOPES = [...M1_SCOPES, ...M3_SCOPES] as const;
 export type Scope = (typeof SCOPES)[number];

@@ -35,4 +35,16 @@ describe('what a helper may do, said the same way every time', () => {
       'Maria may create and change your contacts. Nobody may read your messages or read your notes.',
     );
   });
+
+  it('names "Termine und Aufgaben verwalten" (K7) too, and still that nobody reads messages or notes', () => {
+    expect(approvalSummary({ name: 'Maria', scopes: ['agenda.manage', 'contacts.manage', 'care.respond'], lang: 'de', tr: tr('de') })).toBe(
+      'Maria möchte dir helfen. Maria darf auf deine Hilferufe antworten, deine Kontakte anlegen und ändern und deine Termine und Aufgaben anlegen und ändern. Maria darf nicht deine Nachrichten lesen oder deine Notizen lesen.',
+    );
+    expect(approvalSummary({ name: 'Maria', scopes: ['agenda.manage'], lang: 'de', tr: tr('de', 'Sie') })).toBe(
+      'Maria möchte Ihnen helfen. Maria darf Ihre Termine und Aufgaben anlegen und ändern. Maria darf nicht Ihre Nachrichten lesen oder Ihre Notizen lesen.',
+    );
+    expect(overviewSummary({ helpers: [{ name: 'Maria', scopes: ['agenda.manage'] }], pending: [], lang: 'en', tr: tr('en') })).toBe(
+      'Maria may create and change your appointments and tasks. Nobody may read your messages or read your notes.',
+    );
+  });
 });

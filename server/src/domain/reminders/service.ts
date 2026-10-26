@@ -59,6 +59,8 @@ interface ReminderRow {
   updated_at: Date;
   deleted_at: Date | null;
   version: number;
+  /** The appointment it reminds of (K7): changed only with it. */
+  appointment_id: string | null;
 }
 
 interface OccurrenceRow {
@@ -93,6 +95,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
     updatedBy: { id: r.updated_by, displayName: names.get(r.updated_by) ?? null },
     updatedAt: r.updated_at.toISOString(),
     version: r.version,
+    appointmentId: r.appointment_id,
   });
 
   async function names(exec: Exec, ids: string[]) {
@@ -108,6 +111,15 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
   async function mayRead(actorId: string, personId: string) {
     return (await allowed(actorId, personId, 'reminders.manage')) || (await allowed(actorId, personId, 'reminders.responses.read'));
   }
+
+  // K7: "what the person marks private is not shown". A private appointment's reminders, their answers and a missed
+  // one are the person's alone; helpers do not hear of them.
+  async function privateReminder(exec: Exec, reminderId: string): Promise<boolean> {
+    const r = await sql<{ private: boolean }>`select a.private from reminders r join appointments a on a.id = r.appointment_id where r.id = ${reminderId}`.execute(exec);
+    return r.rows[0]?.private === true;
+  }
+  const shownTo = (actorId: string, personId: string, column: string) =>
+    actorId === personId ? sql`` : sql`and not exists (select 1 from appointments pa where pa.id = ${sql.ref(column)} and pa.private)`;
 
   // An empty title or question is the category's own, said by the person's device in their language and form of
   // address, so a helper who writes in another language never sets the words the person hears.
@@ -150,6 +162,25 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
     const r = await sql<ReminderRow>`select * from reminders where id = ${id} and person_id = ${personId} and deleted_at is null for update`.execute(exec);
     if (!r.rows[0]) throw new AppError('not_found');
     return r.rows[0];
+  }
+
+  /** One the person or a helper changes by itself: an appointment's reminder is changed with its appointment only. */
+  async function lockOwn(exec: Exec, personId: string, id: string): Promise<ReminderRow> {
+    const r = await lockReminder(exec, personId, id);
+    if (r.appointment_id) throw new AppError('conflict', { params: { reason: 'appointment' } });
+    return r;
+  }
+
+  /** Ended: deleted, its occurrences ahead cancelled, and one already asking stops (nobody is asked about it any more). */
+  async function end(exec: Exec, actorId: string, personId: string, id: string) {
+    await sql`update reminders set deleted_at = ${now()}, active = false, updated_by = ${actorId}, updated_at = ${now()} where id = ${id}`.execute(exec);
+    await cancelAhead(exec, id);
+    const due = await sql<{ id: string }>`
+      update reminder_occurrences set state = 'cancelled', next_prompt_at = null, ended_at = ${now()} where reminder_id = ${id} and state = 'due' returning id`.execute(exec);
+    for (const o of due.rows) {
+      await cancelJob(exec, `rem:${o.id}`);
+      await emit(exec, { kind: 'reminder.answered', recipients: [personId], payload: { occurrenceId: o.id, reminderId: id } });
+    }
   }
 
   async function changed(exec: Exec, personId: string, reminderId: string) {
@@ -209,7 +240,8 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
   return {
     async list(actorId: string, personId: string) {
       if (!(await mayRead(actorId, personId))) throw new AppError('not_found');
-      const r = await sql<ReminderRow>`select * from reminders where person_id = ${personId} and deleted_at is null order by created_at`.execute(d.db);
+      const r = await sql<ReminderRow>`
+        select * from reminders where person_id = ${personId} and deleted_at is null ${shownTo(actorId, personId, 'reminders.appointment_id')} order by created_at`.execute(d.db);
       const n = await names(d.db, r.rows.flatMap((x) => [x.created_by, x.updated_by]));
       const next = await sql<{ reminder_id: string; due_at: Date }>`
         select distinct on (reminder_id) reminder_id, due_at from reminder_occurrences
@@ -244,7 +276,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
       if (!(await allowed(actorId, personId, 'reminders.manage'))) throw new AppError('not_found');
       check(input);
       return d.db.transaction().execute(async (trx) => {
-        const cur = await lockReminder(trx, personId, id);
+        const cur = await lockOwn(trx, personId, id);
         // Optimistic: whoever edits an old version is told, never silently overwritten.
         if (cur.version !== input.version) throw new AppError('conflict', { params: { reason: 'stale', version: cur.version } });
         await sql`
@@ -266,7 +298,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
     async setActive(actorId: string, personId: string, id: string, active: boolean) {
       if (!(await allowed(actorId, personId, 'reminders.manage'))) throw new AppError('not_found');
       await d.db.transaction().execute(async (trx) => {
-        await lockReminder(trx, personId, id);
+        await lockOwn(trx, personId, id);
         await sql`update reminders set active = ${active}, updated_by = ${actorId}, updated_at = ${now()}, version = version + 1 where id = ${id}`.execute(trx);
         if (active) await materialiseOne(trx, await lockReminder(trx, personId, id));
         else await cancelAhead(trx, id);
@@ -279,19 +311,50 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
     async remove(actorId: string, personId: string, id: string) {
       if (!(await allowed(actorId, personId, 'reminders.manage'))) throw new AppError('not_found');
       await d.db.transaction().execute(async (trx) => {
-        await lockReminder(trx, personId, id);
-        await sql`update reminders set deleted_at = ${now()}, active = false, updated_by = ${actorId}, updated_at = ${now()} where id = ${id}`.execute(trx);
-        await cancelAhead(trx, id);
-        // One already prompting ends too: nobody is asked about a reminder that no longer exists.
-        const due = await sql<{ id: string }>`
-          update reminder_occurrences set state = 'cancelled', next_prompt_at = null, ended_at = ${now()} where reminder_id = ${id} and state = 'due' returning id`.execute(trx);
-        for (const o of due.rows) {
-          await cancelJob(trx, `rem:${o.id}`);
-          await emit(trx, { kind: 'reminder.answered', recipients: [personId], payload: { occurrenceId: o.id, reminderId: id } });
-        }
+        await lockOwn(trx, personId, id);
+        await end(trx, actorId, personId, id);
         await byHelper(trx, actorId, personId, 'reminder.deleted', id);
         await changed(trx, personId, id);
       });
+    },
+
+    /**
+     * The reminders of an appointment (docs/plan-m3.md, K7: "An appointment's reminders are M1's reminders"): one per
+     * spec, made, moved and ended with it in its transaction, by whoever changed the appointment (a helper's
+     * agenda.manage covers them). The device's alarm, offline, and the answers are as for any reminder.
+     */
+    async syncAppointment(exec: Exec, actorId: string, personId: string, appointmentId: string, specs: { title: string; schedule: Schedule; timezone: string }[]) {
+      const cur = await sql<ReminderRow>`
+        select * from reminders where appointment_id = ${appointmentId} and deleted_at is null order by created_at, id for update`.execute(exec);
+      let touched = false;
+      for (const [i, spec] of specs.entries()) {
+        const r = cur.rows[i];
+        if (r && r.title === spec.title && r.timezone === spec.timezone && JSON.stringify(r.schedule) === JSON.stringify(spec.schedule)) continue;
+        touched = true;
+        if (r) {
+          await sql`
+            update reminders set title = ${spec.title}, schedule = ${JSON.stringify(spec.schedule)}::jsonb, timezone = ${spec.timezone}, updated_by = ${actorId}, updated_at = ${now()},
+              version = version + 1 where id = ${r.id}`.execute(exec);
+          await cancelAhead(exec, r.id);
+          await materialiseOne(exec, await lockReminder(exec, personId, r.id));
+        } else {
+          const id = uuidv7(d.clock());
+          await sql`
+            insert into reminders (id, person_id, client_reminder_id, title, prompt, category, schedule, timezone, created_by, updated_by, created_at, updated_at, appointment_id)
+            values (${id}, ${personId}, ${uuidv7(d.clock())}, ${spec.title}, '', 'appointment', ${JSON.stringify(spec.schedule)}::jsonb, ${spec.timezone},
+                    ${actorId}, ${actorId}, ${now()}, ${now()}, ${appointmentId})`.execute(exec);
+          await materialiseOne(exec, await lockReminder(exec, personId, id));
+        }
+      }
+      for (const r of cur.rows.slice(specs.length)) {
+        touched = true;
+        await end(exec, actorId, personId, r.id);
+      }
+      if (touched) {
+        const priv = (await sql<{ private: boolean }>`select private from appointments where id = ${appointmentId}`.execute(exec)).rows[0]?.private === true;
+        await emit(exec, { kind: 'reminder.changed', recipients: [personId, ...(priv ? [] : await helpersWith(exec, personId, 'reminders.manage'))], payload: { appointmentId, personId } });
+        d.wake?.();
+      }
     },
 
     /** The hourly job: the next 48 hours of every active reminder. */
@@ -320,7 +383,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
           // Missed. Agreed rules decide who hears of it; nothing alarms and no help request is made (CONCEPT §9).
           await sql`update reminder_occurrences set state = 'missed', next_prompt_at = null, ended_at = ${now()} where id = ${o.id}`.execute(trx);
           await emit(trx, { kind: 'reminder.answered', recipients: [o.person_id], payload: { occurrenceId: o.id, reminderId: o.reminder_id, missed: true } });
-          if (rem.follow_up === 'helpers') {
+          if (rem.follow_up === 'helpers' && !(await privateReminder(trx, rem.id))) {
             const helpers = await helpersWith(trx, o.person_id, 'reminders.responses.read');
             await emit(trx, { kind: 'reminder.followup', recipients: helpers, payload: { occurrenceId: o.id, reminderId: o.reminder_id, personId: o.person_id } });
             if (helpers.length) await push(trx, helpers, 'reminder.followup', o.id, o.prompts);
@@ -366,7 +429,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
                   ${personId}, ${deviceId}, ${now()})`.execute(trx);
         // The person's other devices stop asking; helpers who may read answers see it.
         await emit(trx, { kind: 'reminder.answered', recipients: [personId], payload: { occurrenceId: o.id, reminderId: o.reminder_id, kind: input.kind } });
-        await emit(trx, { kind: 'reminder.response', recipients: await helpersWith(trx, personId, 'reminders.responses.read'), payload: { occurrenceId: o.id, personId } });
+        if (!(await privateReminder(trx, rem.id))) await emit(trx, { kind: 'reminder.response', recipients: await helpersWith(trx, personId, 'reminders.responses.read'), payload: { occurrenceId: o.id, personId } });
         return (await occurrenceView(trx, o.id))!;
       });
     },
@@ -380,7 +443,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
 
     async occurrence(actorId: string, id: string) {
       const v = await occurrenceView(d.db, id);
-      if (!v || !(v.personId === actorId || (await mayRead(actorId, v.personId)))) throw new AppError('not_found');
+      if (!v || !(v.personId === actorId || ((await mayRead(actorId, v.personId)) && !(await privateReminder(d.db, v.reminderId))))) throw new AppError('not_found');
       return v;
     },
 
@@ -402,7 +465,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
         select o.id as occurrence_id, rm.title, rm.category, o.due_at, o.state, x.kind, x.info, x.at, x.care_request
         from reminder_occurrences o join reminders rm on rm.id = o.reminder_id
         left join lateral (select kind, info, at, care_request from reminder_responses where occurrence_id = o.id order by at desc limit 1) x on true
-        where o.person_id = ${personId} and o.state in ('answered', 'missed', 'due') and o.due_at > ${new Date(d.clock() - 14 * 86_400_000)}
+        where o.person_id = ${personId} and o.state in ('answered', 'missed', 'due') and o.due_at > ${new Date(d.clock() - 14 * 86_400_000)} ${shownTo(actorId, personId, 'rm.appointment_id')}
         order by o.due_at desc limit 100`.execute(d.db);
       return {
         responses: r.rows.map((x) => ({

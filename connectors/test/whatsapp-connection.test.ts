@@ -356,8 +356,8 @@ describe('a WhatsApp connection', () => {
     expect(of('conn.state').at(-1)).toMatchObject({ state: 'logged_out' });
     // "Neu verbinden" then starts a new connection instead of telling this state again.
     expect(conn.ended()).toBe(true);
-    await tick(20);
-    expect(existsSync(dir)).toBe(false);
+    // Its keys go a moment later (longer under a full test run's load).
+    await expect.poll(() => existsSync(dir)).toBe(false);
     await conn.stop();
   });
 });

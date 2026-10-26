@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { fromWords, toWords } from '@ucap/identity';
+import { appointmentReadback } from '@ucap/shared';
 import { choose, clocks, heading, home, invitation, listen, mark, ORIGIN, said, setChoice, signUp, spoken, sql, talk, MESSAGING } from './app.ts';
 import { type ChatRequest, type Engines, reply, startEngines } from './engines.ts';
 import { type Phone, phone, type SmsPhone, smsPhone } from './phone.ts';
@@ -624,6 +625,47 @@ test('7e · one contact across services (docs/plan-m3.md, K6; acceptance 9): Cla
   const calls = () => clara.evaluate(() => ((window as unknown as { __ucap?: { activations: { area: string; how: string }[] } }).__ucap?.activations ?? []).filter((a) => a.area === 'call').map((a) => a.how));
   await expect.poll(calls).toEqual(['dialler']);
   engines.model = () => reply('In Ordnung.');
+});
+
+test('7f · appointments (docs/plan-m3.md, K7; acceptance 10): Clara lets Maria manage her appointments and tasks; Maria enters a doctor’s appointment from her browser, read back as stored; Clara’s tablet says so and her history names it; its reminder is Clara’s, changed with it only', async () => {
+  // Clara allows "Termine und Aufgaben verwalten", as any permission.
+  await helpersPage(clara);
+  const mariaItem = clara.locator('li.device').filter({ has: clara.getByRole('heading', { name: 'Maria', exact: true }) });
+  await mariaItem.getByRole('button', { name: 'Ändern', exact: true }).click();
+  await setChoice(mariaItem.getByRole('checkbox', { name: 'Termine und Aufgaben verwalten' }));
+  await mariaItem.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(mariaItem.getByText(/Termine und Aufgaben verwalten/)).toBeVisible();
+  await home(clara);
+  // A week from the servers' today, at 10:00, with the editor's reminder an hour before.
+  const day = new Date((await clocks.now()) + 7 * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  await helpersPage(maria);
+  const claraItem = maria.locator('li.device').filter({ has: maria.getByRole('heading', { name: 'Clara', exact: true }) });
+  await claraItem.getByRole('button', { name: 'Termine von Clara' }).click();
+  await maria.getByRole('button', { name: 'Termin eintragen' }).click();
+  await maria.getByLabel('Was', { exact: true }).fill('Zahnarzt');
+  await maria.getByLabel('Tag', { exact: true }).fill(day);
+  await maria.getByLabel('Uhrzeit', { exact: true }).fill('10:00');
+  await maria.getByLabel('Ort', { exact: true }).fill('Praxis Weber');
+  const from = await mark(clara);
+  const saved = await mark(maria);
+  await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
+  // Read back from what the server stored, naming whom it reminds.
+  const readback = appointmentReadback('de', 'du', { title: 'Zahnarzt', day, time: '10:00', weekdays: null, place: 'Praxis Weber', remindBefore: [60] }, new Date().getFullYear(), 'Clara');
+  expect(readback).toMatch(/^Termin gespeichert: \S+, \d+\. \S+, 10 Uhr: Zahnarzt, Praxis Weber\. Ich erinnere Clara eine Stunde vorher\.$/);
+  expect(await said(maria, /^Termin gespeichert: /, saved)).toBe(readback);
+  // Said on Clara's tablet, and kept in her history.
+  await said(clara, /^Maria hat den Termin „Zahnarzt“ eingetragen\.$/, from);
+  await helpersPage(clara);
+  await expect(clara.getByText('Maria hat den Termin „Zahnarzt“ eingetragen').first()).toBeVisible();
+  // Its reminder is among Clara's, as part of the appointment: not changed on its own.
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Erinnerungen', exact: true }).click();
+  const reminder = clara.locator('li.device').filter({ has: clara.getByRole('heading', { name: 'Zahnarzt', exact: true }) });
+  await expect(reminder.getByText('Gehört zu einem Termin: unter „Termine“ ändern.')).toBeVisible();
+  await expect(reminder.getByRole('button')).toHaveCount(0);
+  await home(clara);
+  await home(maria);
 });
 
 test('8 · a remote change: Maria moves Messages and switches the device to high contrast; it waits while the person uses it, then is applied, announced with undo; Maria’s page says "angewendet"', async () => {

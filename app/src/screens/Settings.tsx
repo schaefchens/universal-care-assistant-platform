@@ -57,6 +57,9 @@ export function Settings(p: {
   onPeople: () => void;
   onReminders: () => void;
   onContacts: () => void;
+  /** The person's appointments and tasks (K7). */
+  onAppointments: () => void;
+  onTasks: () => void;
   onVoices: () => void;
   /** The person's own messaging services (docs/plan-m3.md): Telegram, and more to come. */
   onMessaging: () => void;
@@ -121,6 +124,12 @@ export function Settings(p: {
         </Button>
         <Button className="button" onPress={p.onContacts}>
           {tr('contacts.page.own')}
+        </Button>
+        <Button className="button" onPress={p.onAppointments}>
+          {tr('agenda.page.appointments')}
+        </Button>
+        <Button className="button" onPress={p.onTasks}>
+          {tr('agenda.page.tasks')}
         </Button>
         <Button className="button" onPress={p.onDevices}>
           {tr('settings.devices')}

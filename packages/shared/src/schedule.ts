@@ -1,5 +1,6 @@
 /**
- * Reminder schedules (docs/plan.md, S6): once, daily on chosen weekdays, or every few minutes within a daily window,
+ * Reminder schedules (docs/plan.md, S6): once, daily on chosen weekdays (from a day on, for a weekly appointment's
+ * reminder: docs/plan-m3.md, K7), or every few minutes within a daily window,
  * all in the reminder's time zone, so "15:00" stays 15:00 across daylight saving time. Shared by the server (which
  * makes the occurrences) and the app (which shows them).
  *
@@ -15,7 +16,10 @@ const Weekdays = Type.Array(Type.Integer({ minimum: 1, maximum: 7 }), { minItems
 
 export const Schedule = Type.Union([
   Type.Object({ kind: Type.Literal('once'), date: Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }), time: HHMM }, { additionalProperties: false }),
-  Type.Object({ kind: Type.Literal('daily'), times: Type.Array(HHMM, { minItems: 1, maxItems: 24, uniqueItems: true }), days: Weekdays }, { additionalProperties: false }),
+  Type.Object(
+    { kind: Type.Literal('daily'), times: Type.Array(HHMM, { minItems: 1, maxItems: 24, uniqueItems: true }), days: Weekdays, from: Type.Optional(Type.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' })) },
+    { additionalProperties: false },
+  ),
   Type.Object(
     { kind: Type.Literal('interval'), everyMinutes: Type.Integer({ minimum: 15, maximum: 720 }), from: HHMM, until: HHMM, days: Weekdays },
     { additionalProperties: false },
@@ -94,7 +98,7 @@ function timesOfDay(s: Schedule, y: number, m: number, d: number): { h: number; 
     return sy === y && sm === m && sd === d ? [parseHHMM(s.time)] : [];
   }
   if (!s.days.includes(isoWeekday(y, m, d))) return [];
-  if (s.kind === 'daily') return s.times.map(parseHHMM);
+  if (s.kind === 'daily') return s.from && `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` < s.from ? [] : s.times.map(parseHHMM);
   const from = parseHHMM(s.from);
   const until = parseHHMM(s.until);
   const out: { h: number; mi: number }[] = [];

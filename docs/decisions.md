@@ -1190,6 +1190,27 @@ The plan: [plan-m3.md](plan-m3.md).
   contrast), so the area is told apart from Nachrichten and Notizen.
 - **`contacts.manage` comes with K6, `agenda.manage` with K7**, each with what it manages. K6's tests name "the
   permission matrix with both new scopes"; K7's matrix test adds the second.
+- **An appointment's reminders** (K7: "An appointment's reminders are M1's reminders"): one M1 reminder for each
+  "before" chosen (at most three, at most two weeks before), linked to the appointment and made, moved and ended with it
+  in the same transaction, by whoever changed it. Its words are the device's for the category "Termin". On the
+  reminders page it shows as part of the appointment ("Gehört zu einem Termin: unter „Termine“ ändern.") and the server
+  refuses changing, pausing or deleting it there.
+- **"Before" is on the person's clock** (K7's test: "time zones and summer time"): an appointment keeps its wall time in
+  the person's zone, weekly ones too, and "eine Stunde vorher" is an hour earlier on the clock, also on the night the
+  clocks change. A weekly appointment's reminder is a daily reminder on the weekdays it falls on ("einen Tag vorher" for
+  Mondays is on Sundays), from the first one's day on: the schedule gained an optional first day (`from`).
+- **A whole-day appointment reminds at 09:00**, on its day ("am Morgen des Tages") or whole days before. The plan names
+  no time; 09:00 is a fixed default for now, and can become a per-person setting like the quiet times.
+- **Private is the person's own** (K7: "what the person marks private is not shown"): only the person marks an
+  appointment or a task private or not; a helper with `agenda.manage` neither sees nor changes it. Its reminders are
+  the person's alone too: not on a helper's reminders page, not among the answers a helper may read, and a missed one is
+  not told to helpers. "Hilfe holen" from such a reminder is a help request like any other (it names no reminder).
+- **What is read back names whose it is**: the person hears "Ich erinnere dich eine Stunde vorher."; a helper who
+  entered it hears "Ich erinnere Clara eine Stunde vorher." Both are built from what the server stored. A helper's change
+  is said on the person's devices from the stored version ("Maria hat den Termin „Zahnarzt“ eingetragen."), audited by
+  ids and version only, and named in the history from the versions, as contacts are (K6).
+- **Undo** puts back the version before the last change: a new appointment or task undone is deleted, a deletion undone
+  brings it back with its reminders, and "Erledigt" undone opens the task again. Each is a version of its own.
 
 ### Measured
 

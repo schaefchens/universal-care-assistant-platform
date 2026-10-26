@@ -64,6 +64,8 @@ import { VoiceIntro, VoicesPage } from './screens/Voices.tsx';
 import { RemindersPage } from './screens/Reminders.tsx';
 import { ContactsPage } from './screens/Contacts.tsx';
 import { ContactsScreen } from './screens/ContactsScreen.tsx';
+import { AppointmentsPage, TasksPage } from './screens/Agenda.tsx';
+import { agenda as agendaApi } from './agenda/api.ts';
 import { reminders as reminderApi } from './reminders/api.ts';
 import { syncDeviceAlarms as syncAlarms } from './reminders/sync.ts';
 import { promptOf, titleOf } from './reminders/words.ts';
@@ -128,6 +130,10 @@ type Page =
   | { contactsOf: { id: string; displayName: string } }
   /** The person's contacts in large areas, opened from an area of theirs (K6). */
   | 'contactList'
+  /** The person's own appointments and tasks, or those of someone a helper supports with agenda.manage (K7). */
+  | 'appointments'
+  | 'tasks'
+  | { agendaOf: { id: string; displayName: string; which: 'appointments' | 'tasks' } }
   /** A change someone else made took effect: said, with keep or undo (S11). */
   | { configChanged: Change }
   /** A helper setting up a person's device (S11). */
@@ -175,6 +181,7 @@ export function App() {
   const [careRev, setCareRev] = useState(0);
   const [reminderRev, setReminderRev] = useState(0);
   const [contactsRev, setContactsRev] = useState(0);
+  const [agendaRev, setAgendaRev] = useState(0);
   const [messagingRev, setMessagingRev] = useState(0);
   const [configRev, setConfigRev] = useState(0);
   const [careState, setCareState] = useState<CareState>({ pending: false, request: null });
@@ -279,6 +286,8 @@ export function App() {
           emitAppEvent(e.type, e.data);
         } else if (e.type === 'contact.changed' || e.type === 'contacts.imported') {
           void contactNews(e.data);
+        } else if (e.type === 'agenda.changed') {
+          void agendaNews(e.data);
         } else if (e.type.startsWith('reminder.')) {
           void reminderNews(e.type, e.data);
         } else if (e.type.startsWith('messaging.')) {
@@ -712,9 +721,9 @@ export function App() {
 
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
-    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'contacts' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
+    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'contacts' || page === 'appointments' || page === 'tasks' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
     else if (page === 'telegram' || page === 'whatsapp' || page === 'sms' || (typeof page === 'object' && 'email' in page)) setPage('messagingServices');
-    else if (typeof page === 'object' && ('remindersOf' in page || 'contactsOf' in page || 'configOf' in page)) setPage('helpers');
+    else if (typeof page === 'object' && ('remindersOf' in page || 'contactsOf' in page || 'agendaOf' in page || 'configOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
     else if (stack.length > 1) setStack((s) => s.slice(0, -1));
@@ -909,6 +918,22 @@ export function App() {
     u.say(u.tr(`contact.news.${String(data.action)}`, { actor: v.changedBy.displayName, name: v.name }), 'notice');
   }
 
+  /**
+   * An appointment or a task changed (K7): the pages fetch again; a helper's change is said on the person's devices, by
+   * whom and which ("Maria hat den Termin „Zahnarzt“ eingetragen.").
+   */
+  async function agendaNews(data: Record<string, unknown>) {
+    if (!session) return;
+    setAgendaRev((n) => n + 1);
+    if (data.personId !== session.ref.userId || data.by === session.ref.userId) return;
+    const api = agendaApi(session, session.ref.userId);
+    const kind = data.kind === 'task' ? 'task' : 'appointment';
+    const v = await (kind === 'task' ? api.tasks : api.appointments).version(String(data.id), Number(data.version)).catch(() => null);
+    if (!v) return;
+    const u = uiRef.current;
+    u.say(u.tr(`agenda.news.${kind}.${String(data.action)}`, { actor: v.changedBy.displayName, name: v.title }), 'notice');
+  }
+
   async function reminderNews(type: string, data: Record<string, unknown>) {
     if (!session) return;
     const u = uiRef.current;
@@ -1055,6 +1080,7 @@ export function App() {
         onApprove={(id) => setPage({ approve: id })}
         onReminders={(person, canManage, canRead) => setPage({ remindersOf: { ...person, canManage, canRead } })}
         onContacts={(person) => setPage({ contactsOf: person })}
+        onAgenda={(person, which) => setPage({ agendaOf: { ...person, which } })}
         onConfigure={(person) => setPage({ configOf: person })}
         onClose={() => setPage('settings')}
       />
@@ -1199,7 +1225,17 @@ export function App() {
       </main>
     );
   else if (page === 'contacts') content = <ContactsPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} refresh={contactsRev} onClose={() => setPage('settings')} />;
-  else if (typeof page === 'object' && 'contactsOf' in page)
+  else if (page === 'appointments') content = <AppointmentsPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} refresh={agendaRev} onClose={() => setPage('settings')} />;
+  else if (page === 'tasks') content = <TasksPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} refresh={agendaRev} onClose={() => setPage('settings')} />;
+  else if (typeof page === 'object' && 'agendaOf' in page) {
+    const o = page.agendaOf;
+    content =
+      o.which === 'tasks' ? (
+        <TasksPage session={session} personId={o.id} personName={o.displayName} refresh={agendaRev} onClose={() => setPage('helpers')} />
+      ) : (
+        <AppointmentsPage session={session} personId={o.id} personName={o.displayName} refresh={agendaRev} onClose={() => setPage('helpers')} />
+      );
+  } else if (typeof page === 'object' && 'contactsOf' in page)
     content = <ContactsPage session={session} personId={page.contactsOf.id} personName={page.contactsOf.displayName} refresh={contactsRev} onClose={() => setPage('helpers')} />;
   else if (page === 'reminders')
     content = <RemindersPage session={session} personId={session.ref.userId} personName={me?.displayName ?? null} canManage canRead refresh={reminderRev} onClose={() => setPage('settings')} />;
@@ -1282,6 +1318,8 @@ export function App() {
         onPeople={() => setPage('helpers')}
         onReminders={() => setPage('reminders')}
         onContacts={() => setPage('contacts')}
+        onAppointments={() => setPage('appointments')}
+        onTasks={() => setPage('tasks')}
         onVoices={() => setPage('voices')}
         onMessaging={() => setPage('messagingServices')}
         onAiAdmin={me?.isAdmin ? () => setPage('aiAdmin') : undefined}

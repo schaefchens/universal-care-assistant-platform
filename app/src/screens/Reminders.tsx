@@ -271,7 +271,9 @@ export function RemindersPage(p: { session: Session; personId: string; personNam
                     .filter(Boolean)
                     .join(' · ')}
                 </p>
+                {r.appointmentId && <p className="muted">{tr('reminder.ofAppointment')}</p>}
                 {p.canManage &&
+                  !r.appointmentId &&
                   (deleting?.id === r.id ? (
                     <div className="stack">
                       <p role="alert">{tr('reminder.delete.confirm', { title: titleOf(tr, r) })}</p>

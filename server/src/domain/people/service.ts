@@ -275,20 +275,24 @@ export function createPeopleService(d: PeopleDeps) {
 
     /**
      * What happened to this person's account and permissions, newest first, as ids and action names. A contact's name
-     * is not in the log (no text a person wrote is): it is read from that version of the contact, the person's own.
+     * is not in the log (no text a person wrote is): it is read from that version of the contact, the appointment or the
+     * task, the person's own.
      */
     async auditFor(personId: string, limit = 50) {
-      const r = await sql<{ at: Date; action: string; actor_user: string | null; actor_name: string | null; target_type: string | null; detail: Record<string, unknown>; contact_name: string | null }>`
-        select a.at, a.action, a.actor_user, u.display_name as actor_name, a.target_type, a.detail, cv.data->>'name' as contact_name
+      const r = await sql<{ at: Date; action: string; actor_user: string | null; actor_name: string | null; target_type: string | null; detail: Record<string, unknown>; item_name: string | null }>`
+        select a.at, a.action, a.actor_user, u.display_name as actor_name, a.target_type, a.detail,
+          coalesce(cv.data->>'name', av.data->>'title', tv.data->>'title') as item_name
         from audit_events a left join users u on u.id = a.actor_user
         left join contact_versions cv on a.target_type = 'contact' and cv.contact_id::text = a.target_id and cv.version::text = a.detail->>'version'
+        left join appointment_versions av on a.target_type = 'appointment' and av.appointment_id::text = a.target_id and av.version::text = a.detail->>'version'
+        left join task_versions tv on a.target_type = 'task' and tv.task_id::text = a.target_id and tv.version::text = a.detail->>'version'
         where a.subject_user = ${personId} order by a.at desc, a.id desc limit ${Math.min(Math.max(limit, 1), 200)}`.execute(d.db);
       return r.rows.map((x) => ({
         at: x.at.toISOString(),
         action: x.action,
         actor: x.actor_user ? { id: x.actor_user, displayName: x.actor_name, self: x.actor_user === personId } : null,
         targetType: x.target_type,
-        detail: x.contact_name === null ? x.detail : { ...x.detail, name: x.contact_name },
+        detail: x.item_name === null ? x.detail : { ...x.detail, name: x.item_name },
       }));
     },
   };

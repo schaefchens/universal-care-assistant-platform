@@ -32,6 +32,8 @@ export interface Reminder {
   updatedAt: string;
   version: number;
   nextAt: string | null;
+  /** The appointment it reminds of (K7): changed with it, on the appointments page. */
+  appointmentId: string | null;
 }
 
 export interface Occurrence {

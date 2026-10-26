@@ -72,6 +72,8 @@ export function Helpers(p: {
   /** Setting up the person's device (device.configure, S11). */
   onConfigure?: (person: { id: string; displayName: string }) => void;
   onContacts?: (person: { id: string; displayName: string }) => void;
+  /** A person's appointments and tasks, with agenda.manage (K7). */
+  onAgenda?: (person: { id: string; displayName: string }, which: 'appointments' | 'tasks') => void;
 }) {
   const ui = useUi();
   const { tr, say } = ui;
@@ -346,6 +348,16 @@ export function Helpers(p: {
                     <Button className="button" onPress={() => p.onContacts?.(r.person)}>
                       {tr('contacts.page.of', { name: r.person.displayName })}
                     </Button>
+                  )}
+                  {r.state === 'active' && r.scopes.includes('agenda.manage') && (
+                    <>
+                      <Button className="button" onPress={() => p.onAgenda?.(r.person, 'appointments')}>
+                        {tr('agenda.page.appointmentsOf', { name: r.person.displayName })}
+                      </Button>
+                      <Button className="button" onPress={() => p.onAgenda?.(r.person, 'tasks')}>
+                        {tr('agenda.page.tasksOf', { name: r.person.displayName })}
+                      </Button>
+                    </>
                   )}
                   {r.state === 'active' && (r.scopes.includes('reminders.manage') || r.scopes.includes('reminders.responses.read')) && (
                     <Button className="button" onPress={() => p.onReminders?.(r.person, r.scopes.includes('reminders.manage'), r.scopes.includes('reminders.responses.read'))}>
