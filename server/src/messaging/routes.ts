@@ -145,11 +145,16 @@ export function registerMessagingRoutes(
       return { ok: true, ...r };
     },
   );
-  // What waits for the phone to send: taken, the phone sends it and reports how it went (send.result).
-  app.post('/api/v1/messaging/device/outbound', { preHandler: o.requireSigned, schema: { body: Type.Object({}, { additionalProperties: false }) } }, async (req) => {
-    const s = signed(req);
-    return { sends: await m.deviceTake(s.userId, s.deviceId) };
-  });
+  // What waits for the phone to send on one of its services (its SMS app when it names none): taken, the phone sends it
+  // and reports how it went (send.result).
+  app.post(
+    '/api/v1/messaging/device/outbound',
+    { preHandler: o.requireSigned, schema: { body: Type.Object({ service: Type.Optional(Type.Union([Type.Literal('sms'), Type.Literal('notifications')])) }, { additionalProperties: false }) } },
+    async (req) => {
+      const s = signed(req);
+      return { sends: await m.deviceTake(s.userId, s.deviceId, (req.body as { service?: 'sms' | 'notifications' }).service) };
+    },
+  );
 
   // —— Reading ——
   app.get('/api/v1/messaging/queue', { preHandler: requireAuth, schema: { querystring: LangQuery } }, async (req) => {

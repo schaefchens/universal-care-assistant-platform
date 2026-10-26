@@ -2,13 +2,13 @@
  * The person's messaging services (docs/plan-m3.md, K1): each connection with its state and what it can do (docs/plan.md,
  * Appendix K: "capability descriptors per connection"), shown and said, so previews are never taken for a whole history
  * (CONCEPT §3: "Access to notification previews must not be presented as access to a complete conversation history").
- * Telegram, WhatsApp and each email account open their own pages; SMS and previews come with their own steps (K4, K5).
+ * Telegram, WhatsApp, each email account, SMS (K4) and the previews of other apps (K5) open their own pages.
  * Disconnecting asks first and deletes what UCAP kept; the service keeps its own. Helpers see none of it (CONCEPT §3).
  */
 import { useEffect, useRef, useState } from 'react';
 import { Button } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
-import { has, Sms } from '../native/plugins.ts';
+import { has, Previews, Sms } from '../native/plugins.ts';
 import { ApiError } from '../net/api.ts';
 import { useUi } from '../ui.tsx';
 
@@ -41,6 +41,8 @@ export function MessagingServices(p: {
   onWhatsapp: () => void;
   onEmail: (connectionId: string | null) => void;
   onSms: () => void;
+  /** Previews of other apps on this phone (K5). */
+  onPreviews: () => void;
   onClose: () => void;
 }) {
   const ui = useUi();
@@ -109,6 +111,8 @@ export function MessagingServices(p: {
     setAsking(null);
     try {
       await p.session.call(`/api/v1/messaging/connections/${c.id}`, { method: 'DELETE' });
+      // This phone's previews process stops watching that app.
+      if (c.service === 'notifications' && c.deviceId === p.session.ref.deviceId && has('Previews')) await Previews.disconnect({ connectionId: c.id }).catch(() => {});
       report(tr('messaging.disconnected', { name: `${c.name}${account(c)}` }));
       await load();
     } catch (e) {
@@ -137,10 +141,16 @@ export function MessagingServices(p: {
             <li key={c.id} className="stack">
               <p>{line(c)}</p>
               <div className="row">
-                {(c.service === 'telegram' || c.service === 'whatsapp' || c.service === 'email' || (c.service === 'sms' && smsHere && c.deviceId === p.session.ref.deviceId)) && (
+                {(c.service === 'telegram' ||
+                  c.service === 'whatsapp' ||
+                  c.service === 'email' ||
+                  (c.service === 'sms' && smsHere && c.deviceId === p.session.ref.deviceId) ||
+                  (c.service === 'notifications' && has('Previews') && c.deviceId === p.session.ref.deviceId)) && (
                   <Button
                     className="button"
-                    onPress={() => (c.service === 'telegram' ? p.onTelegram() : c.service === 'whatsapp' ? p.onWhatsapp() : c.service === 'sms' ? p.onSms() : p.onEmail(c.id))}
+                    onPress={() =>
+                      c.service === 'telegram' ? p.onTelegram() : c.service === 'whatsapp' ? p.onWhatsapp() : c.service === 'sms' ? p.onSms() : c.service === 'notifications' ? p.onPreviews() : p.onEmail(c.id)
+                    }
                   >
                     {tr('messaging.open', { name: `${c.name}${account(c)}` })}
                   </Button>
@@ -190,6 +200,12 @@ export function MessagingServices(p: {
         {smsHere && !list?.some((c) => c.service === 'sms' && c.deviceId === p.session.ref.deviceId) && (
           <Button className="button primary" onPress={p.onSms}>
             {tr('messaging.connect.sms')}
+          </Button>
+        )}
+        {/* On the Android app: previews of other apps (their own page explains first). */}
+        {has('Previews') && (
+          <Button className="button primary" onPress={p.onPreviews}>
+            {tr('messaging.connect.previews')}
           </Button>
         )}
         {/* Several accounts, each connected on its own. */}

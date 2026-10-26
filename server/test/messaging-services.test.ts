@@ -339,7 +339,7 @@ describe('messaging across services', () => {
     expect(said).toBe('Bestätigt. Die Nachricht wird gesendet, sobald das Telefon erreichbar ist.');
     const o = await outbound(a.id);
     expect(o.state).toBe('queued');
-    expect((await events('messaging.device.send')).at(-1)).toEqual({ connectionId: smsId, deviceId: anna.deviceId });
+    expect((await events('messaging.device.send')).at(-1)).toEqual({ connectionId: smsId, deviceId: anna.deviceId, service: 'sms' });
     // Woken by a push that names only "sms" (core sends it; the assistant only asks for it).
     const wake = await sql<{ queue: string; kind: string; payload: unknown }>`select queue, kind, payload from jobs where key = ${`wake:${anna.deviceId}:sms`}`.execute(db);
     expect(wake.rows[0]).toEqual({ queue: 'core', kind: 'device.wake', payload: { deviceId: anna.deviceId, topic: 'sms' } });
@@ -373,6 +373,39 @@ describe('messaging across services', () => {
     await signedPost(anna, '/api/v1/messaging/device/outbound', {});
     await forward(anna, [{ t: 'send.result', requestId: og.id, state: 'failed', error: 'group' }]);
     expect((await assistant.messaging.outbound(anna.userId, og.id, 'de'))?.say).toBe('Nicht gesendet: in eine Gruppen-SMS kann UCAP noch nicht antworten. Der Entwurf ist gespeichert.');
+  });
+
+  it('K5: a reply through another app\'s notification is the previews\' own: woken as "previews", never taken by the SMS app; failed with the app\'s reason', async () => {
+    const signal = ((await as(anna, 'POST', '/api/v1/messaging/connections', { service: 'notifications', app: { package: 'org.thoughtcrime.securesms', name: 'Signal' } })).json() as { connection: View }).connection.id;
+    // The same message reported twice (a messenger posts the whole conversation again): kept once, by its id.
+    const shown = [
+      { t: 'user.upsert', user: { externalId: 'p:anna', name: 'Anna Signal', isContact: false, isBot: false } },
+      { t: 'chat.upsert', chat: { externalId: 'c:anna', title: 'Anna Signal', kind: 'private', userId: 'p:anna', muted: false, unread: 1, readInboxMaxId: null, readOutboxMaxId: null } },
+      { t: 'msg.upsert', msg: { chatId: 'c:anna', externalId: 'h:1', fromId: 'p:anna', outgoing: false, date: now(), editDate: null, kind: 'text', text: 'Kommst du heute?', file: null, fileName: null }, live: true },
+    ];
+    await forward(anna, shown, signal);
+    await forward(anna, shown, signal);
+    expect((await sql<{ n: number }>`select count(*)::int as n from messaging_messages where external_id = 'h:1'`.execute(db)).rows[0]!.n).toBe(1);
+    // Announced as a preview, with its app: never as if UCAP had the conversation.
+    const shownId = (await sql<{ id: string }>`select id from messaging_messages where external_id = 'h:1'`.execute(db)).rows[0]!.id;
+    expect(((await as(anna, 'GET', `/api/v1/messaging/messages/${shownId}?lang=de`)).json() as { say: { announce: string; frame: string } }).say).toMatchObject({
+      announce: 'Vorschau von Signal: neue Nachricht von Anna Signal.',
+      frame: expect.stringMatching(/^Vorschau von Signal: Anna Signal schrieb heute um \S+ auf Signal:$/),
+    });
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Anna Signal', text: 'Ja, gegen fünf.' }], help: false });
+    const w = (await turn(anna, 'Antworte Anna auf Signal: Ja, gegen fünf.')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string; prompt: string };
+    expect(w.prompt).toBe('Achtung: Anna Signal ist nicht in deinen Kontakten. Antwort an Anna Signal über Signal: „Ja, gegen fünf.“. Senden?');
+    await as(anna, 'POST', `/api/v1/assistant/actions/${w.id}/confirm`, { contentHash: w.contentHash, via: 'voice' });
+    const o = await outbound(w.id);
+    expect((await events('messaging.device.send')).at(-1)).toEqual({ connectionId: signal, deviceId: anna.deviceId, service: 'notifications' });
+    const wake = await sql<{ payload: unknown }>`select payload from jobs where key = ${`wake:${anna.deviceId}:previews`}`.execute(db);
+    expect(wake.rows[0]?.payload).toEqual({ deviceId: anna.deviceId, topic: 'previews' });
+    // The SMS app asks for its own (naming no service, as before K5) and gets none of it; the previews take it.
+    expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', {})).json() as { sends: unknown[] }).sends).toEqual([]);
+    expect(((await signedPost(anna, '/api/v1/messaging/device/outbound', { service: 'notifications' })).json() as { sends: unknown[] }).sends).toEqual([{ id: o.id, connectionId: signal, chatId: 'c:anna', text: 'Ja, gegen fünf.' }]);
+    await forward(anna, [{ t: 'send.result', requestId: o.id, state: 'failed', error: 'app_stopped' }], signal);
+    expect((await assistant.messaging.outbound(anna.userId, o.id, 'de'))?.say).toBe('Nicht gesendet: Signal wurde auf dem Telefon beendet. Der Entwurf ist gespeichert.');
+    await as(anna, 'DELETE', `/api/v1/messaging/connections/${signal}`);
   });
 
   it('a phone that stops running it (the SMS role went back): what waited is not sent (C4) and kept as a draft; when it runs again, it is told', async () => {
@@ -453,7 +486,7 @@ describe('messaging across services', () => {
     // Announced with its service, since there is more than one ("Neue Nachricht von Mama per SMS.").
     expect((await said('Ruf mich bitte an.')).announce).toBe('Neue Nachricht von Mama per SMS.');
     expect((await said('Ihr Termin am Dienstag fällt aus.')).announce).toBe('Neue Nachricht von Praxis Dr. Klein per E-Mail.');
-    expect((await said('Bin gleich zurück.')).announce).toBe('Neue Nachricht von Lena auf Signal.');
+    expect((await said('Bin gleich zurück.')).announce).toBe('Vorschau von Signal: neue Nachricht von Lena.');
     expect((await said('Kommst du morgen?')).announce).toBe('Neue Nachricht von Clara Beispiel auf Telegram.');
   });
 

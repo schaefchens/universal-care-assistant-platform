@@ -26,5 +26,19 @@
                 <action android:name="de.schaefchens.ucap.DEBUG_SELF" />
             </intent-filter>
         </receiver>
+        <!-- Previews (K5): the previews process fails on purpose, for the check that help lives on. -->
+        <receiver
+            android:name=".DebugPreviewReceiver"
+            android:exported="true"
+            android:process=":previews"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="de.schaefchens.ucap.DEBUG_PREVIEWS_CRASH" />
+            </intent-filter>
+        </receiver>
     </application>
+    <!-- The stand-in messenger of the emulator checks (tools/android/spikes/m3), offered as a messenger. -->
+    <queries>
+        <package android:name="de.schaefchens.ucap.spike.messenger" />
+    </queries>
 </manifest>

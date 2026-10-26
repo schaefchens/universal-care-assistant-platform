@@ -327,11 +327,12 @@ export function createMessaging(d: {
     const o = r.rows[0];
     if (!o || o.state !== 'queued') return 'queued';
     if (!isServerService(o.service)) {
-      // A phone sends it: told now (if its app listens), and woken by a push that says no more than "SMS" (core
-      // sends it); it takes what waits for it when it can (deviceTake).
+      // A phone sends it: told now (if its app listens), and woken by a push that says no more than "SMS" or
+      // "previews" (core sends it); the part of the phone that runs it takes what waits for it when it can (deviceTake).
       if (o.conn_state === 'ready' && o.device_id) {
-        await notify(o.user_id, 'messaging.device.send', { connectionId: o.connection_id, deviceId: o.device_id });
-        await enqueue(d.db, { queue: 'core', kind: 'device.wake', key: `wake:${o.device_id}:sms`, runAt: d.clock(), payload: { deviceId: o.device_id, topic: 'sms' }, maxAttempts: 3 });
+        const topic = wakeTopic(o.service);
+        await notify(o.user_id, 'messaging.device.send', { connectionId: o.connection_id, deviceId: o.device_id, service: o.service });
+        await enqueue(d.db, { queue: 'core', kind: 'device.wake', key: `wake:${o.device_id}:${topic}`, runAt: d.clock(), payload: { deviceId: o.device_id, topic }, maxAttempts: 3 });
       }
       return 'queued';
     }
@@ -822,7 +823,7 @@ export function createMessaging(d: {
           if (ev.state === 'off') await dropQueued(c, 'off');
           else {
             const waiting = await sql`select 1 from messaging_outbound where connection_id = ${c.id} and state = 'queued' limit 1`.execute(d.db);
-            if (waiting.rows.length) await notify(userId, 'messaging.device.send', { connectionId: c.id, deviceId });
+            if (waiting.rows.length) await notify(userId, 'messaging.device.send', { connectionId: c.id, deviceId, service: c.service });
           }
           c = (await connRow({ id: connectionId }))!;
           continue;
@@ -837,12 +838,15 @@ export function createMessaging(d: {
       return { conversations: Object.fromEntries(r.rows.map((x) => [x.external_id, x.id])) };
     },
 
-    /** The sends waiting for this phone, taken: from now on the phone is sending them (C6 if it never says how it went). */
-    async deviceTake(userId: string, deviceId: string): Promise<DeviceSend[]> {
+    /**
+     * The sends waiting for this phone on one of its services (its SMS app, or its previews), taken: from now on the
+     * phone is sending them (C6 if it never says how it went).
+     */
+    async deviceTake(userId: string, deviceId: string, service: 'sms' | 'notifications' = 'sms'): Promise<DeviceSend[]> {
       const r = await sql<{ id: string; connection_id: string; chat: string | null; to_address: string | null; text: string }>`
         update messaging_outbound o set state = 'attempting', attempted_at = ${now()}, updated_at = ${now()}
         from messaging_connections k
-        where o.connection_id = k.id and k.user_id = ${userId} and k.device_id = ${deviceId} and k.state = 'ready' and o.state = 'queued'
+        where o.connection_id = k.id and k.user_id = ${userId} and k.device_id = ${deviceId} and k.service = ${service} and k.state = 'ready' and o.state = 'queued'
         returning o.id, o.connection_id, (select v.external_id from messaging_conversations v where v.id = o.conversation_id) as chat, o.to_address, o.text`.execute(d.db);
       // A new SMS (K6) has no thread yet: the phone finds or makes the one for its number.
       return r.rows.map((x) => ({ id: x.id, connectionId: x.connection_id, ...(x.chat !== null ? { chatId: x.chat } : { chatId: '', to: x.to_address ?? '' }), text: x.text }));
@@ -1030,7 +1034,13 @@ export function createMessaging(d: {
         const f = frame(L, p.form, p.timezone, i);
         const text = i.kind === 'voice' || !i.text ? '' : CAPTIONED.has(i.kind) ? `${t(L, 'messages.frame.caption', {}, p.form)} ${i.text}` : i.text;
         const name = i.from || i.conversation;
-        const announce = several ? t(L, 'messages.announce.via', { name, via: via(L, i.service, i.label) }, p.form) : t(L, 'messages.announce', { name }, p.form);
+        // A preview says it is one (K5: "everywhere „Vorschau“"), with the app it came from.
+        const announce =
+          i.service === 'notifications'
+            ? t(L, 'messages.announce.preview', { name, service: serviceName(i.service, i.label, L) }, p.form)
+            : several
+              ? t(L, 'messages.announce.via', { name, via: via(L, i.service, i.label) }, p.form)
+              : t(L, 'messages.announce', { name }, p.form);
         // An email's quoted part is named by its first line, after the new text: "Darunter zitiert: Am Montag schrieb Anna."
         const quote = i.quoted && quoteHeader(i.quoted) ? t(L, 'messages.frame.quoted', { header: quoteHeader(i.quoted) }, p.form) : null;
         return { ...i, say: { frame: f, text, announce, ...(quote ? { quote } : {}) } };
@@ -1430,6 +1440,9 @@ export function namesFit(a: string, b: string): boolean {
   return (x.length === 1 && x[0] === y[0]) || (y.length === 1 && y[0] === x[0]);
 }
 
+/** What a push that wakes a phone names: its SMS app, or its previews (core knows nothing more of it). */
+const wakeTopic = (service: Service) => (service === 'notifications' ? 'previews' : 'sms');
+
 export function via(lang: Lang, service: Service, label: string | null): string {
   if (service === 'email') return t(lang, 'messages.via.email');
   if (service === 'sms') return t(lang, 'messages.via.sms');
@@ -1455,6 +1468,13 @@ function reasonKey(error: string | null, service: Service): string {
   if (error === 'offline') return 'offline';
   if (error === 'off') return service === 'sms' ? 'off.sms' : 'off.preview';
   if (error === 'signed_out') return 'signedOut';
+  // A reply through another app's notification (K5): the notification gone, the app stopped, or no reply in it.
+  if (service === 'notifications') {
+    if (error === 'gone') return 'preview.gone';
+    if (error === 'app_stopped') return 'preview.stopped';
+    if (error === 'no_reply') return 'preview.noReply';
+    return 'preview.phone';
+  }
   // The phone's own words for an SMS it could not send (K4): a group thread, nobody in it, the network's refusal.
   if (service === 'sms') {
     if (error === 'group') return 'sms.group';

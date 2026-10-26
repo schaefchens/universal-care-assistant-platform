@@ -8,7 +8,7 @@ import org.json.JSONObject;
 
 /**
  * A decrypted push from the server (server/src/domain/care/push.ts): {v, t, dlv, n, at, ttl} and, for care, {rid, ep,
- * who, dev, u, st, by}; a wake names only what waits ({w: "sms"}: a reply for the SMS app to send). Anything else is not UCAP's and is dropped before anything rings. `late`: ntfy keeps messages
+ * who, dev, u, st, by}; a wake names only what waits ({w: "sms"}, {w: "previews"}: a reply for the SMS app or the previews to send). Anything else is not UCAP's and is dropped before anything rings. `late`: ntfy keeps messages
  * for hours, so a phone that was off may get an alarm long after it was sent; that one is shown, never rung.
  *
  * Pure Java over org.json, so it is unit-tested on the JVM (PushPayloadTest).
@@ -38,7 +38,7 @@ final class PushPayload {
     final String title;
     final String text;
     final String category;
-    /** A wake: what waits on the device ("sms"). */
+    /** A wake: what waits on the device ("sms", "previews"). */
     final String what;
 
     private PushPayload(JSONObject o, String type, long nowS) {

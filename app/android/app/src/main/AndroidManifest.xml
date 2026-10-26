@@ -134,6 +134,25 @@
             android:process=":sms"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- Previews of other apps (docs/plan-m3.md, K5): their conversation notifications, read in a process of its own
+             (":previews"), so a crash there never takes the app's help with it; what the app's process asks of it, and
+             its retries. Android lists the listener as "UCAP" on its notification access page. -->
+        <service
+            android:name=".PreviewListener"
+            android:exported="true"
+            android:process=":previews"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+        <receiver android:name=".PreviewCommands" android:exported="false" android:process=":previews" />
+        <service
+            android:name=".PreviewJob"
+            android:exported="false"
+            android:process=":previews"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -152,6 +171,15 @@
             <action android:name="android.intent.action.SENDTO" />
             <data android:scheme="smsto" />
         </intent>
+        <!-- The messengers whose previews UCAP offers (K5), by name on its page: Signal, Threema, Instagram, Facebook
+             Messenger, and WhatsApp's own notifications for people without the link. -->
+        <package android:name="org.thoughtcrime.securesms" />
+        <package android:name="ch.threema.app" />
+        <package android:name="ch.threema.app.libre" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.facebook.orca" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
     </queries>
 
     <!-- Permissions. Each one is asked for only when its feature needs it. -->

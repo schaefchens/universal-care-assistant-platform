@@ -219,5 +219,10 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   wider than the screen (a long word) is drawn smaller, and taps by measured coordinates land off: check `innerWidth`.
 - **A notification listener** restarted after its process died reports the notifications still showing as new again:
   "each message once" belongs on the server. One-time codes are not redacted on the emulator.
+- **Previews (K5):** a messenger's own "mark as read" removes its notification, so a reply then goes through the last
+  one seen (its reply action stays good; kept in the previews process's memory). A force-stopped app stays stopped
+  (`FLAG_STOPPED`) until it is opened; an adb broadcast with `-f 0x10000020` reaches it anyway and ends that.
+  `adb shell cmd notification allow_listener|disallow_listener <component>` grants or takes back notification access;
+  the stand-in messenger is `tools/android/spikes/m3` (a debug build offers it on the previews page).
 - The JDK is `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.
 - `dl.google.com` needs the HTTP/2 relay on this network (`tools/google-maven-relay.ts`).

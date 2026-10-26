@@ -232,6 +232,25 @@ export interface SmsPlugin {
   addListener(event: 'opened', fn: (e: { thread?: string; compose?: string; body?: string | null }) => void): Promise<PluginListenerHandle>;
 }
 
+/** Previews of other apps (PreviewsPlugin.java, docs/plan-m3.md, K5); the work itself runs in the app's previews process. */
+export interface PreviewsPlugin {
+  /** `access`: Android lets UCAP read notifications; `debug`: a debug build (it also offers the stand-in messenger). */
+  status(): Promise<{ access: boolean; sdk: number; debug: boolean }>;
+  /** Of these packages, which are on the phone, with the name the phone shows. */
+  apps(o: { packages: string[] }): Promise<{ apps: { package: string; installed: boolean; name?: string }[] }>;
+  /** Android's notification access page (UCAP's own entry where Android has one). */
+  openAccess(): Promise<void>;
+  /** UCAP's app info, whose menu holds "Eingeschränkte Einstellungen zulassen" for an app installed from a file. */
+  openAppInfo(): Promise<void>;
+  /** The previews process watches this app for the person's connection from now on; what it shows now is history. */
+  connect(o: { connectionId: string; package: string }): Promise<void>;
+  disconnect(o: { connectionId: string }): Promise<void>;
+  /** Something waits for this phone's previews to send. */
+  take(): Promise<void>;
+  /** Messages the person heard: the app's own "read", once every one its notification shows was heard. */
+  markRead(o: { connectionId: string; chatId: string; externalIds: string[] }): Promise<void>;
+}
+
 /** An entry of the phone's address book: its name, numbers and addresses, labelled in the phone's language. */
 export interface PhoneContact {
   name: string;
@@ -256,3 +275,4 @@ export const Reminders = registerPlugin<RemindersPlugin>('Reminders');
 export const VoiceCapture = registerPlugin<VoiceCapturePlugin>('VoiceCapture');
 export const Sms = registerPlugin<SmsPlugin>('Sms');
 export const PhoneContacts = registerPlugin<PhoneContactsPlugin>('PhoneContacts');
+export const Previews = registerPlugin<PreviewsPlugin>('Previews');

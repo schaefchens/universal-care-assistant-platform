@@ -67,8 +67,12 @@ final class PushHandler {
             // A late question is not asked any more: the server has moved on (another prompt, or missed).
             case "reminder.due": if (!p.late) ReminderAlarms.prompt(ctx, p.oid, ReminderAlarms.titleFor(ctx, p.oid, p.title), ReminderAlarms.questionFor(ctx, p.oid, p.text)); break;
             case "reminder.followup": ReminderAlarms.followUp(ctx, p); break;
-            // Something waits for this phone (a reply its SMS app is to send): the SMS process takes it, late or not.
-            case "wake": if ("sms".equals(p.what)) SmsCommands.send(ctx, "take", null); break;
+            // Something waits for this phone (a reply its SMS app or its previews are to send): the process that runs it
+            // takes it, late or not.
+            case "wake":
+                if ("sms".equals(p.what)) SmsCommands.send(ctx, "take", null);
+                else if ("previews".equals(p.what)) PreviewCommands.send(ctx, "take", null);
+                break;
             default: break; // a heartbeat needs no notification: the receipt is the answer
         }
     }

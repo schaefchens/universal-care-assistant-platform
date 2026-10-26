@@ -1008,6 +1008,13 @@ The plan: [plan-m3.md](plan-m3.md).
     per service (K8: "what LIVE says by itself, per service"). The configuration keeps the field for the versions that
     have it. The other choice: a switch that, in LIVE mode, leaves a reminder to its alarm without its words.
     - **Confirmed by the owner, 2026-10-26.**
+19. **Whoever writes in a preview is never one of the person's contacts by themselves**, so every reply through an app's
+    notification first says "Achtung: Anna ist nicht in deinen Kontakten." (K5).
+    - A notification gives a name and nothing to check it by (no number, no address).
+    - plan-m3.md, Principles: "Names come from the person's contacts, never from the sender"; and whoever is not in
+      them is named as such before anything is sent to them.
+    - The other choice: K6's suggestions for preview names too ("Anna auf Signal: dieselbe Person wie dein Kontakt
+      „Anna“?"), kept with the contact as a handle of its own, after which the warning is not said.
 
 ### Decided (within the plan)
 
@@ -1317,6 +1324,43 @@ The plan: [plan-m3.md](plan-m3.md).
   15 s, and a device that gave up marks nothing as announced, so the news comes again (found on the emulator, below).
 - **A summary speaks to the person and never names them.** The prompt names the pronouns, with an example: "ob ihr
   euch seht"; for "Sie", "fragt, ob Sie Zeit haben"; in English, "asks whether you are free". Measured below.
+- **Previews run in a process of their own** (K5): a notification listener in ":previews", with its own small
+  database, all its work on one thread in order, reporting signed as the SMS process does.
+  - Android starts the process again after a crash, and the app's process, where help lives, runs on.
+- **A conversation is its notification, never its content** (lookup; spike D). It is the app's own shortcut for it
+  (Android 11+), else the notification's key.
+  - A message's id is the app, the conversation, who wrote, when and what. A messenger posts the whole recent
+    conversation again with every new message, and the server keeps each message once by that id.
+  - The process also remembers what it reported for three days, so the repeats are not sent again.
+  - People are the names the notification shows (To confirm, item 19).
+  - What an app shows at the moment it is chosen is history: read, no news.
+- **Only conversation notifications are read** (MessagingStyle). An app's other notifications and a group's summary
+  are left alone (spike D), and so are its pictures: a picture's words, where it has some, are read as text.
+- **A reply goes through the conversation's notification, with the app's own reply action.**
+  - Once the app has taken the notification away (marked read, say), the reply goes through the last one the previews
+    process saw: its reply action stays good. That notification is kept in the process's memory only, so after a
+    restart such a reply is not possible ("zeigt die Unterhaltung nicht mehr an").
+  - "Gesendet" comes once the app shows the reply as the person's own message.
+  - Not sent: an app that was stopped (Android keeps it stopped until it is opened again: "wurde auf dem Telefon
+    beendet"); a notification that offers no reply; UCAP no longer allowed to read notifications.
+- **A conversation is marked read through the app's own action once every message its notification shows is done**:
+  heard through UCAP, or read before (a messenger may show read messages again with a new one; found on the emulator).
+  When the app takes its notification away itself, the conversation was read there, and is read in UCAP too.
+- **What waits for a phone to send is taken by service**: the SMS process takes the SMS, the previews process the
+  replies through notifications (`/device/outbound` names the service; the SMS app as before when it names none). The
+  push that wakes the phone names "previews" for them.
+- **Previews say they are previews everywhere**: "Vorschau von Signal: neue Nachricht von Anna." where M1 announces a
+  message; the frames and LIVE as before (K1, K8); the services page ("kennt nur, was die Benachrichtigungen zeigen,
+  keinen Verlauf"); and the page "Von Signal kenne ich nur, was seine Benachrichtigungen zeigen."
+- **The previews page explains each step and checks the result itself.**
+  - What UCAP reads and where it goes comes first, with the person's consent ("Einverstanden: weiter zu Android"; Play's
+    prominent disclosure).
+  - Then Android's own page, UCAP's entry there (Android 11+). Back from it, UCAP checks the access. When it is still
+    missing, the page explains "Eingeschränkte Einstellungen zulassen" and opens UCAP's app info.
+  - Then the apps on the phone among Signal, Threema, Instagram, Messenger and WhatsApp, each a connection of its own.
+    WhatsApp is not offered while it is linked: every message would come twice. A debug build also offers the emulator
+    checks' stand-in messenger.
+  - Codes Android hides in notifications stay hidden, and the page says so.
 
 ### Measured
 
@@ -1653,3 +1697,37 @@ The plan: [plan-m3.md](plan-m3.md).
   - Afterwards: the test mails and the task deleted, the recording removed, the SMS role back with Google Messages
     (which ended UCAP's process, as Android does), the host microphone on, the storage threshold removed. UCAP was
     started again and left open on the emulator, as the owner asked.
+- **K5 on the emulator (2026-10-26)**, Wanda in LIVE mode, the real model and speech recognition, with the stand-in
+  messenger of spike D (`tools/android/spikes/m3`):
+  - **The page:** the disclosure and "UCAP darf noch keine Benachrichtigungen lesen."; "Einverstanden: weiter zu
+    Android" opened Android's page for UCAP, where access was switched on and allowed. Back in UCAP: "UCAP darf
+    Benachrichtigungen lesen.", then "Stand-in Messenger lesen": "UCAP liest jetzt Stand-in Messenger. Von Stand-in
+    Messenger kenne ich nur, was seine Benachrichtigungen zeigen."
+  - **The listener** ran in ":previews", beside the app's process and ":sms".
+  - **Read:** LIVE said "Vorschau von Stand-in Messenger: Anna Beispiel schrieb: „Kommst du heute Abend zum Essen?“"
+    by itself, 4.4 s after the message was posted (LIVE's gathering). Heard to its end, it was marked read through the
+    messenger's own action. The messenger took its notification away, and UCAP read the message too.
+  - **Found and fixed: a second message was not marked read.** The stand-in shows the last seven messages every time,
+    and the first was no longer among those counted as heard. Messages read before now count as done.
+  - **A reply by voice** ("Alina, antworte Anna Beispiel, dass ich um sieben komme."): "Achtung: Anna Beispiel ist nicht
+    in deinen Kontakten. Antwort an Anna Beispiel über Stand-in Messenger: „Ich komme um sieben.“. Senden?"; "Ja";
+    "Gesendet an Anna Beispiel." 0.4 s after the confirmation. It went through the conversation's last notification,
+    already gone after the message was marked read, once the messenger showed the reply as Wanda's own. The driver
+    answered "Ja" only to that exact question.
+  - **A stopped app:** a new message read, the messenger force-stopped, a reply asked and confirmed: "Nicht gesendet:
+    Stand-in Messenger wurde auf dem Telefon beendet. Der Entwurf ist gespeichert."
+  - **A crash of ":previews"** (a debug build's command): Android started it again within a second for the listener.
+    The app's process and ":sms" ran on, with the home screen and its help area, and the next message was said as
+    before.
+  - **Each message once:** five messages and the one reply stored, six ids, while the messenger posted the whole
+    conversation again each time and the listener was started anew twice.
+  - axe on the previews page and the services page: nothing at any impact. The services page says of the stand-in
+    "kennt nur, was die Benachrichtigungen zeigen, keinen Verlauf; antwortet nur auf Benachrichtigungen, die gekommen
+    sind; „gesendet", sobald Stand-in Messenger sie anzeigt".
+  - Afterwards: the connection removed on the page ("UCAP liest Stand-in Messenger nicht mehr."), notification access
+    taken back (Android's allowed listeners exactly as before), the stand-in uninstalled, the recordings removed, the
+    storage threshold removed. The emulator was left open with UCAP on its home screen.
+  - Not checked here: real messengers (none is installed on the emulator); Android 15's hiding of codes (spike D saw
+    none hidden on this image); "Eingeschränkte Einstellungen zulassen" (the app came from adb, which Android does not
+    restrict).
+

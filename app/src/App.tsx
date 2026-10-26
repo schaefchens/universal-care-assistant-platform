@@ -26,7 +26,7 @@ import { WebPushSetup } from './care/WebPushSetup.tsx';
 import { deviceKey, shareRefWithWorker } from './identity/device-key.ts';
 import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
-import { Alerts, has, Info, Keys, Reminders, Sms } from './native/plugins.ts';
+import { Alerts, has, Info, Keys, Previews, Reminders, Sms } from './native/plugins.ts';
 import { deviceRevoked } from './net/api.ts';
 import { emitAppEvent } from './net/events.ts';
 import { Realtime } from './net/realtime.ts';
@@ -50,6 +50,7 @@ import { NotesScreen } from './screens/NotesScreen.tsx';
 import { TelegramPage } from './screens/TelegramPage.tsx';
 import { WhatsappPage } from './screens/WhatsappPage.tsx';
 import { EmailPage } from './screens/EmailPage.tsx';
+import { PreviewsPage } from './screens/PreviewsPage.tsx';
 import { SmsPage } from './screens/SmsPage.tsx';
 import { Devices } from './screens/Devices.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
@@ -118,6 +119,8 @@ type Page =
   /** UCAP as this phone's SMS app (K4); another app's "write an SMS" to a number, with its text if it gave one. */
   | 'sms'
   | { smsTo: { to: string; body: string | null } }
+  /** Previews of other apps on this phone (K5). */
+  | 'previews'
   /** An action of the assistant waiting for the person's yes; then back where it was asked (the messages). */
   | { confirm: { id: string; contentHash: string; prompt: string }; back?: 'messages' | 'notes' | 'contactList' | 'appointmentList' | 'taskList' }
   /** The recovery words were said to the assistant: a warning, and new words offered (Appendix C). */
@@ -664,6 +667,12 @@ export function App() {
     return () => void opened.then((h) => h.remove());
   }, [session]);
 
+  // Previews of other apps (K5): as the app starts, the previews process takes what waits for this phone (a push may
+  // have been missed) and arms its jobs again (an update of the app cancels them).
+  useEffect(() => {
+    if (session && has('Previews')) void Previews.take().catch(() => {});
+  }, [session]);
+
   // The hardware help key: one press sends help at once (docs/plan.md, Appendix D: "The hardware help key and exact
   // help phrases act at once").
   useEffect(() => {
@@ -735,7 +744,7 @@ export function App() {
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
     if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'contacts' || page === 'appointments' || page === 'tasks' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
-    else if (page === 'telegram' || page === 'whatsapp' || page === 'sms' || (typeof page === 'object' && 'email' in page)) setPage('messagingServices');
+    else if (page === 'telegram' || page === 'whatsapp' || page === 'sms' || page === 'previews' || (typeof page === 'object' && 'email' in page)) setPage('messagingServices');
     else if (typeof page === 'object' && ('remindersOf' in page || 'contactsOf' in page || 'agendaOf' in page || 'configOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
@@ -997,12 +1006,17 @@ export function App() {
       u.earcons.play('message');
       // With the service once there is more than one ("… auf WhatsApp."), as the server words it.
       u.say(m.say?.announce ?? u.tr('messages.announce', { name: m.from || m.conversation }), 'notice');
-    } else if (type === 'messaging.device.send' && data.deviceId === session.ref.deviceId && has('Sms')) {
-      // A reply waits for this phone's SMS app (the native push does the same with the app closed).
-      void Sms.take().catch(() => {});
-    } else if (type === 'messaging.device.read' && has('Sms')) {
-      // Heard on one of the person's devices: read in this phone's store, if it runs that connection.
-      void Sms.markRead({ connectionId: String(data.connectionId), externalIds: (data.externalIds as string[]) ?? [] }).catch(() => {});
+    } else if (type === 'messaging.device.send' && data.deviceId === session.ref.deviceId) {
+      // A reply waits for this phone's SMS app or its previews (the native push does the same with the app closed).
+      if (data.service === 'notifications') {
+        if (has('Previews')) void Previews.take().catch(() => {});
+      } else if (has('Sms')) void Sms.take().catch(() => {});
+    } else if (type === 'messaging.device.read') {
+      // Heard on one of the person's devices: read in this phone's store, or through the other app's own "read", if
+      // this phone runs that connection (each checks).
+      const read = { connectionId: String(data.connectionId), externalIds: (data.externalIds as string[]) ?? [] };
+      if (has('Sms')) void Sms.markRead(read).catch(() => {});
+      if (has('Previews')) void Previews.markRead({ ...read, chatId: String(data.chatId ?? '') }).catch(() => {});
     } else if (type === 'messaging.outbound' && data.deviceId === session.ref.deviceId) {
       const o = await session.call<{ say: string | null }>(`/api/v1/messaging/outbound/${String(data.outboundId)}?lang=${u.lang}`).catch(() => null);
       if (o?.say) u.say(o.say, 'notice');
@@ -1226,12 +1240,14 @@ export function App() {
         onWhatsapp={() => setPage('whatsapp')}
         onEmail={(id) => setPage({ email: id })}
         onSms={() => setPage('sms')}
+        onPreviews={() => setPage('previews')}
         onClose={() => setPage('settings')}
       />
     );
   else if (page === 'telegram') content = <TelegramPage session={session} refresh={messagingRev} onClose={() => setPage('messagingServices')} />;
   else if (page === 'whatsapp') content = <WhatsappPage session={session} refresh={messagingRev} onClose={() => setPage('messagingServices')} />;
   else if (page === 'sms') content = <SmsPage session={session} refresh={messagingRev} onClose={() => setPage('messagingServices')} />;
+  else if (page === 'previews') content = <PreviewsPage session={session} refresh={messagingRev} onClose={() => setPage('messagingServices')} />;
   else if (typeof page === 'object' && 'email' in page)
     content = <EmailPage session={session} refresh={messagingRev} connectionId={page.email} onConnected={(id) => setPage({ email: id })} onClose={() => setPage('messagingServices')} />;
   else if (page === 'leak')
