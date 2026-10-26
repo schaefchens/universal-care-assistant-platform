@@ -3,7 +3,7 @@
  * device: in the app they go through native code, which keeps them in its outbox when offline; in a browser they are
  * sent again a few times while the page is open.
  */
-import type { Schedule } from '@ucap/shared';
+import type { MessageSource, Schedule } from '@ucap/shared';
 import { uuidv7 } from '@ucap/shared';
 import type { Session } from '../identity/account.ts';
 import { has, Reminders } from '../native/plugins.ts';
@@ -34,6 +34,9 @@ export interface Reminder {
   nextAt: string | null;
   /** The appointment it reminds of (K7): changed with it, on the appointments page. */
   appointmentId: string | null;
+  /** Made from a message (K7); which one, to the person only. */
+  fromMessage: boolean;
+  source: MessageSource | null;
 }
 
 export interface Occurrence {

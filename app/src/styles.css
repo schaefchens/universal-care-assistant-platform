@@ -200,6 +200,7 @@ body {
 .area[data-role='notes'] { --area-bg: var(--area-notes-bg); --area-text: var(--area-notes-text); --area-border: var(--area-notes-border); }
 .area[data-role='reminders'] { --area-bg: var(--area-reminders-bg); --area-text: var(--area-reminders-text); --area-border: var(--area-reminders-border); }
 .area[data-role='contacts'] { --area-bg: var(--area-contacts-bg); --area-text: var(--area-contacts-text); --area-border: var(--area-contacts-border); }
+.area[data-role='agenda'] { --area-bg: var(--area-agenda-bg); --area-text: var(--area-agenda-text); --area-border: var(--area-agenda-border); }
 .area[data-role='nav'] { --area-bg: var(--area-nav-bg); --area-text: var(--area-nav-text); --area-border: var(--area-nav-border); }
 
 /* An area's own colour (set inline) wins over its role's. */

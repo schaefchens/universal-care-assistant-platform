@@ -4,7 +4,7 @@
  * entering, changing and deleting, with undo right after each (CONCEPT §8: "reversible"); an appointment is read back
  * as it was stored ("Termin gespeichert: …"). These are the pages for screen readers and keyboards.
  */
-import { appointmentReadback, appointmentWhen, dayText, type Lang, reminderWhen, remindersText, weekdayName } from '@ucap/shared';
+import { appointmentReadback, appointmentWhen, dayText, type Lang, type MessageSource, reminderWhen, remindersText, sourcePhrase, weekdayName } from '@ucap/shared';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, TextArea, TextField } from 'react-aria-components';
 import { agenda, type Appointment, type AppointmentFields, type Task, type TaskFields } from '../agenda/api.ts';
@@ -162,6 +162,11 @@ function TaskEditor(p: { initial: Task | null; own: boolean; onSave: (f: TaskFie
   );
 }
 
+/** Private, and where it came from: the person hears which message, a helper only that there was one (K7). */
+function marks(tr: Tr, lang: Lang, x: { private: boolean; fromMessage: boolean; source?: MessageSource | null }): string {
+  return [x.private ? tr('agenda.private') : '', x.source ? sourcePhrase(lang, x.source) : x.fromMessage ? tr('agenda.fromMessage') : ''].filter(Boolean).join(' · ');
+}
+
 /** What a page says and shows of a change, and "Rückgängig" right after it. */
 function usePageState() {
   const ui = useUi();
@@ -204,7 +209,7 @@ export function AppointmentsPage(p: { session: Session; personId: string; person
       setEditing(null);
       setLast(a.id);
       // Read back from what was stored.
-      tell(appointmentReadback(lang, form, a, year, of));
+      tell(appointmentReadback(lang, form, a, { year, of }));
       await load();
       return null;
     } catch (err) {
@@ -275,7 +280,7 @@ export function AppointmentsPage(p: { session: Session; personId: string; person
                 {a.place && <p>{a.place}</p>}
                 {a.remindBefore.length > 0 && <p>{remindersText(lang, form, a, of)}</p>}
                 {a.note && <p className="muted">{a.note}</p>}
-                {(a.private || a.fromMessage) && <p className="muted">{[a.private ? tr('agenda.private') : '', a.fromMessage ? tr('agenda.fromMessage') : ''].filter(Boolean).join(' · ')}</p>}
+                {marks(tr, lang, a) && <p className="muted">{marks(tr, lang, a)}</p>}
                 <p className="muted">{tr('agenda.changedBy', { name: a.updatedBy.displayName })}</p>
                 {deleting?.id === a.id ? (
                   <div className="stack">
@@ -418,7 +423,7 @@ export function TasksPage(p: { session: Session; personId: string; personName: s
                   {t.done ? tr('agenda.state.done') : t.dueDay ? tr('agenda.state.due', { date: dayText(lang, t.dueDay, year) }) : tr('agenda.state.open')}
                 </p>
                 {t.note && <p className="muted">{t.note}</p>}
-                {(t.private || t.fromMessage) && <p className="muted">{[t.private ? tr('agenda.private') : '', t.fromMessage ? tr('agenda.fromMessage') : ''].filter(Boolean).join(' · ')}</p>}
+                {marks(tr, lang, t) && <p className="muted">{marks(tr, lang, t)}</p>}
                 <p className="muted">{tr('agenda.changedBy', { name: t.updatedBy.displayName })}</p>
                 {deleting?.id === t.id ? (
                   <div className="stack">

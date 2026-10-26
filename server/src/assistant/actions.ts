@@ -100,7 +100,13 @@ export function createActions(d: { db: Db; clock: Clock; log: (m: string) => voi
       if (!taken.rows.length) return { ok: false, reason: 'done' };
       const tool = toolByName.get(a.tool);
       if (!tool || tool.kind !== 'act') return { ok: false, reason: 'failed' };
-      return attempt(ctx, id, tool, a.args);
+      const out = await attempt(ctx, id, tool, a.args);
+      // What the yes made is what the conversation is about now ("Lies die Nachricht dazu", "Verschieb ihn").
+      if (out.ok && out.focus)
+        await sql`
+          update assistant_sessions set focus = focus || ${JSON.stringify(out.focus)}::jsonb, updated_at = ${now()}
+          where user_id = ${ctx.userId} and device_id = ${ctx.deviceId}`.execute(d.db);
+      return out;
     },
 
     /**

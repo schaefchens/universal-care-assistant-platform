@@ -6,10 +6,12 @@
  * ends the walk. What the app said is read from its debug record; recovery words stay in this process's memory.
  */
 import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { fromWords, toWords } from '@ucap/identity';
-import { appointmentReadback } from '@ucap/shared';
+import { appointmentReadback, appointmentWhen } from '@ucap/shared';
 import { choose, clocks, heading, home, invitation, listen, mark, ORIGIN, said, setChoice, signUp, spoken, sql, talk, MESSAGING } from './app.ts';
 import { type ChatRequest, type Engines, reply, startEngines } from './engines.ts';
 import { type Phone, phone, type SmsPhone, smsPhone } from './phone.ts';
@@ -650,7 +652,7 @@ test('7f · appointments (docs/plan-m3.md, K7; acceptance 10): Clara lets Maria 
   const saved = await mark(maria);
   await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
   // Read back from what the server stored, naming whom it reminds.
-  const readback = appointmentReadback('de', 'du', { title: 'Zahnarzt', day, time: '10:00', weekdays: null, place: 'Praxis Weber', remindBefore: [60] }, new Date().getFullYear(), 'Clara');
+  const readback = appointmentReadback('de', 'du', { title: 'Zahnarzt', day, time: '10:00', weekdays: null, place: 'Praxis Weber', remindBefore: [60] }, { year: new Date().getFullYear(), of: 'Clara' });
   expect(readback).toMatch(/^Termin gespeichert: \S+, \d+\. \S+, 10 Uhr: Zahnarzt, Praxis Weber\. Ich erinnere Clara eine Stunde vorher\.$/);
   expect(await said(maria, /^Termin gespeichert: /, saved)).toBe(readback);
   // Said on Clara's tablet, and kept in her history.
@@ -665,6 +667,124 @@ test('7f · appointments (docs/plan-m3.md, K7; acceptance 10): Clara lets Maria 
   await expect(reminder.getByText('Gehört zu einem Termin: unter „Termine“ ändern.')).toBeVisible();
   await expect(reminder.getByRole('button')).toHaveCount(0);
   await home(clara);
+  // By voice: "Wann ist der Zahnarzt?" is said by UCAP from what is stored (the model names it, never its time);
+  // "Verschieb den Zahnarzt auf 11 Uhr" moves it, read back as stored.
+  const exactly = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+  const year = new Date().getFullYear();
+  const appointmentRef = (req: ChatRequest) => /"ref":"(appointment:[0-9a-f-]{36})"/.exec(engines.last(req))![1]!;
+  engines.model = asked(
+    /Wann/,
+    () => ({ say: [], calls: [{ tool: 'agenda.list', date: null, days: null, title: 'Zahnarzt' }], help: false }),
+    (req) => ({ say: [{ kind: 'original', text: '', ref: appointmentRef(req) }], calls: [], help: false }),
+  );
+  let heard = await mark(clara);
+  await talk(clara, engines, 'Wann ist der Zahnarzt?');
+  await said(clara, exactly(`Zahnarzt: ${appointmentWhen('de', { day, time: '10:00', weekdays: null }, year)}, Praxis Weber.`), heard);
+  engines.model = asked(/Verschieb/, () => ({ say: [], calls: [{ tool: 'agenda.move', appointment: 'den Zahnarzt', date: null, time: '11:00' }], help: false }));
+  heard = await mark(clara);
+  await talk(clara, engines, 'Verschieb den Zahnarzt auf 11 Uhr');
+  await said(clara, exactly(appointmentReadback('de', 'du', { title: 'Zahnarzt', day, time: '11:00', weekdays: null, place: 'Praxis Weber', remindBefore: [60] }, { year, changed: true })), heard);
+  engines.model = () => reply('In Ordnung.');
+  await home(maria);
+});
+
+test('7g · a note from a message (docs/plan-m3.md, K7; acceptance 11): "Speichere das als Notiz" after Anna’s message is asked first, then the note names where it came from; "Lies die Nachricht dazu" reads the original', async () => {
+  await home(clara);
+  let from = await mark(clara);
+  expect((await fetch(`${MESSAGING}/incoming`, { method: 'POST', body: JSON.stringify({ chat: 'anna', text: 'Die Gartenschere liegt im Schuppen links.' }) })).ok).toBe(true);
+  await said(clara, /^Neue Nachricht von Anna/, from);
+  // The newest message's ref: the data lists them oldest first.
+  const newest = (req: ChatRequest) => [...engines.last(req).matchAll(/"ref":\s*"(msg:[^"]+)"/g)].at(-1)?.[1] ?? null;
+  engines.model = asked(
+    /Notiz/,
+    () => ({ say: [], calls: [{ tool: 'messages.read', chat: 'Anna', unread_only: false }], help: false }),
+    (req) => ({ say: [], calls: [{ tool: 'notes.create', body: '', from_message: newest(req) }], help: false }),
+  );
+  from = await mark(clara);
+  await talk(clara, engines, 'Speichere Annas Nachricht als Notiz');
+  // Known by its first words, as any note; the turn read the message, so asked first.
+  await said(clara, /^Notiz „Die Gartenschere liegt im Schuppen links“ speichern, aus der Nachricht von Anna( Beispiel)? auf Telegram\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Notiz gespeichert: „Die Gartenschere liegt im Schuppen links“, aus der Nachricht von Anna( Beispiel)? auf Telegram\. Sag „Rückgängig“, um sie zu löschen\.$/, from);
+  // "Lies die Nachricht dazu": the note is what the conversation is about; UCAP reads the message it came from.
+  engines.model = asked(/dazu/, (req) => ({ say: [{ kind: 'original', text: '', ref: `source:note:${/\(note:([0-9a-f-]{36})\)/.exec(req.system)?.[1]}` }], calls: [], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Lies die Nachricht dazu');
+  expect(await said(clara, /Die Gartenschere liegt im Schuppen links\.$/, from)).toMatch(/^Anna( Beispiel)? schrieb .*auf Telegram: Die Gartenschere liegt im Schuppen links\.$/);
+  engines.model = () => reply('In Ordnung.');
+});
+
+test('7h · §2’s sentence (CONCEPT §2; docs/plan-m3.md, acceptance 6): Anna’s voice message on WhatsApp; "Lies meine neuen Nachrichten", "Was hat Anna in ihrer Sprachnachricht gesagt?", "Antworte ihr, dass Samstag passt" (C1 names WhatsApp, "Gesendet" at its acknowledgement), "Erinnere mich an den Termin, den sie erwähnt hat" (asked as understood, read back with the voice message as its source, which Maria’s page names only as "aus einer Nachricht")', async () => {
+  await home(clara);
+  await home(maria);
+  // Anna's recording (any sound: the speech stand-in hears these words in someone else's voice message).
+  engines.voiceMessage = 'Ich komme am Samstag um drei zum Kaffee, wenn es dir passt.';
+  const ogg = fileURLToPath(new URL('./.media/anna.ogg', import.meta.url));
+  mkdirSync(dirname(ogg), { recursive: true });
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=300:duration=2', '-c:a', 'libopus', '-b:a', '24k', ogg]);
+  let from = await mark(clara);
+  expect((await fetch(`${MESSAGING}/voice`, { method: 'POST', body: JSON.stringify({ service: 'whatsapp', chat: 'anna', ogg: readFileSync(ogg).toString('base64'), seconds: 2 }) })).ok).toBe(true);
+  await said(clara, /^Neue (Sprach)?[Nn]achricht von Anna/, from);
+  await expect.poll(() => sql(`select transcript_state from messaging_attachments order by updated_at desc limit 1`), { message: 'transcribed', timeout: 30_000 }).toBe('done');
+  // "Lies meine neuen Nachrichten": summed up, said as a summary.
+  engines.model = asked(
+    /neuen Nachrichten/,
+    () => ({ say: [], calls: [{ tool: 'messages.read', chat: null, unread_only: true }], help: false }),
+    () => ({ say: [{ kind: 'summary', text: 'Anna hat dir eine Sprachnachricht geschickt.', ref: null }], calls: [], help: false }),
+  );
+  from = await mark(clara);
+  await talk(clara, engines, 'Lies meine neuen Nachrichten');
+  await said(clara, /^Zusammenfassung: Anna hat dir eine Sprachnachricht geschickt\.$/, from);
+  // "Was hat Anna in ihrer Sprachnachricht gesagt?": its automatic transcript, said to be one.
+  let voice: string | null = null;
+  const newest = (req: ChatRequest) => [...engines.last(req).matchAll(/"ref":\s*"(msg:[^"]+)"/g)].at(-1)?.[1] ?? null;
+  engines.model = asked(
+    /Sprachnachricht/,
+    () => ({ say: [], calls: [{ tool: 'messages.read', chat: 'Anna', unread_only: false }], help: false }),
+    (req) => {
+      voice = newest(req);
+      return { say: [{ kind: 'transcript', text: '', ref: voice }], calls: [], help: false };
+    },
+  );
+  from = await mark(clara);
+  await talk(clara, engines, 'Was hat Anna in ihrer Sprachnachricht gesagt?');
+  await said(clara, /^Automatisch abgeschrieben: Ich komme am Samstag um drei zum Kaffee, wenn es dir passt\.$/, from);
+  // The answer goes where she wrote: C1 names WhatsApp; "Gesendet" once WhatsApp acknowledged it.
+  engines.model = asked(/Antworte/, () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Anna', text: 'Samstag passt.' }], help: false }));
+  from = await mark(clara);
+  await talk(clara, engines, 'Antworte ihr, dass Samstag passt');
+  await said(clara, /^Nachricht an Anna über WhatsApp: „Samstag passt\.“\. Senden\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Gesendet an Anna\.$/, from);
+  // "Erinnere mich an den Termin, den sie erwähnt hat": the day and time as understood, asked first (the turn read
+  // her message); read back with the voice message as its source.
+  const base = await clocks.now();
+  const saturday = Array.from({ length: 7 }, (_, i) => new Date(base + (i + 1) * 86_400_000))
+    .find((d) => new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'Europe/Berlin' }).format(d) === 'Saturday')!
+    .toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  engines.model = asked(
+    /Erinnere/,
+    () => ({ say: [], calls: [{ tool: 'messages.read', chat: 'Anna', unread_only: false }], help: false }),
+    () => ({ say: [], calls: [{ tool: 'agenda.add', title: 'Kaffee mit Anna', date: saturday, time: '15:00', place: null, weekdays: null, remind_before: null, from_message: voice }], help: false }),
+  );
+  from = await mark(clara);
+  await talk(clara, engines, 'Erinnere mich an den Termin, den sie erwähnt hat');
+  await said(clara, /^Termin eintragen: Samstag, \d+\. \S+( \d{4})?, 15 Uhr: Kaffee mit Anna\?$/, from);
+  await talk(clara, engines, 'Ja');
+  await said(clara, /^Termin gespeichert: Samstag, \d+\. \S+( \d{4})?, 15 Uhr: Kaffee mit Anna\. Ich erinnere dich eine Stunde vorher\. Aus der Sprachnachricht von Anna auf WhatsApp\.$/, from);
+  engines.model = () => reply('In Ordnung.');
+  // Clara's page names the message; Maria's says only that there was one.
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Termine', exact: true }).click();
+  const own = clara.locator('li.device').filter({ has: clara.getByRole('heading', { name: 'Kaffee mit Anna', exact: true }) });
+  await expect(own.getByText(/^aus der Sprachnachricht von Anna auf WhatsApp$/)).toBeVisible();
+  await home(clara);
+  await helpersPage(maria);
+  await maria.locator('li.device').filter({ has: maria.getByRole('heading', { name: 'Clara', exact: true }) }).getByRole('button', { name: 'Termine von Clara' }).click();
+  const theirs = maria.locator('li.device').filter({ has: maria.getByRole('heading', { name: 'Kaffee mit Anna', exact: true }) });
+  await expect(theirs.getByText('aus einer Nachricht', { exact: true })).toBeVisible();
+  await expect(theirs.getByText(/WhatsApp|Sprachnachricht/)).toHaveCount(0);
   await home(maria);
 });
 
@@ -699,6 +819,38 @@ test('8 · a remote change: Maria moves Messages and switches the device to high
   await expect(maria.getByText(/ist auf dem Gerät angewendet/)).toBeVisible();
   // The screen is the new one: high contrast, Messages bottom left.
   await expect(clara.locator('html')).toHaveAttribute('data-theme', 'hc-light');
+});
+
+test('8b · the appointments in areas (docs/plan-m3.md, K7): Maria turns Clara’s "Notizen" into "Termine" in the device editor; said as such; the area says what comes next, as stored, and the next one', async () => {
+  await home(clara);
+  await home(maria);
+  await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await maria.getByRole('button', { name: 'Helfer', exact: true }).click();
+  await maria.getByRole('button', { name: 'Gerät einrichten' }).click();
+  await expect(heading(maria)).toHaveText('Gerät von Clara');
+  const field = (name: string) => maria.locator('fieldset').filter({ has: maria.getByRole('heading', { name: `Feld „${name}“` }) });
+  // The field takes the new task's words: then it is the field "Termine".
+  await field('Notizen').getByRole('radiogroup', { name: 'Was das Feld öffnet' }).getByText('Termine', { exact: true }).click();
+  await expect(field('Termine').getByRole('radio', { name: 'Termine', exact: true })).toBeChecked();
+  await expect(maria.getByRole('img', { name: /Oben links: Termine/ })).toBeVisible();
+  const from = await mark(clara);
+  await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
+  // Applied once nobody uses the tablet, said with the way back.
+  await expect(heading(clara)).toHaveText('Neue Einstellungen', { timeout: 60_000 });
+  expect(await said(clara, /^Neue Einstellungen\. /, from)).toMatch(/^Neue Einstellungen\. Maria hat aus dem Feld „Notizen“ das Feld „Termine“ gemacht\. .*Wenn du das nicht möchtest, wähle „Rückgängig“\.$/);
+  await clara.getByRole('button', { name: 'Behalten', exact: true }).click();
+  await expect(maria.getByText(/ist auf dem Gerät angewendet/)).toBeVisible();
+  // The area: what is still to come, the next first, as UCAP says it everywhere (7f moved the dentist to 11).
+  const opened = await mark(clara);
+  await clara.getByRole('button', { name: 'Termine', exact: true }).click();
+  const first = await said(clara, /^Termine\. 2 Termine\. 1 von 2: /, opened);
+  await clara.getByRole('button', { name: 'Nächster', exact: true }).click();
+  const both = `${first} ${await said(clara, /^2 von 2: /, opened)}`;
+  expect(both).toMatch(/Zahnarzt: \S+, \d+\. \S+( \d{4})?, 11 Uhr, Praxis Weber\./);
+  expect(both).toMatch(/Kaffee mit Anna: Samstag, \d+\. \S+( \d{4})?, 15 Uhr\./);
+  await clara.getByRole('button', { name: 'Zurück', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Startseite');
+  await home(maria);
 });
 
 test('9 · without the language model and speech recognition: voice says A19; help by touch still works', async () => {

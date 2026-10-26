@@ -19,13 +19,16 @@ import { useUi } from '../ui.tsx';
 import { LiveSettings } from './LiveSettings.tsx';
 
 /**
- * What a home area can open (K6 brings the contacts): its task, the colour of its kind, and its words. An area with any
- * other task (help, back, where) keeps it.
+ * What a home area can open (K6 brings the contacts, K7 the appointments and tasks): its task, the colour of its kind,
+ * and its words. An area with any other task (help, back, where) keeps it.
  */
 const FUNCTIONS: { id: string; action: AreaDef['action']; role: AreaDef['role'] }[] = [
   { id: 'messages', action: { type: 'screen', screen: 'messages' }, role: 'messages' },
   { id: 'notes', action: { type: 'screen', screen: 'notes' }, role: 'notes' },
   { id: 'contacts', action: { type: 'screen', screen: 'contacts' }, role: 'contacts' },
+  // K7: appointments in their own colour; tasks in the reminders' (things to do, "Erledigt" as on a reminder).
+  { id: 'appointments', action: { type: 'screen', screen: 'appointments' }, role: 'agenda' },
+  { id: 'tasks', action: { type: 'screen', screen: 'tasks' }, role: 'reminders' },
   { id: 'assistant', action: { type: 'assistant' }, role: 'assistant' },
 ];
 const functionOf = (a: AreaDef) => FUNCTIONS.find((f) => JSON.stringify(f.action) === JSON.stringify(a.action))?.id ?? null;

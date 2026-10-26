@@ -3,10 +3,10 @@
  *
  *   npm run evals                      # Ollama on the Mac, the dialogue model of the dev stack
  *   EVAL_MODEL=qwen3.8:27b-mlx npm run evals
- *   EVAL_ONLY=msg npm run evals        # only the cases whose id starts with "msg"
+ *   EVAL_ONLY=msg,agenda npm run evals # only the cases whose id starts with "msg" or "agenda"
  *
  * Every case runs as a typed turn through the whole pipeline (core and assistant in this process, a schema of its own
- * in the test database), with three notes and two reminders seeded afresh. What the model called is read from its own
+ * in the test database), with three notes, two reminders, two appointments and two tasks seeded afresh. What the model called is read from its own
  * replies; nothing leaves the machine. Prints each case and the score.
  */
 import { sql } from 'kysely';
@@ -75,6 +75,14 @@ async function seed() {
     ['Trinken', 'drink', '12:00'],
   ])
     await as('POST', `/api/v1/people/${anna.userId}/reminders`, { clientReminderId: crypto.randomUUID(), title, prompt: '', category, schedule: { kind: 'daily', times: [time], days: [1, 2, 3, 4, 5, 6, 7] } });
+  // K7: no doctor's appointment in the calendar (the note has that one).
+  await sql`update appointments set deleted_at = now() where deleted_at is null`.execute(db);
+  await sql`update tasks set deleted_at = now() where deleted_at is null`.execute(db);
+  const today = ymd(new Date());
+  await as('POST', `/api/v1/people/${anna.userId}/appointments`, { title: 'Friseur', day: ymd(new Date(Date.now() + 86_400_000)), time: '10:00', place: 'Salon Schnittig' });
+  await as('POST', `/api/v1/people/${anna.userId}/appointments`, { title: 'Physiotherapie', day: today, time: '08:30', weekdays: [1, 4] });
+  await as('POST', `/api/v1/people/${anna.userId}/tasks`, { title: 'Rezept abholen', dueDay: today });
+  await as('POST', `/api/v1/people/${anna.userId}/tasks`, { title: 'Brief einwerfen' });
 }
 
 /** A Telegram connection with conversations (S10), or none. */
@@ -142,6 +150,7 @@ async function run(c: Case) {
   const tools = calls.map((x) => x.tool);
   const failures: string[] = [];
   for (const t of c.tools ?? []) if (!tools.includes(t)) failures.push(`no ${t}`);
+  if (c.anyTools && !c.anyTools.some((t) => tools.includes(t))) failures.push(`none of ${c.anyTools.join(', ')}`);
   for (const t of c.notTools ?? []) if (tools.includes(t)) failures.push(`used ${t}`);
   if (c.help !== undefined && help !== c.help) failures.push(help ? 'asked help' : 'no help');
   if (c.says && !said.some((s) => c.says!.test(s))) failures.push(`not said ${c.says}`);
@@ -163,8 +172,8 @@ async function run(c: Case) {
 }
 
 const results = [];
-// EVAL_ONLY=msg runs the cases whose id starts with it.
-for (const c of CASES.filter((x) => !process.env.EVAL_ONLY || x.id.startsWith(process.env.EVAL_ONLY))) {
+// EVAL_ONLY=msg,agenda runs the cases whose id starts with one of them.
+for (const c of CASES.filter((x) => !process.env.EVAL_ONLY || process.env.EVAL_ONLY.split(',').some((p) => x.id.startsWith(p)))) {
   const r = await run(c);
   results.push(r);
   console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${c.id.padEnd(10)} ${String(r.ms).padStart(5)} ms  ${c.say}${r.ok ? '' : `\n       ${r.failures.join('; ')} | calls ${r.tools.join(' ') || '-'} | said: ${r.said.join(' / ').slice(0, 160)}`}`);

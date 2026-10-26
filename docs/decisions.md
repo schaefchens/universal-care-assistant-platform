@@ -1211,6 +1211,43 @@ The plan: [plan-m3.md](plan-m3.md).
   ids and version only, and named in the history from the versions, as contacts are (K6).
 - **Undo** puts back the version before the last change: a new appointment or task undone is deleted, a deletion undone
   brings it back with its reminders, and "Erledigt" undone opens the task again. Each is a version of its own.
+- **Appointments by voice are said by UCAP** (K7: "Everything read back from what was stored"): the model gets a day's
+  appointments with their refs and times in UCAP's words and names the day ("day:…") or the appointment
+  ("appointment:…") as an original; UCAP says it from the store ("Morgen, Dienstag, 27. Oktober: um 10 Uhr Zahnarzt,
+  Praxis Weber. Zu erledigen: Rezept abholen."), as it says numbers (K6). Entered, moved and ticked off at once with
+  undo, as notes and reminders are; asked first (with the day and time as UCAP understood them) once the turn read
+  something, and a deletion always. "Rückgängig" by voice takes back only its own change: one changed since is left as
+  it is, and that is said. A new appointment by voice reminds an hour before (a whole day: that morning) unless the
+  person says otherwise.
+- **By voice, a weekly appointment changes its time, not its day**: "Verschieb die Physiotherapie auf 9 Uhr" moves every
+  week; one week's appointment alone cannot be moved (there are no exceptions for single dates), and the assistant
+  says so. The other choice: exceptions for single dates, a step of its own.
+- **An appointment's reminder says how far off it is**, in the person's language whoever entered it: "Erinnerung:
+  Zahnarzt. Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber." Its reminders are not among those the assistant
+  lists or cancels (`reminder_of_appointment`): they are said and changed with the appointment.
+- **"Termine" and "Aufgaben" in areas**: "Termine" says what is still to come, the next first (Nächster, Wiederholen,
+  Zurück, Hilfe); "Aufgaben" the open tasks (Erledigt, Nächste, Wiederholen, Zurück, Hilfe). A task ticked off there
+  can be opened again on the spot ("Wieder offen") until the next one is chosen. Appointments have a green of their own
+  in every theme; tasks take the reminders' colour (things to do, "Erledigt" as on a reminder). The device editor
+  offers both as what a home area opens.
+- **What is made from a message keeps it as its source** (K7; CONCEPT §11: "Information saved from messages … should
+  retain its source so that users can revisit the original"): the message's id, its service, who sent it (as UCAP
+  named them then) and when; never its text. Only the assistant sets it, for the person; a page never does. The plan
+  gives notes and reminders a `source`: reminders have one, but a note's `source` already says how it was made (typed,
+  voice, assistant), so the message a note came from is its `origin`.
+- **"Speichere das als Notiz" keeps the message's own words**, as UCAP has them, never the model's copy (CONCEPT §11:
+  "Exact source content must remain distinguishable"); a voice message's are its automatic transcript, kept as one
+  ("Automatisch abgeschrieben: …"). A note the person dictates about a message keeps their words, with the message as
+  its source.
+- **Readbacks name the source**: "Notiz gespeichert: „…“, aus der Nachricht von Anna auf Telegram.", "Termin
+  gespeichert: …. Aus der Sprachnachricht von Anna auf WhatsApp." The person's pages and screens name the message
+  ("aus der SMS von Anna"); a helper's say only "aus einer Nachricht".
+- **"Lies die Nachricht dazu"** reads the message, framed as any original, while UCAP keeps it; once it is gone (deleted
+  for everyone, the connection removed): "Die Nachricht dazu ist nicht mehr gespeichert. Sie kam von Anna am
+  26. Oktober 2026." Something not made from a message: "Das stammt aus keiner Nachricht."
+- **What a "Ja" made is what the conversation is about**: after a confirmed action, its note, appointment or contact is
+  in the conversation's focus, as it already was for actions done at once, so "Lies die Nachricht dazu" or "Verschieb
+  ihn" right after works.
 
 ### Measured
 
@@ -1412,3 +1449,27 @@ The plan: [plan-m3.md](plan-m3.md).
     screen, its question and the page.
   - Afterwards version 3 was set again (said the same way), the test contacts deleted, Hanna's access ended (her account
     stays on the development server), the recordings removed, and the host microphone on again, as it was.
+- **K7 (2026-10-26), the browser walk and the evaluation:**
+  - The browser walk (22 steps, stand-ins for the services and the engines): 7f, Maria enters Clara's dentist from
+    her browser, read back as stored ("… Ich erinnere Clara eine Stunde vorher."), and Clara's tablet says "Maria hat
+    den Termin „Zahnarzt“ eingetragen."; its reminder is on Clara's reminders page as part of it. Clara by voice: "Wann
+    ist der Zahnarzt?" said by UCAP from the store; "Verschieb den Zahnarzt auf 11 Uhr" read back as changed.
+  - 7g, acceptance 11: "Speichere Annas Nachricht als Notiz" asked first ("Notiz „Die Gartenschere liegt im Schuppen
+    links“ speichern, aus der Nachricht von Anna auf Telegram?"), then "Lies die Nachricht dazu" read the original.
+  - 7h, acceptance 6 (§2's sentence) with Anna's voice message on WhatsApp: "Lies meine neuen Nachrichten" summed up;
+    "Was hat Anna in ihrer Sprachnachricht gesagt?" its transcript; "Antworte ihr, dass Samstag passt" asked with
+    WhatsApp named, "Gesendet an Anna." at the stand-in's acknowledgement; "Erinnere mich an den Termin, den sie erwähnt
+    hat" asked as understood, then "Termin gespeichert: Samstag, …, 15 Uhr: Kaffee mit Anna. Ich erinnere dich eine
+    Stunde vorher. Aus der Sprachnachricht von Anna auf WhatsApp." Clara's page names the voice message, Maria's says
+    "aus einer Nachricht".
+  - 8b: Maria turned Clara's "Notizen" into "Termine" in the editor ("Maria hat aus dem Feld „Notizen“ das Feld
+    „Termine“ gemacht."); the area said "Termine. 2 Termine. 1 von 2: …", and "Nächster" the other.
+  - The evaluation (`npm run evals`, 74 cases, 14 of them K7's: appointments, tasks, things made from messages) with
+    qwen3.6:35b-mlx: 70 of 74, median turn 4.1 s. K7's 14 passed, but for one reply that was no JSON (src-1; it passed
+    in two reruns). The other three: the model asked itself whether to delete a note, got 12 × 13 wrong, and one turn
+    stalled past the 15 s limit. Three changes came from it: the argument for a message is `from_message` (the model
+    put dictated words into `message`); appointments are found as German compounds name them ("der Friseurtermin");
+    and the prompt says contacts.find is never needed before writing to someone (since K6 the model checked contacts
+    first and then offered to save a number instead of sending).
+  - An earlier run in the same hour stalled for 19 minutes on one turn with the Mac's swap full (16 of 17 GB: the
+    model 31 GB, the emulator, Docker, the browser walk just before); every later turn then failed at once.

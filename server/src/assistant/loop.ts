@@ -14,6 +14,7 @@ import type { LlmMessage } from '../ai/llm/adapters.ts';
 import { finishedSay, nothingHappens, parseReply, replySchema, type SayItem } from '../ai/llm/reply.ts';
 import type { Llm } from '../ai/llm/service.ts';
 import type { ContactService } from '../domain/contacts/service.ts';
+import type { AgendaService } from '../domain/agenda/service.ts';
 import type { Notes } from '../domain/notes/service.ts';
 import type { ReminderService } from '../domain/reminders/service.ts';
 import type { Clock } from '../lib/clock.ts';
@@ -22,7 +23,9 @@ import { CONVERSATION_MS } from '../lib/retention.ts';
 import { CAPTIONED, type Messaging } from '../messaging/service.ts';
 import type { Actions } from './actions.ts';
 import { type Answers, dataBlock, judgeInput, judgePrompt, systemPrompt } from './prompt.ts';
+import { appointmentAloudFor, dayAloudFor } from './agenda-tools.ts';
 import { contactAloud, contactById } from './contact-tools.ts';
+import { isSourceRef, sourceOfRef } from './sources.ts';
 import { toolsFor } from './registry.ts';
 import { type Focus, type ToolContext, ToolError } from './tools.ts';
 
@@ -48,7 +51,7 @@ export type AssistantEvent =
 const PROMISE = /\b(kommt|kommen|unterwegs|gleich da|coming|on (?:the|her|his|their) way)\b/i;
 const ABOUT_HELP = /\b(hilfe|helfer|helferin|jemand|niemand|keiner|help|helper|someone|somebody|nobody|no one)\b/i;
 
-export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Actions; notes: Notes; reminders: ReminderService; messaging?: Messaging; contacts?: ContactService; log: (m: string) => void }) {
+export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Actions; notes: Notes; reminders: ReminderService; messaging?: Messaging; contacts?: ContactService; agenda?: AgendaService; log: (m: string) => void }) {
   /** LIVE mode: whether what the open microphone heard was said to the assistant (docs/plan-m2.md), in a call of its own. */
   async function addressed(userId: string, pick: Extract<Awaited<ReturnType<Llm['pick']>>, { ok: true }>, who: { name: string; lang: Lang }, heard: string, lastSaid: string | null, called: boolean, signal: AbortSignal): Promise<boolean> {
     const r = await d.llm.complete(userId, pick.provider, pick.adapter, {
@@ -156,6 +159,7 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
         db: d.db,
         messaging,
         contacts: d.contacts,
+        agenda: d.agenda,
         canCall: o.canCall === true,
       });
       const messages: LlmMessage[] = [];
@@ -207,6 +211,36 @@ export function createAssistant(d: { db: Db; clock: Clock; llm: Llm; actions: Ac
           emit({ t: 'segment', kind: 'original', text });
           said.push(`[${c.name}]`);
           focus = { ...focus, contact: { id: c.id, title: c.name } };
+          return;
+        }
+        if (item.kind === 'original' && isSourceRef(item.ref)) {
+          // "Lies die Nachricht dazu" (K7): the message it was made from, framed as any original, while it is kept.
+          const src = await sourceOfRef(ctx(), item.ref!).catch(() => null);
+          const kept = src && messaging ? await messaging.message(o.userId, src.messageId) : null;
+          if (src && kept) {
+            await fromMessage({ ...item, ref: `msg:${src.messageId}` });
+            return;
+          }
+          const date = src ? new Intl.DateTimeFormat(who.lang === 'de' ? 'de-DE' : 'en-GB', { dateStyle: 'long', timeZone: who.timezone }).format(new Date(src.at)) : '';
+          const text = src ? tr('assistant.source.gone', { sender: src.sender, date }) : tr('assistant.source.none');
+          emit({ t: 'segment', kind: 'system', text });
+          said.push(text);
+          return;
+        }
+        if (item.kind === 'original' && /^day:\d{4}-\d{2}-\d{2}$/.test(item.ref ?? '')) {
+          // A day's appointments, by their times as stored (K7), never as the model would put them.
+          const text = await dayAloudFor(ctx(), item.ref!.slice(4)).catch(() => null);
+          if (!text) return;
+          emit({ t: 'segment', kind: 'original', text });
+          said.push(text);
+          return;
+        }
+        if (item.kind === 'original' && /^appointment:/.test(item.ref ?? '')) {
+          const a = await appointmentAloudFor(ctx(), item.ref!.slice(12)).catch(() => null);
+          if (!a) return;
+          emit({ t: 'segment', kind: 'original', text: a.text });
+          said.push(a.text);
+          focus = { ...focus, appointment: { id: item.ref!.slice(12), title: a.title } };
           return;
         }
         if (item.kind === 'original') {

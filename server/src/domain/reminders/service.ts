@@ -10,7 +10,7 @@
  * - The person keeps control (CONCEPT §9): they can change, pause or delete every reminder of theirs. A helper with
  *   reminders.manage can do so too, audited; reminders.responses.read sees answers and missed reminders.
  */
-import { isTimeZone, occurrences, type Schedule, uuidv7 } from '@ucap/shared';
+import { isTimeZone, type MessageSource, occurrences, type Schedule, uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import { audit } from '../../lib/audit.ts';
 import type { Clock } from '../../lib/clock.ts';
@@ -38,6 +38,8 @@ export interface ReminderInput {
   repeatCount?: number;
   snoozeMin?: number;
   followUp?: 'none' | 'helpers';
+  /** The message it was made from (K7): set by the assistant, never by a page. */
+  source?: MessageSource | null;
 }
 
 interface ReminderRow {
@@ -61,6 +63,7 @@ interface ReminderRow {
   version: number;
   /** The appointment it reminds of (K7): changed only with it. */
   appointment_id: string | null;
+  source: MessageSource | null;
 }
 
 interface OccurrenceRow {
@@ -96,6 +99,8 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
     updatedAt: r.updated_at.toISOString(),
     version: r.version,
     appointmentId: r.appointment_id,
+    // Said as one ("aus einer Nachricht"); which message, to the person only (list).
+    fromMessage: r.source !== null,
   });
 
   async function names(exec: Exec, ids: string[]) {
@@ -247,7 +252,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
         select distinct on (reminder_id) reminder_id, due_at from reminder_occurrences
         where person_id = ${personId} and state in ('scheduled', 'due') order by reminder_id, due_at`.execute(d.db);
       const nextBy = new Map(next.rows.map((x) => [x.reminder_id, x.due_at.toISOString()]));
-      return { reminders: r.rows.map((x) => ({ ...view(x, n), nextAt: nextBy.get(x.id) ?? null })) };
+      return { reminders: r.rows.map((x) => ({ ...view(x, n), nextAt: nextBy.get(x.id) ?? null, source: actorId === personId ? x.source : null })) };
     },
 
     async create(actorId: string, personId: string, input: ReminderInput & { clientReminderId: string }) {
@@ -260,9 +265,10 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
         const tz = input.timezone ?? (await personZone(trx, personId));
         await sql`
           insert into reminders (id, person_id, client_reminder_id, title, prompt, category, schedule, timezone, repeat_every_min, repeat_count, snooze_min, follow_up,
-                                 created_by, updated_by, created_at, updated_at)
+                                 created_by, updated_by, created_at, updated_at, source)
           values (${id}, ${personId}, ${input.clientReminderId}, ${input.title.trim()}, ${input.prompt.trim()}, ${input.category}, ${JSON.stringify(input.schedule)}::jsonb, ${tz},
-                  ${input.repeatEveryMin ?? 10}, ${input.repeatCount ?? 2}, ${input.snoozeMin ?? 15}, ${input.followUp ?? 'helpers'}, ${actorId}, ${actorId}, ${now()}, ${now()})`.execute(trx);
+                  ${input.repeatEveryMin ?? 10}, ${input.repeatCount ?? 2}, ${input.snoozeMin ?? 15}, ${input.followUp ?? 'helpers'}, ${actorId}, ${actorId}, ${now()}, ${now()},
+                  ${actorId === personId && input.source ? JSON.stringify(input.source) : null}::jsonb)`.execute(trx);
         const r = await lockReminder(trx, personId, id);
         await materialiseOne(trx, r);
         await byHelper(trx, actorId, personId, 'reminder.created', id);
@@ -323,17 +329,18 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
      * spec, made, moved and ended with it in its transaction, by whoever changed the appointment (a helper's
      * agenda.manage covers them). The device's alarm, offline, and the answers are as for any reminder.
      */
-    async syncAppointment(exec: Exec, actorId: string, personId: string, appointmentId: string, specs: { title: string; schedule: Schedule; timezone: string }[]) {
+    async syncAppointment(exec: Exec, actorId: string, personId: string, appointmentId: string, specs: { title: string; prompt?: string; schedule: Schedule; timezone: string }[]) {
       const cur = await sql<ReminderRow>`
         select * from reminders where appointment_id = ${appointmentId} and deleted_at is null order by created_at, id for update`.execute(exec);
       let touched = false;
       for (const [i, spec] of specs.entries()) {
         const r = cur.rows[i];
-        if (r && r.title === spec.title && r.timezone === spec.timezone && JSON.stringify(r.schedule) === JSON.stringify(spec.schedule)) continue;
+        const prompt = spec.prompt ?? '';
+        if (r && r.title === spec.title && r.prompt === prompt && r.timezone === spec.timezone && JSON.stringify(r.schedule) === JSON.stringify(spec.schedule)) continue;
         touched = true;
         if (r) {
           await sql`
-            update reminders set title = ${spec.title}, schedule = ${JSON.stringify(spec.schedule)}::jsonb, timezone = ${spec.timezone}, updated_by = ${actorId}, updated_at = ${now()},
+            update reminders set title = ${spec.title}, prompt = ${prompt}, schedule = ${JSON.stringify(spec.schedule)}::jsonb, timezone = ${spec.timezone}, updated_by = ${actorId}, updated_at = ${now()},
               version = version + 1 where id = ${r.id}`.execute(exec);
           await cancelAhead(exec, r.id);
           await materialiseOne(exec, await lockReminder(exec, personId, r.id));
@@ -341,7 +348,7 @@ export function createReminderService(d: { db: Db; clock: Clock; pepper: Uint8Ar
           const id = uuidv7(d.clock());
           await sql`
             insert into reminders (id, person_id, client_reminder_id, title, prompt, category, schedule, timezone, created_by, updated_by, created_at, updated_at, appointment_id)
-            values (${id}, ${personId}, ${uuidv7(d.clock())}, ${spec.title}, '', 'appointment', ${JSON.stringify(spec.schedule)}::jsonb, ${spec.timezone},
+            values (${id}, ${personId}, ${uuidv7(d.clock())}, ${spec.title}, ${prompt}, 'appointment', ${JSON.stringify(spec.schedule)}::jsonb, ${spec.timezone},
                     ${actorId}, ${actorId}, ${now()}, ${now()}, ${appointmentId})`.execute(exec);
           await materialiseOne(exec, await lockReminder(exec, personId, id));
         }

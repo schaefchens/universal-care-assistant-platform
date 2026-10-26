@@ -14,7 +14,7 @@
  * M1 (only the explicit screens). What tools return is untrusted data with its provenance, never instructions.
  * Everything is the person's own: no tool reaches anyone else's notes or reminders.
  */
-import { type AddressForm, isTimeZone, type Lang, t, uuidv7 } from '@ucap/shared';
+import { type AddressForm, isTimeZone, type Lang, type MessageSource, sourcePhrase, sourceSentence, t, uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import type { JsonSchema } from '../ai/llm/reply.ts';
 import type { Db } from '../lib/db.ts';
@@ -22,7 +22,9 @@ import { AppError } from '../lib/errors.ts';
 import { MAX_BODY, type Notes, titleFrom } from '../domain/notes/service.ts';
 import type { Category, ReminderService } from '../domain/reminders/service.ts';
 import type { ContactService } from '../domain/contacts/service.ts';
+import type { AgendaService } from '../domain/agenda/service.ts';
 import type { Messaging } from '../messaging/service.ts';
+import { sourceOfMessage } from './sources.ts';
 
 export interface ToolContext {
   userId: string;
@@ -38,6 +40,8 @@ export interface ToolContext {
   messaging?: Messaging;
   /** The person's contacts (docs/plan-m3.md, K6). */
   contacts?: ContactService;
+  /** The person's appointments and tasks (K7). */
+  agenda?: AgendaService;
   /** The device the person talks to can place a phone call (it said so with the turn). */
   canCall?: boolean;
   /** The action being carried out (set while it runs): one confirmation, one message. */
@@ -60,6 +64,9 @@ export interface Focus {
   chat?: { id: string; title: string };
   /** The contact being talked about (K6). */
   contact?: { id: string; title: string };
+  /** The appointment or the task being talked about (K7). */
+  appointment?: { id: string; title: string };
+  task?: { id: string; title: string };
 }
 
 /** What the device that asked does once the person said yes: a call by phone (K6). */
@@ -97,6 +104,18 @@ export interface ActTool {
 export type Tool = ReadTool | ActTool;
 
 const str = (description: string): JsonSchema => ({ type: 'string', description });
+const nullableStr = (description: string): JsonSchema => ({ anyOf: [{ type: 'string', description }, { type: 'null' }] });
+/** The `from_message` argument of what can be made from a message (K7: "each with its source"). */
+export const FROM_MESSAGE = nullableStr('The ref ("msg:<id>") of a message just read that it is made from ("Speichere das als Notiz", "Erinnere mich daran"); else null. Never the words themselves.');
+const MSG_REF = /^msg:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The message `from_message` names, as its source; anything but a message's ref is no source. `ToolError` when it
+ *  names none of the person's. */
+export async function messageSource(ctx: ToolContext, ref: unknown): Promise<MessageSource | null> {
+  if (typeof ref !== 'string' || !MSG_REF.test(ref.trim())) return null;
+  const s = await sourceOfMessage(ctx, ref.trim());
+  if (!s) throw new ToolError('message_unknown');
+  return s;
+}
 const tr = (ctx: ToolContext, key: string, params: Record<string, string> = {}) => t(ctx.lang, key, params, ctx.form);
 const text = (v: unknown, name: string): string => {
   if (typeof v !== 'string') throw new ToolError(`${name}_missing`);
@@ -151,7 +170,7 @@ export const BASE_TOOLS: Tool[] = [
     async run(ctx, args) {
       const found = await ctx.notes.list(ctx.userId, { q: typeof args.query === 'string' ? args.query : '', limit: 5 });
       return {
-        data: found.map((n) => ({ ref: `note:${n.id}`, title: n.title, written: dateIn(ctx, n.updatedAt), start: n.body.slice(0, 160) })),
+        data: found.map((n) => ({ ref: `note:${n.id}`, title: n.title, written: dateIn(ctx, n.updatedAt), start: n.body.slice(0, 160), ...(n.origin ? { from: sourcePhrase(ctx.lang, n.origin) } : {}) })),
         ...(found.length === 1 ? { focus: { note: { id: found[0]!.id, title: found[0]!.title } } } : {}),
       };
     },
@@ -163,24 +182,41 @@ export const BASE_TOOLS: Tool[] = [
     args: { ref: str('The note, as "note:<id>".') },
     async run(ctx, args) {
       const n = await note(ctx, idOf(args.ref, 'note'));
-      return { data: { ref: `note:${n.id}`, title: n.title, written: dateIn(ctx, n.updatedAt), text: n.body }, focus: { note: { id: n.id, title: n.title } } };
+      return { data: { ref: `note:${n.id}`, title: n.title, written: dateIn(ctx, n.updatedAt), text: n.body, ...(n.origin ? { from: sourcePhrase(ctx.lang, n.origin) } : {}) }, focus: { note: { id: n.id, title: n.title } } };
     },
   },
   {
     kind: 'act',
     name: 'notes.create',
-    description: 'Saves a new note with the words the person dictated, as they said them (without "Notiere" or "Schreib auf"). Its title is its first words. UCAP reads back what it saved.',
-    args: { body: str('The text of the note.') },
+    description:
+      'Saves a new note with the words the person dictated, as they said them (without "Notiere" or "Schreib auf"). Its title is its first words. From a message ("Speichere das als Notiz"): from_message set and body empty: UCAP keeps the message\'s own words, with where they came from. UCAP reads back what it saved.',
+    args: { body: str('The text of the note; empty for a message\'s own words.'), from_message: FROM_MESSAGE },
     async prepare(ctx, args, tainted) {
-      const body = text(args.body, 'body');
+      const origin = await messageSource(ctx, args.from_message);
+      // Words given where the message's ref belongs are what to note.
+      let body = typeof args.body === 'string' && args.body.trim() ? args.body.trim() : !origin && typeof args.from_message === 'string' ? args.from_message.trim() : '';
+      let title: string | undefined;
+      if (origin && !body) {
+        // The message's own words as kept (CONCEPT §11: exact source content stays distinguishable), never as the model
+        // would copy them; a voice message's words are its automatic transcript, and said to be.
+        const m = await ctx.messaging!.message(ctx.userId, origin.messageId);
+        const words = (m?.kind === 'voice' ? m.transcript : m?.text)?.trim() ?? '';
+        if (!words) throw new ToolError('message_empty');
+        title = titleFrom(words);
+        body = m?.kind === 'voice' ? `${tr(ctx, 'messages.transcript')} ${words}` : words;
+      }
       if (!body) throw new ToolError('body_missing');
       if (body.length > MAX_BODY) throw new ToolError('body_too_long');
-      // Known by its first words, as the person said them: never a title the model made up.
-      return { args: { body, clientNoteId: uuidv7(ctx.now.getTime()) }, confirm: tainted ? tr(ctx, 'assistant.note.save.confirm', { title: titleFrom(body) }) : null };
+      // Known by its first words, as the person (or the message) said them: never a title the model made up.
+      const named = title ?? titleFrom(body);
+      const confirm = tainted ? (origin ? tr(ctx, 'assistant.note.save.confirmFrom', { title: named, from: sourcePhrase(ctx.lang, origin) }) : tr(ctx, 'assistant.note.save.confirm', { title: named })) : null;
+      return { args: { body, ...(title ? { title } : {}), origin, clientNoteId: uuidv7(ctx.now.getTime()) }, confirm };
     },
     async run(ctx, args) {
-      const n = await ctx.notes.create(ctx.userId, { clientNoteId: String(args.clientNoteId), body: String(args.body), source: 'voice' });
-      return { say: tr(ctx, 'assistant.note.saved', { title: n.title }), undo: { note: n.id, created: true }, focus: { note: { id: n.id, title: n.title } } };
+      const origin = (args.origin as MessageSource | null | undefined) ?? null;
+      const n = await ctx.notes.create(ctx.userId, { clientNoteId: String(args.clientNoteId), ...(typeof args.title === 'string' ? { title: args.title } : {}), body: String(args.body), source: 'voice', origin });
+      const say = origin ? tr(ctx, 'assistant.note.savedFrom', { title: n.title, from: sourcePhrase(ctx.lang, origin) }) : tr(ctx, 'assistant.note.saved', { title: n.title });
+      return { say, undo: { note: n.id, created: true }, focus: { note: { id: n.id, title: n.title } } };
     },
     async undo(ctx, u) {
       const n = await ctx.notes.remove(ctx.userId, String(u.note), ctx.userId);
@@ -233,9 +269,17 @@ export const BASE_TOOLS: Tool[] = [
     async run(ctx) {
       const r = await ctx.reminders.list(ctx.userId, ctx.userId);
       return {
+        // An appointment's reminders are said with the appointment (agenda.list).
         data: r.reminders
-          .filter((x) => x.active)
-          .map((x) => ({ ref: `reminder:${x.id}`, title: x.title || x.category, category: x.category, schedule: x.schedule, next: x.nextAt ? `${dateIn(ctx, x.nextAt)} ${new Intl.DateTimeFormat('de-DE', { timeStyle: 'short', timeZone: ctx.timezone }).format(new Date(x.nextAt))}` : null })),
+          .filter((x) => x.active && !x.appointmentId)
+          .map((x) => ({
+            ref: `reminder:${x.id}`,
+            title: x.title || x.category,
+            category: x.category,
+            schedule: x.schedule,
+            next: x.nextAt ? `${dateIn(ctx, x.nextAt)} ${new Intl.DateTimeFormat('de-DE', { timeStyle: 'short', timeZone: ctx.timezone }).format(new Date(x.nextAt))}` : null,
+            ...(x.source ? { from: sourcePhrase(ctx.lang, x.source) } : {}),
+          })),
       };
     },
   },
@@ -249,14 +293,16 @@ export const BASE_TOOLS: Tool[] = [
       category: { type: 'string', enum: CATEGORIES, description: 'drink, meal, medication, movement, wellbeing, appointment or other.' },
       date: { anyOf: [{ type: 'string', description: 'YYYY-MM-DD' }, { type: 'null' }] },
       time: str('HH:MM, 24 hours.'),
+      from_message: FROM_MESSAGE,
     },
     async prepare(ctx, args, tainted) {
+      const source = await messageSource(ctx, args.from_message);
       const title = text(args.title, 'title').slice(0, 60);
       if (!title) throw new ToolError('title_missing');
       const category = CATEGORIES.includes(args.category as Category) ? (args.category as Category) : 'other';
       const s = scheduleOf(ctx, args.date, args.time);
       const confirm = tainted ? tr(ctx, s.dateText ? 'assistant.reminder.save.confirm.once' : 'assistant.reminder.save.confirm.daily', { title, date: s.dateText ?? '', time: s.timeText }) : null;
-      return { args: { title, category, schedule: s.schedule, clientReminderId: uuidv7(ctx.now.getTime()) }, confirm };
+      return { args: { title, category, schedule: s.schedule, source, clientReminderId: uuidv7(ctx.now.getTime()) }, confirm };
     },
     async run(ctx, args) {
       const schedule = args.schedule as { kind: 'once'; date: string; time: string } | { kind: 'daily'; time: string };
@@ -268,10 +314,12 @@ export const BASE_TOOLS: Tool[] = [
         // Every day: all seven weekdays.
         schedule: schedule.kind === 'daily' ? { kind: 'daily', times: [schedule.time], days: [1, 2, 3, 4, 5, 6, 7] } : schedule,
         ...(isTimeZone(ctx.timezone) ? { timezone: ctx.timezone } : {}),
+        source: (args.source as MessageSource | null | undefined) ?? null,
       });
       // Read back from what the server will actually do (C12), never from the model's words.
       const s = scheduleOf(ctx, schedule.kind === 'once' ? schedule.date : null, schedule.time);
-      const say = tr(ctx, s.dateText ? 'assistant.reminder.saved.once' : 'assistant.reminder.saved.daily', { title: r.title, date: s.dateText ?? '', time: s.timeText });
+      const said = tr(ctx, s.dateText ? 'assistant.reminder.saved.once' : 'assistant.reminder.saved.daily', { title: r.title, date: s.dateText ?? '', time: s.timeText });
+      const say = args.source ? `${said} ${sourceSentence(ctx.lang, args.source as MessageSource)}` : said;
       return { say, undo: { reminder: r.id, title: r.title }, focus: { reminder: { id: r.id, title: r.title } } };
     },
     async undo(ctx, u) {
@@ -286,10 +334,12 @@ export const BASE_TOOLS: Tool[] = [
     args: { ref: str('The reminder, as "reminder:<id>".') },
     async prepare(ctx, args) {
       const id = idOf(args.ref, 'reminder');
-      const r = await sql<{ title: string; category: string; schedule: { kind: string; date?: string; time?: string; times?: string[] } }>`
-        select title, category, schedule from reminders where id = ${id} and person_id = ${ctx.userId} and deleted_at is null`.execute(ctx.db);
+      const r = await sql<{ title: string; category: string; schedule: { kind: string; date?: string; time?: string; times?: string[] }; appointment_id: string | null }>`
+        select title, category, schedule, appointment_id from reminders where id = ${id} and person_id = ${ctx.userId} and deleted_at is null`.execute(ctx.db);
       const x = r.rows[0];
       if (!x) throw new ToolError('reminder_unknown');
+      // Changed with its appointment only (K7).
+      if (x.appointment_id) throw new ToolError(`reminder_of_appointment: appointment:${x.appointment_id}`);
       const title = x.title || x.category;
       const once = x.schedule.kind === 'once' && x.schedule.date;
       const s = scheduleOf({ ...ctx, now: new Date(0) }, once ? x.schedule.date : null, x.schedule.time ?? x.schedule.times?.[0] ?? '00:00');

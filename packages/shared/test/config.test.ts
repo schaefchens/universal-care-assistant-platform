@@ -124,6 +124,12 @@ describe('a change as the person hears it', () => {
     expect(checkConfig(a)).toEqual({ errors: [], warnings: [] });
     expect(say(base(), a)).toEqual(['Maria hat aus dem Feld „Notizen“ das Feld „Kontakte“ gemacht.']);
     expect(say(base(), a, 'en')).toEqual(['Maria turned the area “Notes” into “Contacts”.']);
+    // K7: appointments in their own colour, tasks in the reminders'.
+    const b = base();
+    Object.assign(area(b, 'notes'), { action: { type: 'screen', screen: 'appointments' }, role: 'agenda', labelKey: 'area.appointments.label', descriptionKey: 'area.appointments.description' });
+    Object.assign(area(b, 'messages'), { action: { type: 'screen', screen: 'tasks' }, role: 'reminders', labelKey: 'area.tasks.label', descriptionKey: 'area.tasks.description' });
+    expect(checkConfig(b)).toEqual({ errors: [], warnings: [] });
+    expect(say(base(), b)).toEqual(['Maria hat aus dem Feld „Nachrichten“ das Feld „Aufgaben“ gemacht.', 'Maria hat aus dem Feld „Notizen“ das Feld „Termine“ gemacht.']);
   });
 
   it('LIVE mode switched by someone else is said first; its other settings only while it is on', () => {

@@ -7,7 +7,7 @@
  */
 import Type from 'typebox';
 
-export const AREA_ROLES = ['help', 'assistant', 'messages', 'notes', 'reminders', 'contacts', 'nav', 'neutral'] as const;
+export const AREA_ROLES = ['help', 'assistant', 'messages', 'notes', 'reminders', 'contacts', 'agenda', 'nav', 'neutral'] as const;
 export type AreaRole = (typeof AREA_ROLES)[number];
 
 export const AreaAction = Type.Union([
@@ -40,6 +40,7 @@ export const AreaDef = Type.Object({
     Type.Literal('notes'),
     Type.Literal('reminders'),
     Type.Literal('contacts'),
+    Type.Literal('agenda'),
     Type.Literal('nav'),
     Type.Literal('neutral'),
   ]),

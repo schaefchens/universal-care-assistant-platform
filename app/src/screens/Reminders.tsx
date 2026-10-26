@@ -4,7 +4,7 @@
  * getrunken"), always as what the person reported (CONCEPT §9). The person keeps control of every reminder of
  * theirs; a helper needs reminders.manage to change them and reminders.responses.read to see answers.
  */
-import type { Schedule } from '@ucap/shared';
+import { type Lang, type Schedule, sourcePhrase } from '@ucap/shared';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, Radio, RadioGroup, Switch, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
@@ -267,6 +267,8 @@ export function RemindersPage(p: { session: Session; personId: string; personNam
                   {[
                     r.active ? (r.nextAt ? tr('reminder.next', { when: when(r.nextAt) }) : null) : tr('reminder.paused'),
                     r.createdBy.id !== p.personId && r.createdBy.displayName ? tr('reminder.by', { name: r.createdBy.displayName }) : null,
+                    // Where it came from: which message to the person, only that there was one to a helper (K7).
+                    r.source ? sourcePhrase(ui.lang as Lang, r.source) : r.fromMessage ? tr('agenda.fromMessage') : null,
                   ]
                     .filter(Boolean)
                     .join(' · ')}

@@ -4,7 +4,7 @@
  * works with the assistant stopped; a new note is dictated through the assistant ("Notiere: …"). The note shown is
  * also on screen as text, for partial sight and screen readers.
  */
-import type { DeviceConfig } from '@ucap/shared';
+import { type DeviceConfig, type Lang, type MessageSource, sourceSentence } from '@ucap/shared';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { ChoiceGrid } from '../areas/ChoiceGrid.tsx';
 import type { Session } from '../identity/account.ts';
@@ -16,6 +16,8 @@ interface Note {
   title: string;
   body: string;
   updatedAt: string;
+  /** The message it was made from (K7). */
+  origin: MessageSource | null;
 }
 
 export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (text: string) => void; onHome: () => void; onHelp: () => void }) {
@@ -66,6 +68,7 @@ export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (
               {current.title} · {date(current.updatedAt)}
             </h2>
             <p className="note-body">{current.body}</p>
+            {current.origin && <p className="muted">{sourceSentence(ui.lang as Lang, current.origin)}</p>}
           </>
         ) : (
           notes && <p>{tr('notes.empty')}</p>
@@ -89,8 +92,11 @@ export function NotesScreen(p: { session: Session; config: DeviceConfig; read: (
           ]}
           onChoose={(id) => {
             // The title is often the note's first words: then the note alone.
-            if (id === 'read' && current) p.read(current.body.startsWith(current.title) ? current.body : `${current.title}. ${current.body}`);
-            else if (id === 'next' && notes.length) {
+            if (id === 'read' && current) {
+              const text = current.body.startsWith(current.title) ? current.body : `${current.title}. ${current.body}`;
+              // Where it came from, after it (K7).
+              p.read(current.origin ? `${text} ${sourceSentence(ui.lang as Lang, current.origin)}` : text);
+            } else if (id === 'next' && notes.length) {
               const k = (i + 1) % notes.length;
               setI(k);
               say(item(notes, k), 'system');

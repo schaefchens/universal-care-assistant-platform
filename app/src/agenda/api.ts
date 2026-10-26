@@ -2,6 +2,7 @@
  * Appointments and tasks as the app sees them (server/src/core/routes/agenda.ts): the person's own, or those of
  * someone a helper supports with agenda.manage (never what the person marked private).
  */
+import type { MessageSource } from '@ucap/shared';
 import type { Session } from '../identity/account.ts';
 
 export interface Who {
@@ -27,6 +28,8 @@ export interface Appointment {
   private: boolean;
   /** It came from a message (said as that, never the message). */
   fromMessage: boolean;
+  /** Which message, to the person only ("aus der Nachricht von Anna Beispiel auf Telegram"). */
+  source: MessageSource | null;
   /** When it is next; null when it is over. */
   nextAt: string | null;
   version: number;
@@ -56,6 +59,7 @@ export interface Task {
   doneAt: string | null;
   private: boolean;
   fromMessage: boolean;
+  source: MessageSource | null;
   version: number;
   createdBy: Who;
   updatedBy: Who;

@@ -67,9 +67,69 @@ export function remindersText(lang: Lang, form: AddressForm, a: Pick<Appointment
 }
 
 /** "Termin gespeichert: Dienstag, 20. Oktober, 10 Uhr: Zahnarzt. Ich erinnere dich eine Stunde vorher." (`of`: whose
- *  it is, when a helper entered it.) */
-export function appointmentReadback(lang: Lang, form: AddressForm, a: AppointmentWords, year?: number, of?: string): string {
-  const head = t(lang, a.place ? 'agenda.saved.place' : 'agenda.saved', { when: appointmentWhen(lang, a, year), title: a.title, place: a.place ?? '' }, form);
-  const reminders = remindersText(lang, form, a, of);
+ *  it is, when a helper entered it; `changed`: "Termin geändert: …".) */
+export function appointmentReadback(lang: Lang, form: AddressForm, a: AppointmentWords, o: { year?: number; of?: string; changed?: boolean } = {}): string {
+  const key = o.changed ? 'agenda.changed' : 'agenda.saved';
+  const head = t(lang, a.place ? `${key}.place` : key, { when: appointmentWhen(lang, a, o.year), title: a.title, place: a.place ?? '' }, form);
+  const reminders = remindersText(lang, form, a, o.of);
   return reminders ? `${head} ${reminders}` : head;
+}
+
+/** The ISO weekday of a calendar day (1 Monday … 7 Sunday). */
+const weekdayOf = (day: string) => ((noon(day).getUTCDay() + 6) % 7) + 1;
+
+/** Whether an appointment is on this calendar day: its day, or, weekly, one of its weekdays from its day on. */
+export function appointmentOnDay(a: { day: string; weekdays: number[] | null }, day: string): boolean {
+  return a.weekdays?.length ? day >= a.day && a.weekdays.includes(weekdayOf(day)) : a.day === day;
+}
+
+const nextDay = (day: string) => new Date(noon(day).getTime() + 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * One day as UCAP says it: "Morgen, Dienstag, 27. Oktober: um 10 Uhr Zahnarzt, Praxis Weber; um 15 Uhr
+ * Physiotherapie. Zu erledigen: Rezept abholen." The items in the order given (by their time).
+ */
+export function dayAloud(lang: Lang, o: { day: string; today: string; year?: number; items: { title: string; time: string | null; place?: string | null }[]; due: string[] }): string {
+  const date = dayText(lang, o.day, o.year);
+  const head = t(lang, o.day === o.today ? 'agenda.day.today' : o.day === nextDay(o.today) ? 'agenda.day.tomorrow' : 'agenda.day.other', { date });
+  const items = o.items.map((x) => {
+    const what = x.time ? t(lang, 'agenda.day.item', { time: timeText(lang, x.time), title: x.title }) : t(lang, 'agenda.day.itemAllDay', { title: x.title });
+    return x.place ? `${what}, ${x.place}` : what;
+  });
+  const list = `${head}: ${items.length ? items.join('; ') : t(lang, 'agenda.day.none')}.`;
+  return o.due.length ? `${list} ${t(lang, 'agenda.day.due', { list: new Intl.ListFormat(locale(lang), { type: 'conjunction' }).format(o.due) })}` : list;
+}
+
+/**
+ * One appointment as UCAP says it: "Zahnarzt: Dienstag, 27. Oktober, 10 Uhr, Praxis Weber."; a weekly one under way
+ * with when it is next: "Physiotherapie: jeden Montag und Donnerstag um 8:30 Uhr. Das nächste Mal: Donnerstag,
+ * 29. Oktober."; one that is over says so.
+ */
+export function appointmentAloud(lang: Lang, a: AppointmentWords & { nextDay?: string | null }, o: { today: string; year?: number }): string {
+  const weekly = !!a.weekdays?.length;
+  let when = appointmentWhen(lang, a, o.year);
+  if (weekly && a.day <= o.today) {
+    const days = new Intl.ListFormat(locale(lang), { type: 'conjunction' }).format([...a.weekdays!].sort().map((w) => weekdayName(lang, w)));
+    when = a.time ? t(lang, 'agenda.when.weeklyOngoing', { days, time: timeText(lang, a.time) }) : t(lang, 'agenda.when.weeklyAllDayOngoing', { days });
+  }
+  const over = !a.nextDay;
+  const head = t(lang, a.place ? 'agenda.aloud.place' : 'agenda.aloud', { title: a.title, when, place: a.place ?? '' });
+  if (over) return `${head} ${t(lang, 'agenda.aloud.over')}`;
+  return weekly && a.nextDay && a.nextDay !== a.day ? `${head} ${t(lang, 'agenda.aloud.next', { date: dayText(lang, a.nextDay, o.year) })}` : head;
+}
+
+/**
+ * What an appointment's reminder says after its name, in the person's language (K7): "Der Termin ist in einer Stunde,
+ * um 10 Uhr, Praxis Weber."; for a whole day "Der Termin ist morgen." Kept as the reminder's question.
+ */
+export function appointmentPrompt(lang: Lang, a: { time: string | null; place?: string | null }, before: number): string {
+  const at = a.place ? `, ${a.place}` : '';
+  if (a.time === null) {
+    const n = Math.floor(before / 1440);
+    return t(lang, n === 0 ? 'agenda.prompt.today' : n === 1 ? 'agenda.prompt.tomorrowAllDay' : 'agenda.prompt.inDaysAllDay', { n, at });
+  }
+  const time = timeText(lang, a.time);
+  if (before === 0) return t(lang, 'agenda.prompt.now', { time, at });
+  if (before % 1440 === 0) return t(lang, before === 1440 ? 'agenda.prompt.tomorrow' : 'agenda.prompt.inDays', { n: before / 1440, time, at });
+  return t(lang, before % 60 === 0 ? 'agenda.prompt.inHours' : 'agenda.prompt.inMinutes', { n: before % 60 === 0 ? before / 60 : before, time, at });
 }

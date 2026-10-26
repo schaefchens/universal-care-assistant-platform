@@ -4,7 +4,7 @@
  * finds "Arzt"). Every change keeps the version before it, so a change or a deletion can be undone, and a deleted
  * note is only marked: undo brings it back.
  */
-import { uuidv7 } from '@ucap/shared';
+import { type MessageSource, uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import type { Clock } from '../../lib/clock.ts';
 import type { Db, Exec } from '../../lib/db.ts';
@@ -17,6 +17,8 @@ export interface Note {
   title: string;
   body: string;
   source: NoteSource;
+  /** The message it was made from (K7), while UCAP keeps where it came from; null: written or dictated. */
+  origin: MessageSource | null;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -28,6 +30,7 @@ interface Row {
   title: string;
   body: string;
   source: NoteSource;
+  origin: MessageSource | null;
   version: number;
   created_at: Date;
   updated_at: Date;
@@ -39,6 +42,7 @@ const view = (r: Row): Note => ({
   title: r.title,
   body: r.body,
   source: r.source,
+  origin: r.origin,
   version: r.version,
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at.toISOString(),
@@ -59,7 +63,7 @@ export function createNotes(d: { db: Db; clock: Clock }) {
   const now = () => new Date(d.clock());
 
   async function row(exec: Exec, personId: string, id: string, withDeleted = false): Promise<Row> {
-    const r = await sql<Row>`select id, title, body, source, version, created_at, updated_at, deleted_at from notes where id = ${id} and person_id = ${personId}`.execute(exec);
+    const r = await sql<Row>`select id, title, body, source, origin, version, created_at, updated_at, deleted_at from notes where id = ${id} and person_id = ${personId}`.execute(exec);
     const x = r.rows[0];
     if (!x || (x.deleted_at && !withDeleted)) throw new AppError('not_found');
     return x;
@@ -77,17 +81,17 @@ export function createNotes(d: { db: Db; clock: Clock }) {
   }
 
   return {
-    async create(personId: string, i: { clientNoteId?: string; title?: string; body: string; source: NoteSource }): Promise<Note> {
+    async create(personId: string, i: { clientNoteId?: string; title?: string; body: string; source: NoteSource; origin?: MessageSource | null }): Promise<Note> {
       const body = i.body.trim();
       const title = (i.title ?? '').trim() || titleFrom(body);
       check(title, body);
       const clientNoteId = i.clientNoteId ?? uuidv7(d.clock());
       const id = uuidv7(d.clock());
       await sql`
-        insert into notes (id, person_id, client_note_id, title, body, source, created_at, updated_at)
-        values (${id}, ${personId}, ${clientNoteId}, ${title}, ${body}, ${i.source}, ${now()}, ${now()})
+        insert into notes (id, person_id, client_note_id, title, body, source, origin, created_at, updated_at)
+        values (${id}, ${personId}, ${clientNoteId}, ${title}, ${body}, ${i.source}, ${i.origin ? JSON.stringify(i.origin) : null}::jsonb, ${now()}, ${now()})
         on conflict (person_id, client_note_id) do nothing`.execute(d.db);
-      const r = await sql<Row>`select id, title, body, source, version, created_at, updated_at, deleted_at from notes where person_id = ${personId} and client_note_id = ${clientNoteId}`.execute(d.db);
+      const r = await sql<Row>`select id, title, body, source, origin, version, created_at, updated_at, deleted_at from notes where person_id = ${personId} and client_note_id = ${clientNoteId}`.execute(d.db);
       return view(r.rows[0]!);
     },
 
@@ -104,7 +108,7 @@ export function createNotes(d: { db: Db; clock: Clock }) {
         await keep(trx, x, by);
         const r = await sql<Row>`
           update notes set title = ${title}, body = ${body}, version = version + 1, updated_at = ${now()} where id = ${id}
-          returning id, title, body, source, version, created_at, updated_at, deleted_at`.execute(trx);
+          returning id, title, body, source, origin, version, created_at, updated_at, deleted_at`.execute(trx);
         return view(r.rows[0]!);
       });
     },
@@ -116,7 +120,7 @@ export function createNotes(d: { db: Db; clock: Clock }) {
         await keep(trx, x, by);
         const r = await sql<Row>`
           update notes set deleted_at = ${now()}, version = version + 1, updated_at = ${now()} where id = ${id}
-          returning id, title, body, source, version, created_at, updated_at, deleted_at`.execute(trx);
+          returning id, title, body, source, origin, version, created_at, updated_at, deleted_at`.execute(trx);
         return view(r.rows[0]!);
       });
     },
@@ -131,7 +135,7 @@ export function createNotes(d: { db: Db; clock: Clock }) {
         await keep(trx, x, by);
         const r = await sql<Row>`
           update notes set title = ${old.title}, body = ${old.body}, deleted_at = ${old.deleted ? now() : null}, version = version + 1, updated_at = ${now()} where id = ${id}
-          returning id, title, body, source, version, created_at, updated_at, deleted_at`.execute(trx);
+          returning id, title, body, source, origin, version, created_at, updated_at, deleted_at`.execute(trx);
         return view(r.rows[0]!);
       });
     },
@@ -142,13 +146,13 @@ export function createNotes(d: { db: Db; clock: Clock }) {
       const q = o.q?.trim();
       if (!q) {
         const r = await sql<Row>`
-          select id, title, body, source, version, created_at, updated_at, deleted_at from notes
+          select id, title, body, source, origin, version, created_at, updated_at, deleted_at from notes
           where person_id = ${personId} and deleted_at is null order by updated_at desc limit ${limit}`.execute(d.db);
         return r.rows.map(view);
       }
       const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
       const r = await sql<Row>`
-        select id, title, body, source, version, created_at, updated_at, deleted_at from notes
+        select id, title, body, source, origin, version, created_at, updated_at, deleted_at from notes
         where person_id = ${personId} and deleted_at is null
           and (search @@ websearch_to_tsquery('german', ${q}) or title ilike ${like} or body ilike ${like})
         order by ts_rank(search, websearch_to_tsquery('german', ${q})) desc, updated_at desc limit ${limit}`.execute(d.db);
@@ -158,7 +162,7 @@ export function createNotes(d: { db: Db; clock: Clock }) {
       if (!words.length) return [];
       const any = words.map((w) => `${w.replace(/[^\p{L}\p{N}]/gu, '')}:*`).join(' | ');
       const r2 = await sql<Row>`
-        select id, title, body, source, version, created_at, updated_at, deleted_at from notes
+        select id, title, body, source, origin, version, created_at, updated_at, deleted_at from notes
         where person_id = ${personId} and deleted_at is null and search @@ to_tsquery('german', ${any})
         order by ts_rank(search, to_tsquery('german', ${any})) desc, updated_at desc limit ${limit}`.execute(d.db);
       return r2.rows.map(view);

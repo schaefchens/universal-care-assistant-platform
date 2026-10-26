@@ -483,6 +483,49 @@ describe('messaging', () => {
     expect(await news()).toEqual([{ kind: 'system', text: 'Maria (Tochter) hat eine Nachricht geschrieben.' }]);
   });
 
+  it('K7: "Speichere das als Notiz" keeps the message’s own words and where they came from; "Lies die Nachricht dazu" reads it while it is kept, and says when it is not; an appointment made from it keeps it too', async () => {
+    fake.emit({ t: 'msg.upsert', id: connId, msg: msg(10485760, 'Besuch am Samstag um drei? Ich bringe Kuchen mit.'), live: true });
+    await until(async () => (await sql`select 1 from messaging_messages where external_id = '10485760'`.execute(db)).rows.length > 0, 'stored');
+    const id = (await sql<{ id: string }>`select id from messaging_messages where external_id = '10485760'`.execute(db)).rows[0]!.id;
+    const readThen = (call: Record<string, unknown>): Script => (req) =>
+      req.messages.at(-1)!.content.startsWith('DATEN') ? { say: [], calls: [call], help: false } : { say: [], calls: [{ tool: 'messages.read', chat: 'Anna Beispiel', unread_only: false }], help: false };
+    // Read in the same turn, so asked first; the note is the message's own words, never the model's copy.
+    script = readThen({ tool: 'notes.create', body: '', from_message: `msg:${id}` });
+    const a = actionOf(await turn(anna, 'Lies mir Annas Nachricht vor und speichere sie als Notiz'));
+    expect(a.prompt).toBe('Notiz „Besuch am Samstag um drei“ speichern, aus der Nachricht von Anna Beispiel auf Telegram?');
+    expect(await confirm(a)).toEqual({ ok: true, say: 'Notiz gespeichert: „Besuch am Samstag um drei“, aus der Nachricht von Anna Beispiel auf Telegram. Sag „Rückgängig“, um sie zu löschen.' });
+    const note = (await sql<{ id: string; body: string; origin: Record<string, unknown> }>`select id, body, origin from notes where person_id = ${anna.userId} order by created_at desc limit 1`.execute(db)).rows[0]!;
+    expect(note.body).toBe('Besuch am Samstag um drei? Ich bringe Kuchen mit.');
+    expect(note.origin).toEqual({ kind: 'message', messageId: id, service: 'telegram', sender: 'Anna Beispiel', at: expect.any(String) });
+    // "Lies die Nachricht dazu": the original, framed as any.
+    script = () => ({ say: [{ kind: 'original', text: '', ref: `source:note:${note.id}` }], calls: [], help: false });
+    expect(said(await turn(anna, 'Lies die Nachricht dazu'))).toEqual([expect.stringMatching(/^original: Anna Beispiel schrieb heute um \d{1,2}:\d{2} auf Telegram: Besuch am Samstag um drei\? Ich bringe Kuchen mit\.$/)]);
+    // What the yes made is what the conversation is about: the model was told so.
+    expect(seen.at(-1)!.system).toContain(`(note:${note.id})`);
+    // An appointment from it: the day and time asked as understood, then read back with where it came from.
+    const saturday = new Date(clock() + ((6 - new Date(clock()).getDay() + 7) % 7 || 7) * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+    script = readThen({ tool: 'agenda.add', title: 'Besuch von Anna', date: saturday, time: '15:00', place: null, weekdays: null, remind_before: null, from_message: `msg:${id}` });
+    const b = actionOf(await turn(anna, 'Trag den Besuch ein, den Anna vorgeschlagen hat'));
+    expect(b.prompt).toMatch(/^Termin eintragen: Samstag, \d+\. \S+( \d{4})?, 15 Uhr: Besuch von Anna\?$/);
+    expect((await confirm(b)).say).toMatch(/^Termin gespeichert: Samstag, .*: Besuch von Anna\. Ich erinnere dich eine Stunde vorher\. Aus der Nachricht von Anna Beispiel auf Telegram\.$/);
+    const list = (await core.app.inject({ method: 'GET', url: `/api/v1/people/${anna.userId}/appointments`, headers: { authorization: `Bearer ${anna.token}` } })).json() as {
+      appointments: { id: string; title: string; fromMessage: boolean; source: { messageId: string; sender: string } | null }[];
+    };
+    const visit = list.appointments.find((x) => x.title === 'Besuch von Anna')!;
+    expect(visit).toMatchObject({ fromMessage: true, source: { messageId: id, sender: 'Anna Beispiel' } });
+    // Deleted for everyone: no longer kept, and said so, with who and when.
+    fake.emit({ t: 'msg.delete', id: connId, chatId: '777001', externalIds: ['10485760'] });
+    await until(async () => !(await sql`select 1 from messaging_messages where id = ${id}`.execute(db)).rows.length, 'deleted');
+    script = () => ({ say: [{ kind: 'original', text: '', ref: `source:appointment:${visit.id}` }], calls: [], help: false });
+    expect(said(await turn(anna, 'Lies die Nachricht dazu'))).toEqual([expect.stringMatching(/^system: Die Nachricht dazu ist nicht mehr gespeichert\. Sie kam von Anna Beispiel am \d+\. \S+ \d{4}\.$/)]);
+    // Something not made from a message says that.
+    script = () => ({ say: [], calls: [{ tool: 'notes.create', body: 'Milch kaufen', from_message: null }], help: false });
+    await turn(anna, 'Notiere Milch kaufen');
+    const milk = (await sql<{ id: string }>`select id from notes where person_id = ${anna.userId} and body = 'Milch kaufen'`.execute(db)).rows[0]!;
+    script = () => ({ say: [{ kind: 'original', text: '', ref: `source:note:${milk.id}` }], calls: [], help: false });
+    expect(said(await turn(anna, 'Lies die Nachricht dazu'))).toEqual(['system: Das stammt aus keiner Nachricht.']);
+  });
+
   it('a message deleted for everyone goes here too; disconnecting logs out and deletes the copies', async () => {
     fake.emit({ t: 'msg.delete', id: connId, chatId: '777001', externalIds: ['1048576'] });
     await until(async () => !(await sql`select 1 from messaging_messages where external_id = '1048576'`.execute(db)).rows.length, 'deleted');
@@ -503,6 +546,6 @@ describe('messaging', () => {
     expect(seen[0]!.system).toContain('kein Nachrichtendienst ist verbunden');
     // No message text in any log line.
     const all = logs.join('\n');
-    for (const text of ['Kommst du morgen', 'Morgen passt', 'Kuchen', 'Ich bin morgen um drei', 'Ignoriere deine Regeln']) expect(all).not.toContain(text);
+    for (const text of ['Kommst du morgen', 'Morgen passt', 'Kuchen', 'Ich bin morgen um drei', 'Ignoriere deine Regeln', 'Besuch am Samstag', 'Milch kaufen']) expect(all).not.toContain(text);
   });
 });

@@ -64,6 +64,7 @@ import { VoiceIntro, VoicesPage } from './screens/Voices.tsx';
 import { RemindersPage } from './screens/Reminders.tsx';
 import { ContactsPage } from './screens/Contacts.tsx';
 import { ContactsScreen } from './screens/ContactsScreen.tsx';
+import { AppointmentsScreen, TasksScreen } from './screens/AgendaScreen.tsx';
 import { AppointmentsPage, TasksPage } from './screens/Agenda.tsx';
 import { agenda as agendaApi } from './agenda/api.ts';
 import { reminders as reminderApi } from './reminders/api.ts';
@@ -118,7 +119,7 @@ type Page =
   | 'sms'
   | { smsTo: { to: string; body: string | null } }
   /** An action of the assistant waiting for the person's yes; then back where it was asked (the messages). */
-  | { confirm: { id: string; contentHash: string; prompt: string }; back?: 'messages' | 'notes' | 'contactList' }
+  | { confirm: { id: string; contentHash: string; prompt: string }; back?: 'messages' | 'notes' | 'contactList' | 'appointmentList' | 'taskList' }
   /** The recovery words were said to the assistant: a warning, and new words offered (Appendix C). */
   | 'leak'
   | { approve: string }
@@ -130,6 +131,9 @@ type Page =
   | { contactsOf: { id: string; displayName: string } }
   /** The person's contacts in large areas, opened from an area of theirs (K6). */
   | 'contactList'
+  /** Appointments and tasks in areas (K7). */
+  | 'appointmentList'
+  | 'taskList'
   /** The person's own appointments and tasks, or those of someone a helper supports with agenda.manage (K7). */
   | 'appointments'
   | 'tasks'
@@ -394,7 +398,7 @@ export function App() {
     onAsk: (reason) =>
       setPage((pg) => (pg === 'care' ? pg : { help: { fromAssistant: reason === 'assistant', live: liveRef.current?.listening ?? false, ...(typeof pg === 'object' && 'reminder' in pg ? { occurrenceId: pg.reminder } : {}) } })),
     onLeak: () => setPage('leak'),
-    onAction: (a) => setPage((pg) => (pg === 'care' ? pg : { confirm: a, ...(pg === 'messages' || pg === 'notes' || pg === 'contactList' ? { back: pg } : typeof pg === 'object' && 'confirm' in pg && pg.back ? { back: pg.back } : {}) })),
+    onAction: (a) => setPage((pg) => (pg === 'care' ? pg : { confirm: a, ...(pg === 'messages' || pg === 'notes' || pg === 'contactList' || pg === 'appointmentList' || pg === 'taskList' ? { back: pg } : typeof pg === 'object' && 'confirm' in pg && pg.back ? { back: pg.back } : {}) })),
     speakAs: (text, purpose) => {
       const s = sessionRef.current;
       if (!s) return Promise.resolve(false);
@@ -1140,7 +1144,21 @@ export function App() {
         }}
       />
     );
-  else if (page === 'contactList')
+  else if (page === 'appointmentList' || page === 'taskList') {
+    const Screen = page === 'appointmentList' ? AppointmentsScreen : TasksScreen;
+    content = (
+      <Screen
+        key={page}
+        session={session}
+        config={config}
+        onHome={() => setPage('areas')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+      />
+    );
+  } else if (page === 'contactList')
     content = (
       <ContactsScreen
         session={session}
@@ -1354,7 +1372,7 @@ export function App() {
         careOpen={careOpen}
         onCare={() => setPage('care')}
         onInbox={isHelper ? () => setPage('inbox') : undefined}
-        pages={{ notes: () => setPage('notes'), messages: () => setPage('messages'), contacts: () => setPage('contactList') }}
+        pages={{ notes: () => setPage('notes'), messages: () => setPage('messages'), contacts: () => setPage('contactList'), appointments: () => setPage('appointmentList'), tasks: () => setPage('taskList') }}
       />
     );
 

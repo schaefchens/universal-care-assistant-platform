@@ -30,6 +30,7 @@ import { deriveKey, type Secrets } from '../lib/secrets.ts';
 import { registerConnectorHub } from '../messaging/hub.ts';
 import { registerMessagingRoutes } from '../messaging/routes.ts';
 import { createContactService } from '../domain/contacts/service.ts';
+import { createAgendaService } from '../domain/agenda/service.ts';
 import { createMessaging } from '../messaging/service.ts';
 import { createActions } from './actions.ts';
 import { createAssistant } from './loop.ts';
@@ -115,6 +116,8 @@ export async function buildAssistant(o: {
   // The person's messaging (S10, docs/plan-m3.md): a connectors process per service dials in; without their token there
   // is no messaging.
   const contacts = createContactService({ db: o.db, clock: o.clock, people });
+  // Appointments and tasks (K7): their reminders are core's, as above.
+  const agenda = createAgendaService({ db: o.db, clock: o.clock, people, reminders });
   const messaging = createMessaging({ db: o.db, clock: o.clock, sealer, files, filesDir: o.config.filesDir, stt, log, ffmpeg: o.ffmpeg, contacts });
   if (o.secrets.connectorsToken)
     messaging.attach(
@@ -125,7 +128,7 @@ export async function buildAssistant(o: {
         log,
       }),
     );
-  const assistant = createAssistant({ db: o.db, clock: o.clock, llm, actions, notes, reminders, messaging, contacts, log });
+  const assistant = createAssistant({ db: o.db, clock: o.clock, llm, actions, notes, reminders, messaging, contacts, agenda, log });
   const contextFor = async (userId: string, deviceId: string, lang?: 'de' | 'en') => {
     const r = await sql<{ locale: string; address_form: 'du' | 'Sie'; timezone: string }>`select locale, address_form, timezone from users where id = ${userId}`.execute(o.db);
     const u = r.rows[0]!;
@@ -141,6 +144,7 @@ export async function buildAssistant(o: {
       db: o.db,
       messaging,
       contacts,
+      agenda,
     };
   };
   const turns = createTurns({ db: o.db, clock: o.clock, stt, assistant, actions, contextFor });

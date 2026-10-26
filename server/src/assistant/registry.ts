@@ -1,12 +1,14 @@
 /**
  * Every tool the assistant has (docs/plan.md, Appendix E "Tool registry"): notes and reminders (tools.ts), contacts
- * and calls (K6, contact-tools.ts), and the person's messages (S10) where they connected a messaging service.
+ * and calls (K6, contact-tools.ts), appointments and tasks (K7, agenda-tools.ts), and the person's messages (S10)
+ * where they connected a messaging service.
  */
 import { MESSAGE_TOOLS } from '../messaging/tools.ts';
+import { AGENDA_TOOLS } from './agenda-tools.ts';
 import { CONTACT_TOOLS } from './contact-tools.ts';
 import { BASE_TOOLS, type Tool } from './tools.ts';
 
-const ALWAYS: Tool[] = [...BASE_TOOLS, ...CONTACT_TOOLS];
+const ALWAYS: Tool[] = [...BASE_TOOLS, ...CONTACT_TOOLS, ...AGENDA_TOOLS];
 export const TOOLS: Tool[] = [...ALWAYS, ...MESSAGE_TOOLS];
 export const toolByName = new Map(TOOLS.map((x) => [x.name, x]));
 

@@ -9,7 +9,7 @@
  *   verwalten") does too, never seeing what the person marked private: audited by ids and version only (the log holds
  *   no text a person wrote), said on the person's devices and named in their history.
  */
-import { isTimeZone, occurrences, type Schedule, uuidv7 } from '@ucap/shared';
+import { appointmentPrompt, isTimeZone, type Lang, type MessageSource, occurrences, type Schedule, uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import { audit } from '../../lib/audit.ts';
 import type { Clock } from '../../lib/clock.ts';
@@ -45,6 +45,8 @@ export interface AppointmentInput {
   remindBefore?: number[];
   /** Not shown to helpers (the person's own only). */
   private?: boolean;
+  /** The message it was made from (the assistant's, for the person; never from a page). */
+  source?: MessageSource | null;
 }
 
 export interface TaskInput {
@@ -53,6 +55,7 @@ export interface TaskInput {
   /** YYYY-MM-DD, or null. */
   dueDay?: string | null;
   private?: boolean;
+  source?: MessageSource | null;
 }
 
 interface AppointmentRow {
@@ -68,7 +71,7 @@ interface AppointmentRow {
   note: string | null;
   remind_before: number[];
   private: boolean;
-  source: unknown;
+  source: MessageSource | null;
   version: number;
   created_by: string;
   updated_by: string;
@@ -85,7 +88,7 @@ interface TaskRow {
   due_day: string | null;
   done_at: Date | null;
   private: boolean;
-  source: unknown;
+  source: MessageSource | null;
   version: number;
   created_by: string;
   updated_by: string;
@@ -140,7 +143,7 @@ export function nextAt(a: { day: string; time: string | null; weekdays: number[]
  * ("eine Stunde vorher" is an hour earlier on the clock, whatever summer time does). A whole-day appointment reminds at
  * ALL_DAY_AT, of the day itself or of whole days before.
  */
-export function reminderSpecs(a: { title: string; day: string; time: string | null; weekdays: number[] | null; remindBefore: number[] }, timezone: string) {
+export function reminderSpecs(a: { title: string; day: string; time: string | null; weekdays: number[] | null; place?: string | null; remindBefore: number[] }, timezone: string, lang: Lang = 'de') {
   const [y, m, d] = a.day.split('-').map(Number) as [number, number, number];
   const [h, mi] = (a.time ?? ALL_DAY_AT).split(':').map(Number) as [number, number];
   const base = Date.UTC(y, m - 1, d, h, mi);
@@ -151,11 +154,13 @@ export function reminderSpecs(a: { title: string; day: string; time: string | nu
       const at = new Date(base - minutes * 60_000);
       const date = at.toISOString().slice(0, 10);
       const time = at.toISOString().slice(11, 16);
-      if (!a.weekdays?.length) return { title: a.title, timezone, schedule: { kind: 'once', date, time } as Schedule };
+      // Its question says how far off the appointment is ("Der Termin ist in einer Stunde, um 10 Uhr, Praxis Weber.").
+      const prompt = appointmentPrompt(lang, a, minutes);
+      if (!a.weekdays?.length) return { title: a.title, prompt, timezone, schedule: { kind: 'once', date, time } as Schedule };
       // A reminder the day before a Monday appointment is on Sundays.
       const shift = Math.round((Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()) - Date.UTC(y, m - 1, d)) / 86_400_000);
       const days = [...new Set(a.weekdays.map((w) => ((((w - 1 + shift) % 7) + 7) % 7) + 1))].sort();
-      return { title: a.title, timezone, schedule: { kind: 'daily', times: [time], days, from: date } as Schedule };
+      return { title: a.title, prompt, timezone, schedule: { kind: 'daily', times: [time], days, from: date } as Schedule };
     });
 }
 
@@ -171,6 +176,12 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
     if (!ids.length) return new Map<string, string>();
     const r = await sql<{ id: string; display_name: string }>`select id, display_name from users where id = any(${[...new Set(ids)]}::uuid[])`.execute(exec);
     return new Map(r.rows.map((x) => [x.id, x.display_name]));
+  }
+
+  /** The person's language: an appointment's reminders speak it, whoever entered the appointment. */
+  async function personLang(exec: Exec, personId: string): Promise<Lang> {
+    const r = await sql<{ locale: string | null }>`select locale from users where id = ${personId}`.execute(exec);
+    return r.rows[0]?.locale === 'en' ? 'en' : 'de';
   }
 
   async function personZone(exec: Exec, personId: string): Promise<string> {
@@ -233,12 +244,13 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
     await sql`
       insert into appointment_versions (appointment_id, version, data, changed_by, changed_at)
       values (${a.id}, ${a.version}, ${JSON.stringify(data)}::jsonb, ${actorId}, ${now()})`.execute(exec);
-    await d.reminders.syncAppointment(exec, actorId, personId, a.id, data.deleted ? [] : reminderSpecs(data, a.timezone));
+    await d.reminders.syncAppointment(exec, actorId, personId, a.id, data.deleted ? [] : reminderSpecs(data, a.timezone, await personLang(exec, personId)));
     if (actorId !== personId) await audit(exec, d.clock, { actorUser: actorId, subjectUser: personId, action: `appointment.${action}`, targetType: 'appointment', targetId: a.id, detail: { version: a.version } });
     await told(exec, personId, { kind: 'appointment', id: a.id, version: a.version, action, by: actorId });
   }
 
-  async function appointmentViews(exec: Exec, rows: AppointmentRow[]) {
+  /** `own`: the person's view, which names the message one came from; a helper's says only that there is one. */
+  async function appointmentViews(exec: Exec, rows: AppointmentRow[], own: boolean) {
     const who = await names(exec, rows.flatMap((r) => [r.created_by, r.updated_by]));
     const t = d.clock();
     return rows.map((r) => {
@@ -257,6 +269,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
         private: r.private,
         // A source is said as one ("aus einer Nachricht"), never the message itself (K7).
         fromMessage: r.source !== null,
+        source: own ? r.source : null,
         nextAt: next === null ? null : new Date(next).toISOString(),
         version: r.version,
         createdBy: { id: r.created_by, displayName: who.get(r.created_by) ?? '' },
@@ -295,7 +308,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
     await told(exec, personId, { kind: 'task', id: t.id, version: t.version, action, by: actorId });
   }
 
-  async function taskViews(exec: Exec, rows: TaskRow[]) {
+  async function taskViews(exec: Exec, rows: TaskRow[], own: boolean) {
     const who = await names(exec, rows.flatMap((r) => [r.created_by, r.updated_by]));
     return rows.map((r) => ({
       id: r.id,
@@ -306,6 +319,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
       doneAt: r.done_at?.toISOString() ?? null,
       private: r.private,
       fromMessage: r.source !== null,
+      source: own ? r.source : null,
       version: r.version,
       createdBy: { id: r.created_by, displayName: who.get(r.created_by) ?? '' },
       updatedBy: { id: r.updated_by, displayName: who.get(r.updated_by) ?? '' },
@@ -323,7 +337,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
         select id, person_id, title, to_char(day, 'YYYY-MM-DD') as day, time, duration_min, timezone, weekdays, place, note, remind_before, private, source, version,
           created_by, updated_by, created_at, updated_at, deleted_at
         from appointments where person_id = ${personId} and deleted_at is null ${actorId === personId ? sql`` : sql`and not private`}`.execute(d.db);
-      const views = await appointmentViews(d.db, r.rows);
+      const views = await appointmentViews(d.db, r.rows, actorId === personId);
       views.sort((a, b) => (a.nextAt === null ? 1 : 0) - (b.nextAt === null ? 1 : 0) || (a.nextAt ?? a.day).localeCompare(b.nextAt ?? b.day));
       return { appointments: views };
     },
@@ -335,12 +349,12 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
         const id = uuidv7(d.clock());
         const tz = await personZone(trx, personId);
         await sql`
-          insert into appointments (id, person_id, title, day, time, duration_min, timezone, weekdays, place, note, remind_before, private, created_by, updated_by, created_at, updated_at)
+          insert into appointments (id, person_id, title, day, time, duration_min, timezone, weekdays, place, note, remind_before, private, source, created_by, updated_by, created_at, updated_at)
           values (${id}, ${personId}, ${c.title}, ${c.day}, ${c.time}, ${c.durationMin}, ${tz}, ${c.weekdays}, ${c.place}, ${c.note}, ${c.remindBefore},
-                  ${actorId === personId && input.private === true}, ${actorId}, ${actorId}, ${now()}, ${now()})`.execute(trx);
+                  ${actorId === personId && input.private === true}, ${actorId === personId && input.source ? JSON.stringify(input.source) : null}::jsonb, ${actorId}, ${actorId}, ${now()}, ${now()})`.execute(trx);
         const a = await lockAppointment(trx, actorId, personId, id);
         await appointmentVersioned(trx, actorId, personId, a, 'created');
-        return (await appointmentViews(trx, [a]))[0]!;
+        return (await appointmentViews(trx, [a], actorId === personId))[0]!;
       });
     },
 
@@ -359,7 +373,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
           where id = ${id}`.execute(trx);
         const a = await lockAppointment(trx, actorId, personId, id);
         await appointmentVersioned(trx, actorId, personId, a, 'updated');
-        return (await appointmentViews(trx, [a]))[0]!;
+        return (await appointmentViews(trx, [a], actorId === personId))[0]!;
       });
     },
 
@@ -392,7 +406,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
           where id = ${id}`.execute(trx);
         const a = await lockAppointment(trx, actorId, personId, id);
         await appointmentVersioned(trx, actorId, personId, a, 'restored');
-        return { appointment: (await appointmentViews(trx, [a]))[0]! };
+        return { appointment: (await appointmentViews(trx, [a], actorId === personId))[0]! };
       });
     },
 
@@ -406,7 +420,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
         from tasks where person_id = ${personId} and deleted_at is null ${actorId === personId ? sql`` : sql`and not private`}
           and (done_at is null or done_at > ${new Date(d.clock() - 30 * 86_400_000)})
         order by done_at is not null, due_day nulls last, done_at desc, created_at`.execute(d.db);
-      return { tasks: await taskViews(d.db, r.rows) };
+      return { tasks: await taskViews(d.db, r.rows, actorId === personId) };
     },
 
     async createTask(actorId: string, personId: string, input: TaskInput) {
@@ -415,11 +429,12 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
       return d.db.transaction().execute(async (trx) => {
         const id = uuidv7(d.clock());
         await sql`
-          insert into tasks (id, person_id, title, note, due_day, private, created_by, updated_by, created_at, updated_at)
-          values (${id}, ${personId}, ${c.title}, ${c.note}, ${c.dueDay}, ${actorId === personId && input.private === true}, ${actorId}, ${actorId}, ${now()}, ${now()})`.execute(trx);
+          insert into tasks (id, person_id, title, note, due_day, private, source, created_by, updated_by, created_at, updated_at)
+          values (${id}, ${personId}, ${c.title}, ${c.note}, ${c.dueDay}, ${actorId === personId && input.private === true},
+                  ${actorId === personId && input.source ? JSON.stringify(input.source) : null}::jsonb, ${actorId}, ${actorId}, ${now()}, ${now()})`.execute(trx);
         const t = await lockTask(trx, actorId, personId, id);
         await taskVersioned(trx, actorId, personId, t, 'created');
-        return (await taskViews(trx, [t]))[0]!;
+        return (await taskViews(trx, [t], actorId === personId))[0]!;
       });
     },
 
@@ -435,7 +450,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
           where id = ${id}`.execute(trx);
         const t = await lockTask(trx, actorId, personId, id);
         await taskVersioned(trx, actorId, personId, t, 'updated');
-        return (await taskViews(trx, [t]))[0]!;
+        return (await taskViews(trx, [t], actorId === personId))[0]!;
       });
     },
 
@@ -444,11 +459,11 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
       if (!(await allowed(actorId, personId))) throw new AppError('not_found');
       return d.db.transaction().execute(async (trx) => {
         const cur = await lockTask(trx, actorId, personId, id);
-        if ((cur.done_at !== null) === done) return (await taskViews(trx, [cur]))[0]!;
+        if ((cur.done_at !== null) === done) return (await taskViews(trx, [cur], actorId === personId))[0]!;
         await sql`update tasks set done_at = ${done ? now() : null}, version = version + 1, updated_by = ${actorId}, updated_at = ${now()} where id = ${id}`.execute(trx);
         const t = await lockTask(trx, actorId, personId, id);
         await taskVersioned(trx, actorId, personId, t, done ? 'done' : 'reopened');
-        return (await taskViews(trx, [t]))[0]!;
+        return (await taskViews(trx, [t], actorId === personId))[0]!;
       });
     },
 
@@ -479,7 +494,7 @@ export function createAgendaService(d: { db: Db; clock: Clock; people: PeopleSer
           where id = ${id}`.execute(trx);
         const t = await lockTask(trx, actorId, personId, id);
         await taskVersioned(trx, actorId, personId, t, 'restored');
-        return { task: (await taskViews(trx, [t]))[0]! };
+        return { task: (await taskViews(trx, [t], actorId === personId))[0]! };
       });
     },
 
