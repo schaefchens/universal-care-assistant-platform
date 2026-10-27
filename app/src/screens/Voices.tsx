@@ -10,7 +10,7 @@ import type { DeviceConfig } from '@ucap/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Label, Radio, RadioGroup } from 'react-aria-components';
 import { ChoiceGrid } from '../areas/ChoiceGrid.tsx';
-import { ClipPlayer, type VoiceOption, type VoiceSettings, voicesApi } from '../audio/voices.ts';
+import { ClipPlayer, type VoiceOption, type VoiceSettings, voiceLabel, voicesApi } from '../audio/voices.ts';
 import type { Session } from '../identity/account.ts';
 import { ApiError } from '../net/api.ts';
 import { useUi } from '../ui.tsx';
@@ -35,11 +35,6 @@ function useVoices(session: Session) {
   return { api, voices, settings, setSettings, chosen, load };
 }
 
-/** The label people hear: the voice, and where it speaks from. */
-function voiceLabel(v: VoiceOption, tr: (k: string, p?: Record<string, string>) => string) {
-  if (v.location === 'device') return v.label;
-  return tr(v.location === 'external' ? 'voices.label.external' : 'voices.label.own', { voice: v.label, provider: v.provider ?? '' });
-}
 
 export function VoicesPage(p: { session: Session; onClose: () => void }) {
   const ui = useUi();

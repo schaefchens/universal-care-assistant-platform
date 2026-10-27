@@ -2161,3 +2161,24 @@ The plan: [plan-m4.md](plan-m4.md).
     scratch emulator this time (not even a plain button with TalkBack off), unlike in G0. The code screen's areas are
     the area grid TalkBack presses elsewhere (M1); G11's TalkBack audit of every new screen covers it.
   - Also found: the name screen said "Wie soll ich heißen?. …"; its sentences are now joined without the stray stop.
+- **G2, how the device speaks is part of its configuration**: `speech.rate` (moved from the device's own setting, which a
+  version without `speech` still uses) and `speech.guidance`, new: `full` says an area's name, what it does and the
+  gesture, `short` its name alone (CONCEPT §5: "the amount of guidance"). Set by the person, by voice ("Langsamer"), and
+  by helpers with `device.configure` in the device editor; said as any change of the configuration.
+- **G2, a helper's voice choices leave consent with the person**: a helper with `device.configure` sets the voices for
+  answers and for reading aloud, but never one that needs the person's consent for what it would read (refused, and
+  shown as "dafür muss Clara selbst zustimmen"); the person agrees on their own device, as in S7.
+- **G2, language and form of address are the person's**: kept on the account and on each device; a helper with
+  `device.configure` sets them for all the person's devices, which follow and say it in the new language and form; the
+  person's own change on a device now reaches the account too (it stayed on the device before).
+- **G2, every such change is said with "Rückgängig"**: voices, length of answers, language and form of address come to
+  the person's devices with what they replaced, and "Rückgängig" by voice within the usual moment puts it back (the
+  device's undo of L5). The history names the helper.
+- **G2, care contacts on the helper's page**: the order of helpers, the phone fallback and an unanswered help question
+  for a helper with `care.configure`; a saved plan is told to the person's devices with whether the phone fallback
+  changed, and they fetch it again for offline use. A direct call set by a helper needs Android's permission on the
+  person's phone, not the helper's: the person's phone asks for it as it says the change, at a calm moment rather
+  than in a help request; without it the dialler opens with the number.
+- **G2, the helper's page per person ("Alles für Clara")**: what the helper may do, the person's devices with how their
+  setup stands and whether the app lock is on (never more), voices and answers, care contacts, and the ways to the
+  reminders, contacts, appointments, tasks and the device editor, each shown only with its permission.

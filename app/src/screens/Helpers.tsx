@@ -71,6 +71,8 @@ export function Helpers(p: {
   onReminders?: (person: { id: string; displayName: string }, canManage: boolean, canRead: boolean) => void;
   /** Setting up the person's device (device.configure, S11). */
   onConfigure?: (person: { id: string; displayName: string }) => void;
+  /** A helper's page for one person: everything one may do for them (docs/plan-m4.md, G2). */
+  onPerson?: (person: { id: string; displayName: string; scopes: Scope[] }) => void;
   onContacts?: (person: { id: string; displayName: string }) => void;
   /** A person's appointments and tasks, with agenda.manage (K7). */
   onAgenda?: (person: { id: string; displayName: string }, which: 'appointments' | 'tasks') => void;
@@ -335,6 +337,11 @@ export function Helpers(p: {
                 <Confirm question={tr('people.end.confirm.helper', { name: r.person.displayName })} yes={tr('people.end.yes')} onYes={() => void end(r)} onNo={() => setEnding(null)} />
               ) : (
                 <div className="row">
+                  {r.state === 'active' && (
+                    <Button className="button primary" onPress={() => p.onPerson?.({ ...r.person, scopes: r.scopes })}>
+                      {tr('person.open', { name: r.person.displayName })}
+                    </Button>
+                  )}
                   {r.state === 'active' && r.scopes.includes('care.configure') && (
                     <Button className="button" onPress={() => setPlanFor(planFor === r.person.id ? null : r.person.id)}>
                       {scopeLabel('care.configure', tr)}

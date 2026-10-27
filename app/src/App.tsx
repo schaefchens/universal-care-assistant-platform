@@ -8,13 +8,13 @@
  * another device, goes back to onboarding and says why.
  */
 import { App as CapApp } from '@capacitor/app';
-import { type DeviceConfig, isLang, liveOf, liveSkips, messagesOf } from '@ucap/shared';
+import { type DeviceConfig, isLang, liveOf, liveSkips, messagesOf, type Scope, speechOf, t } from '@ucap/shared';
 import type { Intent } from '@ucap/speech-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChoiceGrid } from './areas/ChoiceGrid.tsx';
 import { type AssistiveMode, modeFrom, watchAssistive } from './a11y/assistive.ts';
 import { createEarcons } from './audio/earcons.ts';
-import { ClipPlayer, speakAs, voicesApi } from './audio/voices.ts';
+import { ClipPlayer, speakAs, voiceLabel, voicesApi } from './audio/voices.ts';
 import { pickBackend, SpeechOut } from './audio/speech.ts';
 import { loadDeviceRef, type Me, restoreDevice, Session } from './identity/account.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
@@ -54,6 +54,7 @@ import { PreviewsPage } from './screens/PreviewsPage.tsx';
 import { SmsPage } from './screens/SmsPage.tsx';
 import { Devices } from './screens/Devices.tsx';
 import { ScreensPage } from './screens/ScreensPage.tsx';
+import { PersonPage } from './screens/PersonPage.tsx';
 import { DeletedSetting } from './screens/DeletedSetting.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
@@ -153,7 +154,9 @@ type Page =
   /** A change someone else made took effect: said, with keep or undo (S11). */
   | { configChanged: Change }
   /** A helper setting up a person's device (S11). */
-  | { configOf: { id: string; displayName: string } };
+  | { configOf: { id: string; displayName: string } }
+  /** A helper's page for one person they help (docs/plan-m4.md, G2). */
+  | { personOf: { id: string; displayName: string; scopes: Scope[] } };
 /** How long "Rückgängig" puts back a change of speech or the screen made by voice (L5). */
 const LOCAL_UNDO_MS = 120_000;
 const pageKey = (p: Page) => (typeof p === 'string' ? p : Object.keys(p)[0]!);
@@ -221,7 +224,9 @@ export function App() {
   useEffect(() => {
     speech.setBackend(pickBackend({ screenReader: assistive === 'screen-reader', lang: prefs.lang }));
   }, [assistive, prefs.lang, speech]);
-  useEffect(() => speech.setRate(prefs.speechRate), [prefs.speechRate, speech]);
+  // The speed is the device's configuration (G2), the old local setting until one was saved.
+  const rate = speechOf(config, prefs.speechRate).rate;
+  useEffect(() => speech.setRate(rate), [rate, speech]);
 
   useEffect(() => {
     void earcons.load();
@@ -298,6 +303,15 @@ export function App() {
           ui.say(ui.tr('devices.addedLink', { name: String(e.data.name ?? ''), by: String(e.data.by ?? '') }), 'notice');
         } else if (e.type === 'device.revoked' && e.data.deviceId === session.ref.deviceId) {
           void session.forget().then(() => signedOut(ui.tr('devices.signedOut')));
+        } else if (e.type === 'speech.changed' || e.type === 'preferences.changed') {
+          // A helper set the person's voices or how long answers are (G2): said here, "Rückgängig" puts it back.
+          if (e.data.by !== session.ref.userId) void preferenceNews(e.type, e.data);
+        } else if (e.type === 'care.plan.changed') {
+          // The help settings changed (G2): the phone fallback kept on this device is fetched again, and said.
+          void refreshFallbacks(session).then(
+            () => e.data.by !== session.ref.userId && void carePlanNews(e.data),
+            () => {},
+          );
         } else if (e.type === 'relationship.changed') {
           setPeopleRev((n) => n + 1);
           // Whoever acted already heard what they did.
@@ -830,7 +844,7 @@ export function App() {
   const goBack = () => {
     if (page === 'devices' || page === 'screens' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'contacts' || page === 'appointments' || page === 'tasks' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
     else if (page === 'telegram' || page === 'whatsapp' || page === 'sms' || page === 'previews' || (typeof page === 'object' && 'email' in page)) setPage('messagingServices');
-    else if (typeof page === 'object' && ('remindersOf' in page || 'contactsOf' in page || 'agendaOf' in page || 'configOf' in page)) setPage('helpers');
+    else if (typeof page === 'object' && ('remindersOf' in page || 'contactsOf' in page || 'agendaOf' in page || 'configOf' in page || 'personOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
     else if (typeof page === 'object' || page !== 'areas') setPage('areas');
     else if (stack.length > 1) setStack((s) => s.slice(0, -1));
@@ -863,15 +877,17 @@ export function App() {
     switch (i) {
       case 'slower':
       case 'faster': {
-        const was = prefs.speechRate;
+        // The device's configuration since M4 (G2): a version, as every change of the person's own.
+        const before = speechOf(configRef.current, prefs.speechRate);
+        const was = before.rate;
         const rate = Math.round(Math.min(2, Math.max(0.5, was + (i === 'slower' ? -0.15 : 0.15))) * 100) / 100;
         if (rate === was) return u.say(u.tr(i === 'slower' ? 'look.rate.slowest' : 'look.rate.fastest'), 'system');
         // Heard at once in the new speed, the readback too.
         speech.setRate(rate);
-        updatePrefs({ ...prefs, speechRate: rate });
+        updateConfig({ ...configRef.current, speech: { ...before, rate } });
         return changed(i === 'slower' ? 'look.rate.slower' : 'look.rate.faster', () => {
           speech.setRate(was);
-          updatePrefs({ ...prefsRef.current, speechRate: was });
+          updateConfig({ ...configRef.current, speech: { ...speechOf(configRef.current, was), rate: was } });
         });
       }
       case 'shorter':
@@ -1076,6 +1092,65 @@ export function App() {
   const announcedAt = useRef(new Map<string, number>());
   /** Announcements one after the other, in the order the messages came. */
   const announcing = useRef<Promise<void>>(Promise.resolve());
+  /** Who did it, by name (one of the person's helpers), for news of a change made elsewhere. */
+  async function helperName(id: unknown): Promise<string> {
+    if (!session) return '';
+    const r = await people(session).relationships().catch(() => null);
+    return r?.asPerson.find((x) => x.helper.id === id)?.helper.displayName ?? '';
+  }
+
+  async function preferenceNews(type: string, data: Record<string, unknown>) {
+    const u = uiRef.current;
+    const name = await helperName(data.by);
+    const lines: string[] = [];
+    let undo: (() => void) | null = null;
+    if (type === 'speech.changed') {
+      const after = (data.after ?? {}) as Record<string, string>;
+      const before = (data.before ?? {}) as Record<string, string>;
+      const labels = await voicesApi(session!).list(u.lang).then((r) => new Map(r.voices.map((v) => [v.ref, voiceLabel(v, u.tr)])), () => new Map<string, string>());
+      for (const k of ['reply', 'reading'] as const) if (after[k]) lines.push(u.tr(`speech.changed.${k}`, { name, voice: labels.get(after[k]!) ?? after[k]! }));
+      undo = () => void session!.call('/api/v1/speech/settings', { method: 'PUT', body: before }).catch(() => {});
+    } else {
+      // How long answers are, the language and the form of address (G2): this device follows, and is said in them.
+      type P = { answers?: 'short' | 'normal' | 'detailed'; locale?: 'de' | 'en'; addressForm?: 'du' | 'Sie' };
+      const after = (data.after ?? {}) as P;
+      const before = (data.before ?? {}) as P;
+      const apply = (p: P) => {
+        if (p.answers) setMe((m) => (m ? { ...m, answers: p.answers } : m));
+        if (p.locale || p.addressForm) updatePrefs({ ...prefsRef.current, ...(p.locale ? { lang: p.locale } : {}), ...(p.addressForm ? { addressForm: p.addressForm } : {}) });
+      };
+      apply(after);
+      const tr = (key: string, params: Record<string, string> = {}) => t(after.locale ?? u.lang, key, params, after.addressForm ?? u.form);
+      if (after.answers) lines.push(tr(`speech.changed.answers.${after.answers}`, { name }));
+      if (after.locale) lines.push(tr('speech.changed.locale', { name }));
+      if (after.addressForm) lines.push(tr(`speech.changed.addressForm.${after.addressForm}`, { name }));
+      undo = () =>
+        void session!.call('/api/v1/me', { method: 'PATCH', body: before }).then(
+          () => apply(before),
+          () => {},
+        );
+      if (lines.length) {
+        u.earcons.play('screen');
+        localUndo.current = { at: Date.now(), undo };
+        u.say(`${lines.join(' ')} ${tr('speech.changed.undo')}`, 'notice');
+      }
+      return;
+    }
+    if (!lines.length) return;
+    u.earcons.play('screen');
+    localUndo.current = { at: Date.now(), undo: undo! };
+    u.say(`${lines.join(' ')} ${u.tr('speech.changed.undo')}`, 'notice');
+  }
+
+  async function carePlanNews(data: Record<string, unknown>) {
+    const u = uiRef.current;
+    const name = await helperName(data.by);
+    const fb = loadFallbacks().phoneFallback;
+    const line = data.fallbackChanged ? (fb?.name ? u.tr('care.plan.fallback', { who: fb.name }) : u.tr('care.plan.fallbackOff')) : '';
+    u.earcons.play('screen');
+    u.say([u.tr('care.plan.changed', { name }), line].filter(Boolean).join(' '), 'notice');
+  }
+
   async function messagingNews(type: string, data: Record<string, unknown>) {
     if (!session) return;
     const u = uiRef.current;
@@ -1249,6 +1324,7 @@ export function App() {
         onContacts={(person) => setPage({ contactsOf: person })}
         onAgenda={(person, which) => setPage({ agendaOf: { ...person, which } })}
         onConfigure={(person) => setPage({ configOf: person })}
+        onPerson={(person) => setPage({ personOf: person })}
         onClose={() => setPage('settings')}
       />
     );
@@ -1461,6 +1537,21 @@ export function App() {
         }}
       />
     );
+  } else if (typeof page === 'object' && 'personOf' in page) {
+    const person = page.personOf;
+    content = (
+      <PersonPage
+        session={session}
+        person={person}
+        scopes={person.scopes}
+        refresh={configRev + peopleRev}
+        onClose={() => setPage('helpers')}
+        onConfigure={() => setPage({ configOf: person })}
+        onReminders={() => setPage({ remindersOf: { ...person, canManage: person.scopes.includes('reminders.manage'), canRead: person.scopes.includes('reminders.responses.read') } })}
+        onContacts={() => setPage({ contactsOf: person })}
+        onAgenda={(which) => setPage({ agendaOf: { ...person, which } })}
+      />
+    );
   } else if (typeof page === 'object' && 'configOf' in page)
     content = <DeviceEditor session={session} person={page.configOf} myName={me?.displayName ?? ''} refresh={configRev} onClose={() => setPage('helpers')} />;
   else if (typeof page === 'object' && 'approve' in page) content = <Approve session={session} relationshipId={page.approve} config={config} onDone={() => setPage('helpers')} />;
@@ -1496,7 +1587,11 @@ export function App() {
         prefs={prefs}
         me={me}
         onConfig={updateConfig}
-        onPrefs={updatePrefs}
+        onPrefs={(p) => {
+          // The language and the form of address are the person's (G2: a helper sees and sets them too).
+          if (p.lang !== prefs.lang || p.addressForm !== prefs.addressForm) void session.call('/api/v1/me', { method: 'PATCH', body: { locale: p.lang, addressForm: p.addressForm } }).catch(() => {});
+          updatePrefs(p);
+        }}
         onDevices={() => setPage('devices')}
         onScreens={() => setPage('screens')}
         onPeople={() => setPage('helpers')}

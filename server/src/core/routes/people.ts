@@ -6,6 +6,7 @@ import Type from 'typebox';
 import type { PeopleService } from '../../domain/people/service.ts';
 import type { AnyApp } from '../../lib/http.ts';
 import { auth, requireAuth } from '../auth.ts';
+import type { Preferences } from '../../domain/people/service.ts';
 
 const Uuid = Type.String({ format: 'uuid' });
 const Code = Type.String({ minLength: 10, maxLength: 64 });
@@ -13,6 +14,34 @@ const Scopes = Type.Array(Type.String({ maxLength: 40 }), { maxItems: 10 });
 const ById = { params: Type.Object({ id: Uuid }) };
 
 export function registerPeopleRoutes(app: AnyApp, o: { people: PeopleService }) {
+  // How long the assistant answers, set by a helper who may set up the person's devices (docs/plan-m4.md, G2); the
+  // person's own is PATCH /me. Told to the person's devices with what it was, for "Rückgängig".
+  app.get('/api/v1/people/:id/preferences', { preHandler: requireAuth, schema: { params: Type.Object({ id: Type.String({ format: 'uuid' }) }) } }, async (req) =>
+    o.people.preferencesOf(auth(req).userId, (req.params as { id: string }).id),
+  );
+  app.patch(
+    '/api/v1/people/:id/preferences',
+    {
+      preHandler: requireAuth,
+      schema: {
+        params: Type.Object({ id: Type.String({ format: 'uuid' }) }),
+        body: Type.Object(
+          {
+            answers: Type.Optional(Type.Union([Type.Literal('short'), Type.Literal('normal'), Type.Literal('detailed')])),
+            locale: Type.Optional(Type.Union([Type.Literal('de'), Type.Literal('en')])),
+            addressForm: Type.Optional(Type.Union([Type.Literal('du'), Type.Literal('Sie')])),
+          },
+          { additionalProperties: false, minProperties: 1 },
+        ),
+      },
+    },
+    async (req, reply) => {
+      const a = auth(req);
+      await o.people.setPreferences(a.userId, (req.params as { id: string }).id, req.body as Preferences);
+      return reply.code(204).send();
+    },
+  );
+
   const { people } = o;
 
   app.post(

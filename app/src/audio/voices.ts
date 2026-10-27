@@ -21,6 +21,12 @@ export interface VoiceOption {
   sampleOnly: boolean;
 }
 
+/** The label people hear: the voice, and where it speaks from. */
+export function voiceLabel(v: VoiceOption, tr: (k: string, p?: Record<string, string>) => string) {
+  if (v.location === 'device') return v.label;
+  return tr(v.location === 'external' ? 'voices.label.external' : 'voices.label.own', { voice: v.label, provider: v.provider ?? '' });
+}
+
 export interface VoiceSettings {
   reply: string;
   reading: string;

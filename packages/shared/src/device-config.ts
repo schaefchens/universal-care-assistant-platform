@@ -163,6 +163,19 @@ export type MessagesConfig = Type.Static<typeof MessagesConfig>;
 
 export const DEFAULT_MESSAGES: MessagesConfig = { text: true };
 
+/**
+ * How this device speaks (docs/plan-m4.md, G2; CONCEPT §5: "Each person should be able to adjust … speaking speed …
+ * and the amount of guidance"): its speed, and how much an area says when a finger rests on it: its name, what it does
+ * and how to choose it (`full`), or its name alone (`short`). Set by the person and by helpers with device.configure.
+ */
+export const SpeechConfig = Type.Object({
+  rate: Type.Number({ minimum: 0.5, maximum: 2 }),
+  guidance: Type.Union([Type.Literal('full'), Type.Literal('short')]),
+});
+export type SpeechConfig = Type.Static<typeof SpeechConfig>;
+
+export const DEFAULT_SPEECH: SpeechConfig = { rate: 1, guidance: 'full' };
+
 export const DeviceConfig = Type.Object({
   v: Type.Literal(1),
   home: Type.String(),
@@ -171,6 +184,7 @@ export const DeviceConfig = Type.Object({
   visual: VisualConfig,
   live: Type.Optional(LiveConfig),
   messages: Type.Optional(MessagesConfig),
+  speech: Type.Optional(SpeechConfig),
 });
 export type DeviceConfig = Type.Static<typeof DeviceConfig>;
 
@@ -179,6 +193,9 @@ export const liveOf = (c: DeviceConfig): LiveConfig => c.live ?? DEFAULT_LIVE;
 
 /** How new messages are told; versions from before have none, and they are told with what they say. */
 export const messagesOf = (c: DeviceConfig): MessagesConfig => c.messages ?? DEFAULT_MESSAGES;
+
+/** How the device speaks; versions from before M4 have none (the device's own speed then, and full guidance). */
+export const speechOf = (c: DeviceConfig, fallbackRate = 1): SpeechConfig => c.speech ?? { ...DEFAULT_SPEECH, rate: fallbackRate };
 
 function activityScreen(id: string, titleKey: string): ScreenDef {
   return {

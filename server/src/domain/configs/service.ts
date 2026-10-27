@@ -169,8 +169,8 @@ export function createConfigs(d: { db: Db; clock: Clock; people: PeopleService }
     /** A person's devices and their configurations' states: for the person and helpers who may configure them. */
     async devicesOf(actorId: string, personId: string) {
       if (!(await mayEdit(actorId, personId))) throw new AppError('forbidden');
-      const r = await sql<{ id: string; name: string; platform: string; form_factor: string | null; last_seen_at: Date | null; config_id: string | null; current_version: number | null }>`
-        select dv.id, dv.name, dv.platform, dv.form_factor, dv.last_seen_at, c.id as config_id, c.current_version
+      const r = await sql<{ id: string; name: string; platform: string; form_factor: string | null; last_seen_at: Date | null; locked: boolean; config_id: string | null; current_version: number | null }>`
+        select dv.id, dv.name, dv.platform, dv.form_factor, dv.last_seen_at, dv.locked, c.id as config_id, c.current_version
         from devices dv left join device_configs c on c.device_id = dv.id
         where dv.user_id = ${personId} and dv.revoked_at is null order by dv.created_at`.execute(d.db);
       const out = [];
@@ -181,6 +181,8 @@ export function createConfigs(d: { db: Db; clock: Clock; people: PeopleService }
           platform: x.platform,
           formFactor: x.form_factor,
           lastSeenAt: x.last_seen_at?.toISOString() ?? null,
+          // Whether its app lock is on (G4), for the helper's page (G2); never anything of what is behind it.
+          locked: x.locked,
           config: x.config_id ? { id: x.config_id, version: x.current_version!, state: await stateOf(d.db, x.config_id) } : null,
         });
       return out;

@@ -100,6 +100,18 @@ describe('a change as the person hears it', () => {
     expect(say(base(), b)).toEqual(['Maria hat die Bedienung umgestellt: einmal tippen.', 'Maria hat das Vibrieren ausgeschaltet.']);
   });
 
+  it('how the device speaks (docs/plan-m4.md, G2): slower or faster, short or full guidance; a version without it is the usual', () => {
+    const a = base();
+    a.speech = { rate: 0.8, guidance: 'short' };
+    expect(say(base(), a)).toEqual(['Maria hat eingestellt, dass ich langsamer spreche.', 'Maria hat eingestellt, dass ich bei den Feldern nur noch ihren Namen sage.']);
+    expect(say(a, base(), 'en')).toEqual(['Maria set me to speak faster.', 'Maria set me to say again what the areas do and how to choose them.']);
+    // The same speed as before, written down for the first time: nothing to say.
+    const b = base();
+    b.speech = { rate: 1, guidance: 'full' };
+    expect(say(base(), b)).toEqual([]);
+    expect(checkConfig(a)).toEqual({ errors: [], warnings: [] });
+  });
+
   it('areas moved (swapped), renamed, recoloured; a moved help area always first', () => {
     const a = base();
     area(a, 'messages').cell = { row: 1, col: 0 };

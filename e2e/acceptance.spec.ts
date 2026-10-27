@@ -1019,6 +1019,64 @@ test('G4 · the app lock (docs/plan-m4.md, G4; acceptance 4): Clara chooses her 
   await home(clara);
 });
 
+test('G2 · the helper’s page (docs/plan-m4.md, G2; acceptance 1, 2): Maria finds everything for Clara in one place; Clara’s voice for reading aloud is said on the tablet and "Rückgängig" puts it back; shorter answers; the phone fallback to Tom, said; a slower voice and short guidance from the device editor, applied when idle and said', async () => {
+  await home(clara);
+  await home(maria);
+  await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await maria.getByRole('button', { name: 'Helfer', exact: true }).click();
+  await maria.getByRole('button', { name: 'Alles für Clara', exact: true }).click();
+  await expect(heading(maria)).toHaveText('Clara');
+  // Clara's devices, with how their setup stands.
+  await expect(maria.getByRole('heading', { name: 'Geräte von Clara' })).toBeVisible();
+  await expect(maria.getByText(/ist auf dem Gerät angewendet/).first()).toBeVisible();
+  await axe(maria, 'Alles für Clara');
+  // The voice for reading aloud (Clara chose Alloy in step 2): said on the tablet with how to undo it, undone by voice.
+  let from = await mark(clara);
+  await choose(maria.getByRole('radiogroup', { name: 'Stimme zum Vorlesen' }), 'Gerätestimme');
+  await expect(maria.getByText(/^Gespeichert\. Clara hört davon/).first()).toBeVisible();
+  await said(clara, /^Maria hat deine Stimme zum Vorlesen auf Gerätestimme gestellt\. Wenn du das nicht möchtest, sag „Rückgängig“\.$/, from);
+  from = await mark(clara);
+  await talk(clara, engines, 'Rückgängig');
+  await said(clara, /^Rückgängig gemacht: wieder wie vorher\.$/, from);
+  await expect.poll(() => sql(`select settings -> 'voices' ->> 'reading' from users where display_name = 'Clara'`)).toMatch(/^p:.+:alloy$/);
+  // How long answers are.
+  from = await mark(clara);
+  await choose(maria.getByRole('radiogroup', { name: 'Länge der Antworten' }), 'Kurz');
+  await said(clara, /^Maria hat eingestellt, dass ich kürzer antworte\. /, from);
+  // The phone fallback: Clara's tablet fetches it again and says whom it would call.
+  from = await mark(clara);
+  const fallback = maria.locator('form').filter({ has: maria.getByRole('textbox', { name: 'Telefonnummer' }) });
+  await fallback.getByRole('textbox', { name: 'Name', exact: true }).fill('Tom');
+  await fallback.getByRole('textbox', { name: 'Telefonnummer' }).fill('+49 151 2345678');
+  await fallback.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(maria.getByText(/^Gespeichert\. Ohne Verbindung bieten die Geräte von Clara an, Tom anzurufen/)).toBeVisible();
+  await said(clara, /^Maria hat die Einstellungen für deine Hilferufe geändert\. Ohne Verbindung zum Server biete ich jetzt an, Tom anzurufen\.$/, from);
+  // A slower voice and short guidance in the device's configuration: applied when nobody uses the tablet, and said.
+  const editor = async (steps: string, guidance: string) => {
+    await maria.getByRole('button', { name: 'Gerät einrichten' }).click();
+    await expect(heading(maria)).toHaveText('Gerät von Clara');
+    await maria.getByRole('slider', { name: 'Sprechtempo' }).focus();
+    for (const key of steps.split(' ')) await maria.keyboard.press(key);
+    await choose(maria.getByRole('radiogroup', { name: 'Hinweise bei den Feldern' }), guidance);
+    const at = await mark(clara);
+    await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await expect(heading(clara)).toHaveText('Neue Einstellungen', { timeout: 60_000 });
+    const told = await said(clara, /^Neue Einstellungen\. /, at);
+    await clara.getByRole('button', { name: 'Behalten', exact: true }).click();
+    await expect(maria.getByText(/ist auf dem Gerät angewendet/).first()).toBeVisible();
+    await maria.getByRole('button', { name: 'Zurück', exact: true }).click();
+    return told;
+  };
+  const told = await editor('ArrowLeft ArrowLeft', 'Nur der Name');
+  expect(told).toMatch(/Maria hat eingestellt, dass ich langsamer spreche\./);
+  expect(told).toMatch(/Maria hat eingestellt, dass ich bei den Feldern nur noch ihren Namen sage\./);
+  // Back as it was for the steps after.
+  await home(maria);
+  await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await maria.getByRole('button', { name: 'Helfer', exact: true }).click();
+  expect(await editor('ArrowRight ArrowRight', 'Name, Beschreibung und wie man wählt')).toMatch(/schneller spreche\./);
+});
+
 test('9 · without the language model and speech recognition: voice says A19; help by touch still works', async () => {
   await clocks.advance(31 * 60_000);
   engines.sttDown = true;

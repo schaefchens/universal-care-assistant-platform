@@ -24,6 +24,13 @@ import type { IdentityService } from '../identity/service.ts';
 import { mac } from '../identity/crypto.ts';
 import { normaliseLinkCode, normaliseSpokenCode } from '@ucap/identity';
 
+/** What a helper with device.configure may set of the person's own preferences (docs/plan-m4.md, G2). */
+export interface Preferences {
+  answers?: 'short' | 'normal' | 'detailed';
+  locale?: 'de' | 'en';
+  addressForm?: 'du' | 'Sie';
+}
+
 export interface PeopleDeps {
   db: Db;
   clock: Clock;
@@ -252,6 +259,40 @@ export function createPeopleService(d: PeopleDeps) {
       const [r] = await views(d.db, sql`r.id = ${relationshipId} and (r.person_id = ${userId} or r.helper_id = ${userId})`);
       if (!r) throw new AppError('not_found');
       return r;
+    },
+
+    /**
+     * How long the assistant answers, its language and the form of address, set by a helper with device.configure
+     * (docs/plan-m4.md, G2: "the length of answers, language and form of address"). Audited; the person's devices hear
+     * it with what it was, so "Rückgängig" there puts it back.
+     */
+    /** The person's preferences as a helper with device.configure sees them (G2). */
+    async preferencesOf(actorId: string, personId: string): Promise<Required<Preferences>> {
+      if (actorId !== personId && !(await this.can(actorId, 'device.configure', personId))) throw new AppError('forbidden');
+      const r = await sql<{ answers: string | null; locale: string; address_form: string }>`
+        select settings ->> 'answers' as answers, locale, address_form from users where id = ${personId}`.execute(d.db);
+      const u = r.rows[0];
+      if (!u) throw new AppError('not_found');
+      return { answers: (u.answers ?? 'normal') as Required<Preferences>['answers'], locale: u.locale === 'en' ? 'en' : 'de', addressForm: u.address_form === 'Sie' ? 'Sie' : 'du' };
+    },
+
+    async setPreferences(actorId: string, personId: string, p: Preferences) {
+      if (actorId !== personId && !(await this.can(actorId, 'device.configure', personId))) throw new AppError('forbidden');
+      await d.db.transaction().execute(async (trx) => {
+        const r = await sql<{ answers: string | null; locale: string; address_form: string }>`
+          select settings ->> 'answers' as answers, locale, address_form from users where id = ${personId} for update`.execute(trx);
+        const cur = r.rows[0];
+        if (!cur) throw new AppError('not_found');
+        const before: Required<Preferences> = { answers: (cur.answers ?? 'normal') as Required<Preferences>['answers'], locale: cur.locale as 'de' | 'en', addressForm: cur.address_form as 'du' | 'Sie' };
+        const changed = (Object.keys(p) as (keyof Preferences)[]).filter((k) => p[k] !== undefined && p[k] !== before[k]);
+        if (!changed.length) return;
+        if (p.answers && changed.includes('answers')) await sql`update users set settings = jsonb_set(settings, '{answers}', ${JSON.stringify(p.answers)}::jsonb) where id = ${personId}`.execute(trx);
+        if (p.locale && changed.includes('locale')) await sql`update users set locale = ${p.locale} where id = ${personId}`.execute(trx);
+        if (p.addressForm && changed.includes('addressForm')) await sql`update users set address_form = ${p.addressForm} where id = ${personId}`.execute(trx);
+        const after = Object.fromEntries(changed.map((k) => [k, p[k]]));
+        await audit(trx, d.clock, { actorUser: actorId, subjectUser: personId, action: 'preferences.changed', targetType: 'user', targetId: personId, detail: { changed } });
+        await emit(trx, { kind: 'preferences.changed', recipients: [personId], payload: { by: actorId, changed, after, before: Object.fromEntries(changed.map((k) => [k, before[k]])) } });
+      });
     },
 
     /** Whether the actor may act on the person's behalf within this scope. */

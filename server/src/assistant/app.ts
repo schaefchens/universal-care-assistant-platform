@@ -150,7 +150,7 @@ export async function buildAssistant(o: {
     };
   };
   const turns = createTurns({ db: o.db, clock: o.clock, stt, assistant, actions, contextFor });
-  registerSpeechRoutes(app, { speech, providers, stt });
+  registerSpeechRoutes(app, { speech, providers, stt, people, db: o.db, clock: o.clock });
   registerTurnRoutes(app, { turns, stt, llm });
   registerModelRoutes(app, { modelsDir: o.config.modelsDir, log });
   const liveNews = createLiveNews({ db: o.db, clock: o.clock, llm, messaging, agenda, log, summaryBudgetMs: o.liveSummaryMs });

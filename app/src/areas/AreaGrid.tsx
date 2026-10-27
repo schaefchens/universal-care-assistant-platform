@@ -32,6 +32,8 @@ export interface AreaGridProps {
   onActivate: (area: AreaDef, how: Activation | 'press') => void;
   /** Any touch on the grid (barge-in: it stops the assistant's speech). */
   onTouch?: () => void;
+  /** How much an area says on a resting finger (docs/plan-m4.md, G2): name, description and gesture, or the name. */
+  guidance?: 'full' | 'short';
 }
 
 /**
@@ -86,7 +88,8 @@ export function AreaGrid(p: AreaGridProps) {
         const hit = byId.get(id);
         if (!hit) return;
         const t = propsRef.current.text(hit.area);
-        propsRef.current.onAnnounce(sentences(t.label, t.description, propsRef.current.gestureHint));
+        const full = propsRef.current.guidance !== 'short';
+        propsRef.current.onAnnounce(sentences(t.label, full ? t.description : '', full ? propsRef.current.gestureHint : ''));
       },
       cancelLabel: () => propsRef.current.onCancelLabel(),
       activate: (id, how) => {

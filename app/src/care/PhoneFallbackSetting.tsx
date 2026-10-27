@@ -24,14 +24,16 @@ interface PlanView {
 /** "+49 30 / 123-45 67" → "+4930123 4567" without the spaces: what a dialler takes. */
 export const normaliseNumber = (s: string) => s.replace(/[\s/().-]/g, '');
 
-export function PhoneFallbackSetting(p: { session: Session }) {
+export function PhoneFallbackSetting(p: { session: Session; personId?: string; personName?: string }) {
   const { tr, say } = useUi();
   const [plan, setPlan] = useState<PlanView | null>(null);
   const [name, setName] = useState('');
   const [number, setNumber] = useState('');
   const [direct, setDirect] = useState(false);
   const [status, setStatus] = useState('');
-  const url = `/api/v1/people/${p.session.ref.userId}/escalation-plan`;
+  // The person's own, or someone's a helper with care.configure sets up (docs/plan-m4.md, G2).
+  const other = !!p.personId && p.personId !== p.session.ref.userId;
+  const url = `/api/v1/people/${p.personId ?? p.session.ref.userId}/escalation-plan`;
 
   const load = async () => {
     const v = await p.session.call<PlanView>(url);
@@ -53,9 +55,11 @@ export function PhoneFallbackSetting(p: { session: Session }) {
     if (!plan) return;
     try {
       await p.session.call(url, { method: 'PUT', body: { version: plan.version, tiers: plan.tiers, realertS: plan.realertS, sosNumber: plan.sosNumber, phoneFallback: fallback, unconfirmedPolicy: plan.unconfirmedPolicy } });
-      await refreshFallbacks(p.session);
+      // Only one's own plan is kept on this device for offline use; someone else's devices fetch theirs when told.
+      if (!other) await refreshFallbacks(p.session);
       await load();
-      tell(fallback ? tr(fallback.direct ? 'fallback.saved.direct' : 'fallback.saved', { name: fallback.name }) : tr('fallback.removed'));
+      if (other) tell(tr(fallback ? 'fallback.savedFor' : 'fallback.removedFor', { name: fallback?.name ?? '', person: p.personName ?? '' }));
+      else tell(fallback ? tr(fallback.direct ? 'fallback.saved.direct' : 'fallback.saved', { name: fallback.name }) : tr('fallback.removed'));
     } catch (e) {
       tell(tr(e instanceof ApiError && e.code === 'conflict' ? 'fallback.stale' : `error.${e instanceof ApiError ? e.code : 'internal'}`));
       if (e instanceof ApiError && e.code === 'conflict') await load().catch(() => {});
@@ -67,8 +71,9 @@ export function PhoneFallbackSetting(p: { session: Session }) {
     const n = normaliseNumber(number);
     if (!/^\+?[0-9]{3,15}$/.test(n)) return tell(tr('fallback.badNumber'));
     let d = direct;
-    // Direct calls need Android's phone permission: asked now, so the call itself is never held up by a question.
-    if (d && has('Alerts')) d = (await Alerts.requestCallPermission().catch(() => ({ granted: false }))).granted;
+    // Direct calls need Android's phone permission: asked now, so the call itself is never held up by a question. Set
+    // for someone else, it is that person's phone that needs it, never this one.
+    if (d && !other && has('Alerts')) d = (await Alerts.requestCallPermission().catch(() => ({ granted: false }))).granted;
     if (direct && !d) tell(tr('fallback.noPermission'));
     await save({ name: name.trim(), number: n, direct: d });
   }

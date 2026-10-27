@@ -19,11 +19,12 @@ interface PlanView {
   unconfirmedPolicy: 'send' | 'drop';
 }
 
-export function UnconfirmedSetting(p: { session: Session }) {
+export function UnconfirmedSetting(p: { session: Session; personId?: string }) {
   const { tr, say } = useUi();
   const [plan, setPlan] = useState<PlanView | null>(null);
   const [status, setStatus] = useState('');
-  const url = `/api/v1/people/${p.session.ref.userId}/escalation-plan`;
+  // The person's own, or someone's a helper with care.configure sets up (docs/plan-m4.md, G2).
+  const url = `/api/v1/people/${p.personId ?? p.session.ref.userId}/escalation-plan`;
   const load = async () => setPlan(await p.session.call<PlanView>(url));
   useEffect(() => {
     void load().catch(() => {});

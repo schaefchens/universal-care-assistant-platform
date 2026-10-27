@@ -3,7 +3,7 @@
  * A conventional page built from React Aria components, so it works with touch, keyboard and screen readers alike.
  * From S11 the same settings are part of the device configuration that helpers may change remotely.
  */
-import { type DeviceConfig, THEME_IDS, type ThemeId, type TouchConfig, type VisualConfig } from '@ucap/shared';
+import { type DeviceConfig, speechOf, THEME_IDS, type ThemeId, type TouchConfig, type VisualConfig } from '@ucap/shared';
 import type { ReactNode } from 'react';
 import { Button, Label, Radio, RadioGroup, Slider, SliderOutput, SliderThumb, SliderTrack, Switch } from 'react-aria-components';
 import type { AssistiveMode } from '../a11y/assistive.ts';
@@ -157,7 +157,23 @@ export function Settings(p: {
         </Button>
         <Choice label={tr('settings.language')} value={p.prefs.lang} options={['de', 'en'] as const} text={(v) => (v === 'de' ? 'Deutsch' : 'English')} onChange={(lang) => p.onPrefs({ ...p.prefs, lang })} />
         <Choice label={tr('settings.addressForm')} value={p.prefs.addressForm} options={['du', 'Sie'] as const} text={(v) => tr(`settings.addressForm.${v}`)} onChange={(addressForm) => p.onPrefs({ ...p.prefs, addressForm })} />
-        <Range label={tr('settings.speechRate')} value={p.prefs.speechRate} min={0.5} max={2} step={0.1} format={(v) => `${v.toFixed(1)}×`} onChange={(speechRate) => p.onPrefs({ ...p.prefs, speechRate })} />
+        {/* Part of the device's configuration since M4 (G2): a helper with device.configure sets it too. */}
+        <Range
+          label={tr('settings.speechRate')}
+          value={speechOf(p.config, p.prefs.speechRate).rate}
+          min={0.5}
+          max={2}
+          step={0.1}
+          format={(v) => `${v.toFixed(1)}×`}
+          onChange={(rate) => p.onConfig({ ...p.config, speech: { ...speechOf(p.config, p.prefs.speechRate), rate: Math.round(rate * 100) / 100 } })}
+        />
+        <Choice
+          label={tr('settings.guidance')}
+          value={speechOf(p.config, p.prefs.speechRate).guidance}
+          options={['full', 'short'] as const}
+          text={(v) => tr(`settings.guidance.${v}`)}
+          onChange={(guidance) => p.onConfig({ ...p.config, speech: { ...speechOf(p.config, p.prefs.speechRate), guidance } })}
+        />
       </Section>
       <MessagesSetting config={p.config} onConfig={p.onConfig} />
       <LiveSettings config={p.config} onConfig={p.onConfig} assistant={{ name: p.me?.assistantName ?? null, keyword: p.me?.keyword ?? null, save: p.onAssistant, spotsKeyword: has('VoiceCapture') }} />

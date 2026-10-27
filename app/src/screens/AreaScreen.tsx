@@ -3,7 +3,7 @@
  * should always have an understandable route back to their familiar home screen"); every change of screen is
  * announced; "Wo bin ich?" and "Was kann ich hier tun?" answer from the screen itself, by physical position.
  */
-import { type AreaDef, type DeviceConfig, positionKey, type ScreenDef } from '@ucap/shared';
+import { type AreaDef, type DeviceConfig, positionKey, type ScreenDef, speechOf } from '@ucap/shared';
 import { useCallback, useContext, useEffect } from 'react';
 import { AreaGrid, type AreaText } from '../areas/AreaGrid.tsx';
 import { record } from '../debug.ts';
@@ -156,6 +156,7 @@ export function AreaScreen(p: {
         assistive={assistive}
         text={(a) => areaText(a, tr)}
         gestureHint={gestureHint}
+        guidance={speechOf(p.config).guidance}
         onEarcon={(name) => {
           record('earcons', { name });
           earcons.play(name);

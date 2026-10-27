@@ -8,6 +8,7 @@ import { audit } from '../../lib/audit.ts';
 import type { Clock } from '../../lib/clock.ts';
 import type { Db, Exec } from '../../lib/db.ts';
 import { AppError } from '../../lib/errors.ts';
+import { emit } from '../../lib/outbox.ts';
 
 export interface Tier {
   waitS: number;
@@ -109,7 +110,7 @@ export async function savePlan(
   for (const t of input.tiers) if (t.waitS < MIN_WAIT_S || t.waitS > 3600 || t.helpers.length === 0) throw new AppError('bad_request', { params: { reason: 'tier' } });
   if ((input.realertS ?? 300) < MIN_REALERT_S) throw new AppError('bad_request', { params: { reason: 'realert' } });
   return db.transaction().execute(async (trx) => {
-    const cur = await sql<{ version: number }>`select version from escalation_plans where person_id = ${personId} for update`.execute(trx);
+    const cur = await sql<{ version: number; phone_fallback: PhoneFallback | null }>`select version, phone_fallback from escalation_plans where person_id = ${personId} for update`.execute(trx);
     const version = cur.rows[0]?.version ?? 0;
     // Optimistic: an editor working on an old version is told, not silently overwritten.
     if (input.version !== version) throw new AppError('conflict', { params: { reason: 'stale', version } });
@@ -130,6 +131,12 @@ export async function savePlan(
       targetId: personId,
       detail: { version: version + 1, tiers: input.tiers.length, phoneFallback: !!input.phoneFallback, unconfirmedPolicy: input.unconfirmedPolicy ?? 'send' },
     });
+    // The person's devices keep the phone fallback for offline use: told to fetch it again (docs/plan-m4.md, G2), and
+    // whether it changed; ids and states only, the device reads the plan itself.
+    const was = cur.rows[0]?.phone_fallback ?? null;
+    const now = input.phoneFallback ?? null;
+    const fallbackChanged = JSON.stringify(was && { name: was.name, number: was.number, direct: was.direct }) !== JSON.stringify(now && { name: now.name, number: now.number, direct: now.direct });
+    await emit(trx, { kind: 'care.plan.changed', recipients: [personId], payload: { by, version: version + 1, fallbackChanged } });
     return { version: version + 1 };
   });
 }

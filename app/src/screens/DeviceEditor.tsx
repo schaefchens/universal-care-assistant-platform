@@ -7,7 +7,7 @@
  * warnings (a colour hard to read on) are saved only when acknowledged. The page tells a version saved on the server
  * from one the device received and applied, and sets an earlier version again.
  */
-import { checkConfig, type ConfigIssue, describeChange, type DeviceConfig, THEME_IDS, type ThemeId, warningKey } from '@ucap/shared';
+import { checkConfig, type ConfigIssue, describeChange, type DeviceConfig, speechOf, THEME_IDS, type ThemeId, warningKey } from '@ucap/shared';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Form, Input, Label, Radio, RadioGroup, Slider, SliderOutput, SliderThumb, SliderTrack, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
@@ -232,6 +232,24 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
               ))}
             </RadioGroup>
             <Range label={tr('settings.dwell')} value={draft.touch.dwellMs} min={0} max={2000} step={100} format={(v) => `${(v / 1000).toFixed(1)} s`} onChange={(dwellMs) => setTouch({ dwellMs })} />
+            {/* How the device speaks (G2): its speed, and how much an area says. */}
+            <Range
+              label={tr('settings.speechRate')}
+              value={speechOf(draft).rate}
+              min={0.5}
+              max={2}
+              step={0.1}
+              format={(v) => `${v.toFixed(1)}×`}
+              onChange={(rate) => setDraft((d) => d && { ...d, speech: { ...speechOf(d), rate: Math.round(rate * 100) / 100 } })}
+            />
+            <RadioGroup className="choice" value={speechOf(draft).guidance} onChange={(v) => setDraft((d) => d && { ...d, speech: { ...speechOf(d), guidance: v as 'full' | 'short' } })}>
+              <Label className="choice-label">{tr('settings.guidance')}</Label>
+              {(['full', 'short'] as const).map((g) => (
+                <Radio key={g} value={g} className="choice-option">
+                  {tr(`settings.guidance.${g}`)}
+                </Radio>
+              ))}
+            </RadioGroup>
           </section>
 
           <ScreensEditor draft={draft} onDraft={setDraft} tell={tell} />
