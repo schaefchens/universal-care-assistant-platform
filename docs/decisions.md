@@ -2140,3 +2140,24 @@ The plan: [plan-m4.md](plan-m4.md).
   and came back at step 7 or 9, the walk's answer having gone to the other one. The walk now moves the clock before the
   reminder is set. Open for G11: the server asks an occurrence however late it is (here a day, as after a server down
   that long; the device's own alarm rang at its time); one whose prompts all lie in the past might be missed instead.
+- **G1, G3 and G4 on the scratch emulator (2026-10-27)**, with a test person made in a fresh browser profile on the dev
+  stack:
+  - **G3:** the emulator took a code from the browser; both showed and said the same four pictures; the browser said yes,
+    and the emulator was the person's ("Verbunden. Dieses Gerät gehört jetzt zu dir."). The pictures stood as three and
+    one on a phone's width: now always two by two.
+  - **G1:** the person's own page laid the home screen out for six areas, the two new cells filled from "Feld
+    hinzufügen"; applied at once ("Übernommen."), drawn in three rows with help in its corner and first in focus order; a
+    resting finger on a new area says its name, what it does and the gesture; the earcons' player has the
+    accessibility usage. A helper's remote change on the emulator follows with G2's check (it needs a helper).
+  - **G4:** the code chosen and checked by double taps in the app's explore mode; locked, the home screen stays (help,
+    the time) and "Nachrichten" asks for the code; a wrong code is said, the right one unlocks and opens what was
+    asked for; a restarted app with the lock on starts locked. **Android's extra crashed the app** at its first use:
+    Android's prompt needs `USE_BIOMETRIC` (now declared), and the exception it threw ended the process because the
+    plugin called the prompt from a `catch` block. The prompt now runs on the main thread and any failure of it rejects
+    the call (`prompt_failed`): an optional extra never ends the app. Then: registered with the phone's PIN; within its 30
+    seconds it unlocks without asking, after them Android's prompt asks for the PIN; the PIN removed, the key is gone
+    and the app says so, drops the key at the server and hides the button.
+  - **Not done: the code screen with TalkBack.** TalkBack ran, but the console's finger events reached nothing on the
+    scratch emulator this time (not even a plain button with TalkBack off), unlike in G0. The code screen's areas are
+    the area grid TalkBack presses elsewhere (M1); G11's TalkBack audit of every new screen covers it.
+  - Also found: the name screen said "Wie soll ich heißen?. …"; its sentences are now joined without the stray stop.

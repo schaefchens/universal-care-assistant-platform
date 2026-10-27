@@ -112,7 +112,15 @@ public class UnlockKeyPlugin extends Plugin {
         try {
             call.resolve(signed(data));
         } catch (UserNotAuthenticatedException e) {
-            prompt(call);
+            // Android's prompt first, on the main thread. Whatever goes wrong there is this call's failure, never the
+            // app's: an exception thrown here once ended the whole process (help with it).
+            getActivity().runOnUiThread(() -> {
+                try {
+                    prompt(call);
+                } catch (RuntimeException p) {
+                    call.reject("Android's prompt failed", "prompt_failed", p);
+                }
+            });
         } catch (KeyPermanentlyInvalidatedException e) {
             call.reject("the unlock key is gone", "key_gone");
         } catch (Exception e) {

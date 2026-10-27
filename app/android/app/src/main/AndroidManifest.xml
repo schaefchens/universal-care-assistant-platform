@@ -192,6 +192,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- The app lock's extra (docs/plan-m4.md, G4): Android's own prompt (fingerprint, face or the phone's PIN) before
+         the unlock key signs. Without it the prompt throws a SecurityException (seen on the emulator). -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- The help alarm: notifications (asked for in the helper's checklist), the full-screen alarm (a user grant on
          Android 14+, a Play Console declaration), and keeping retries across a restart (JobScheduler, persisted). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

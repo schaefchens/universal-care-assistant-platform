@@ -7,6 +7,7 @@
  */
 import type { DeviceConfig } from '@ucap/shared';
 import { useEffect, useState } from 'react';
+import { sentences } from '../areas/AreaGrid.tsx';
 import { ChoiceGrid } from '../areas/ChoiceGrid.tsx';
 import type { Me, Session } from '../identity/account.ts';
 import { people } from '../people/api.ts';
@@ -46,7 +47,8 @@ export function NameIntro(p: { session: Session; config: DeviceConfig; onDone: (
   useEffect(() => {
     if (!names) return;
     ui.earcons.play('screen');
-    say(`${tr('live.nameIntro.title')}. ${tr('live.nameIntro.text', { name: names[0] ?? '' })}`, 'system');
+    // The title is a question: no full stop after it ("Wie soll ich heißen?. …" was said on the emulator).
+    say(sentences(tr('live.nameIntro.title'), tr('live.nameIntro.text', { name: names[0] ?? '' })), 'system');
   }, [names]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function take(name: string) {
