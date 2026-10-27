@@ -215,6 +215,8 @@ describe('messaging', () => {
       text: 'Kommst du morgen zum Kaffee?',
       announce: 'Neue Nachricht von Anna Beispiel.',
       news: 'Neue Nachricht von Anna Beispiel: „Kommst du morgen zum Kaffee?“',
+      // All of it: heard to its end, it is read (the owner, 2026-10-27: "only whole heard to the end").
+      whole: true,
     });
     expect(q.items[1]!.say.frame).toMatch(/^Bernd Beispiel schrieb heute um \d{1,2}:\d{2} in „Familie“ auf Telegram:$/);
     // In a group, where it was written.

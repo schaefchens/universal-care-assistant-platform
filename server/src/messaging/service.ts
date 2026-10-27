@@ -1174,9 +1174,10 @@ export function createMessaging(d: {
      * message's original is its recording, played after the frame. How a new one is announced: by who wrote
      * (`announce`), or by who and what (`news`, for a device set so; the owner, 2026-10-27: "should say what, in general
      * for all messages"), worded as LIVE says it: a short text word for word, a longer one by how it begins, an email by
-     * its subject, a voice message or a photo by what it is, a one-time code never (K8).
+     * its subject, a voice message or a photo by what it is, a one-time code never (K8). `whole`: the news says all of
+     * the message, so heard to its end it counts as heard (the owner, 2026-10-27: "only whole heard to the end").
      */
-    async spoken(userId: string, list: Item[], lang?: Lang): Promise<(Item & { say: { frame: string; text: string; announce: string; news: string; quote?: string } })[]> {
+    async spoken(userId: string, list: Item[], lang?: Lang): Promise<(Item & { say: { frame: string; text: string; announce: string; news: string; whole?: true; quote?: string } })[]> {
       const p = await langOf(userId);
       const L = lang ?? p.lang;
       const tr = (key: string, params: Record<string, string | number> = {}) => t(L, key, params, p.form);
@@ -1199,6 +1200,8 @@ export function createMessaging(d: {
         const on = several && i.service !== 'notifications' && fold(name) !== fold(app) ? ` ${via(L, i.service, i.label)}` : '';
         const pre = i.service === 'notifications' ? `${tr('messages.frame.preview', { service: app })} ` : '';
         const media = MEDIA_NEWS[i.kind] ?? (i.kind === 'other' ? 'other' : null);
+        // A text's words, all of them or how they begin; never a code's or an email's (said by its subject).
+        const words = !i.code && i.service !== 'email' && i.kind === 'text' && i.text.trim() ? beginning(i.text) : null;
         const said = (b: { text: string; whole: boolean }) =>
           i.service === 'notifications'
             ? tr(b.whole ? 'messages.announce.preview.text' : 'messages.announce.preview.begins', { service: app, name, where, text: b.text })
@@ -1209,8 +1212,8 @@ export function createMessaging(d: {
           ? `${code} ${tr('live.news.codeAsk')}`
           : i.service === 'email'
             ? tr(i.subject?.trim() ? 'messages.announce.email' : 'messages.announce.email.noSubject', { name, subject: beginning(i.subject ?? '').text })
-            : i.kind === 'text' && i.text.trim()
-              ? said(beginning(i.text))
+            : words
+              ? said(words)
               : i.kind === 'voice'
                 ? `${pre}${tr('messages.announce.voice', { name, where, via: on, seconds: i.durationS ?? 0 })}`
                 : media
@@ -1218,7 +1221,7 @@ export function createMessaging(d: {
                   : announce;
         // An email's quoted part is named by its first line, after the new text: "Darunter zitiert: Am Montag schrieb Anna."
         const quote = i.quoted && quoteHeader(i.quoted) ? tr('messages.frame.quoted', { header: quoteHeader(i.quoted) }) : null;
-        return { ...i, say: { frame: f, text, announce, news, ...(quote ? { quote } : {}) } };
+        return { ...i, say: { frame: f, text, announce, news, ...(words?.whole ? { whole: true as const } : {}), ...(quote ? { quote } : {}) } };
       });
     },
 

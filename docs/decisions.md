@@ -1119,9 +1119,16 @@ The plan: [plan-m3.md](plan-m3.md).
     only when it is heard on the messages screen or read out, as a phone's notification leaves a message unread.
     LIVE's word for word still counts as heard (M2). The other choice: an announcement said to its end counts as heard,
     and the sender sees it read.
+    - **The owner chose the other choice, for a whole message, 2026-10-27:** "only whole heard to the end". Built: an
+      announcement that says all of a message (a short text word for word, a preview's too) and is said to its end
+      counts as heard, as LIVE's word for word does: read in UCAP, on its service, and on the phone. How a long message
+      begins, an email's subject, what a voice message, a photo or a file is, and a code never count; nor anything cut
+      off. The server marks the announcements that say all (`say.whole`); with a screen reader, an announcement counts
+      as said once it is handed to it, as the messages screen's reading does.
 24. **"Sagen, was darin steht" is a setting of each device** (To confirm 11), on by default, in its configuration: a
     phone in the pocket and a tablet in a shared room can differ, and a helper with device.configure sets it as LIVE's
     settings. The other choice: one setting of the person, on all their devices.
+    - **Confirmed by the owner, 2026-10-27:** "lets keep device for now".
 
 ### Decided (within the plan)
 
@@ -1987,3 +1994,13 @@ The plan: [plan-m3.md](plan-m3.md).
     its own way; the walk has it), and replying (nothing is sent from Wanda's account; the walk and the tests send).
   - Afterwards the SMS role went back to Google Messages, UCAP was opened again, LIVE came back ("waiting"), and the
     storage setting was removed. The test SMS stay in the emulator's store.
+- **After the owner's answers on items 23 and 24 (2026-10-27):**
+  - The browser walk: 30 of 30 (its browser cuts every utterance as stalled, so no announcement counts as heard
+    there, as before).
+  - On the emulator, the new build, with the SMS role and LIVE switched off on Wanda's settings for the check: a long
+    test SMS was announced "Neue Nachricht von 555-0199 per SMS, sie beginnt: „UCAP-Test: Das ist eine lange
+    Testnachricht, … nur …“" and stayed new (unread in UCAP and in Android's store, its notification there). A short
+    one, "Neue Nachricht von 555-0199 per SMS: „UCAP-Test: Bis gleich.“", said whole by the device voice, counted as
+    heard: read in UCAP and in the store, its notification gone.
+  - Afterwards LIVE was switched on again ("waiting"), the long test SMS marked read in UCAP by hand, the SMS role
+    given back to Google Messages, and the storage setting removed.

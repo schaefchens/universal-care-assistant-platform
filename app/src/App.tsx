@@ -1014,13 +1014,21 @@ export function App() {
       const burst = Date.now() - (announcedAt.current.get(conv) ?? 0) < 20_000;
       if (burst && !withText) return;
       announcedAt.current.set(conv, Date.now());
-      const got = session.call<{ from: string; conversation: string; say?: { announce?: string; news?: string } }>(`/api/v1/messaging/messages/${String(data.messageId)}?lang=${u.lang}`).catch(() => null);
+      const got = session
+        .call<{ id: string; from: string; conversation: string; say?: { announce?: string; news?: string; whole?: boolean } }>(`/api/v1/messaging/messages/${String(data.messageId)}?lang=${u.lang}`)
+        .catch(() => null);
       announcing.current = announcing.current.then(async () => {
         const m = await got;
         if (!m) return;
         if (!burst) u.earcons.play('message');
         // With the service once there is more than one ("… auf WhatsApp."), as the server words it.
-        u.say((withText ? m.say?.news : undefined) ?? m.say?.announce ?? u.tr('messages.announce', { name: m.from || m.conversation }), 'notice');
+        const news = withText ? m.say?.news : undefined;
+        if (!news) return u.say(m.say?.announce ?? u.tr('messages.announce', { name: m.from || m.conversation }), 'notice');
+        // A message said whole and heard to its end is read, on its service too, as on the messages screen (the owner,
+        // 2026-10-27: "only whole heard to the end"); how a long one begins, an email's subject or a code is not.
+        void u.sayAndWait(news, 'notice').then((heard) => {
+          if (heard && m.say?.whole) void session.call('/api/v1/messaging/messages/heard', { method: 'POST', body: { ids: [m.id] } }).catch(() => {});
+        });
       });
     } else if (type === 'messaging.device.send' && data.deviceId === session.ref.deviceId) {
       // A reply waits for this phone's SMS app or its previews (the native push does the same with the app closed).

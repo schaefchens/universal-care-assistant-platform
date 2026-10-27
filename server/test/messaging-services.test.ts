@@ -807,10 +807,10 @@ describe('messaging across services', () => {
     expect([...seen.at(-1)!.messages.at(-1)!.content.matchAll(/"ref":"msg:/g)]).toHaveLength(3);
   });
 
-  it('a new message is announced with what it says (the owner, 2026-10-27: "should say what, in general for all messages"): a short text word for word, a longer one by how it begins, an email by its subject, a photo with its caption, a voice message by its length, a preview as one, a one-time code never; each begins as news', async () => {
+  it('a new message is announced with what it says (the owner, 2026-10-27: "should say what, in general for all messages"): a short text word for word, a longer one by how it begins, an email by its subject, a photo with its caption, a voice message by its length, a preview as one, a one-time code never; each begins as news; only one said whole may count as heard', async () => {
     const said = async (externalId: string) => {
       const id = (await sql<{ id: string }>`select id from messaging_messages where external_id = ${externalId}`.execute(db)).rows[0]!.id;
-      return ((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { say: { announce: string; news: string } }).say;
+      return ((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { say: { announce: string; news: string; whole?: boolean } }).say;
     };
     const sms = (externalId: string, text: string) => ({ t: 'msg.upsert', msg: { chatId: '12', externalId, fromId: '+4917012345', outgoing: false, date: now(), editDate: null, kind: 'text', text, file: null, fileName: null }, live: true });
     const long = `Liebe Anna, ${'ich wollte dir nur kurz sagen, dass wir am Sonntag später kommen, weil der Zug ausfällt. '.repeat(3)}`;
@@ -843,6 +843,10 @@ describe('messaging across services', () => {
     // Who alone stays as it was, for a device set so.
     expect((await said('330')).announce).toBe('Neue Nachricht von Mama per SMS.');
     expect((await said('332')).announce).toBe('Neue Nachricht von Mama per SMS.');
+    // Only a message said whole counts as heard once said to its end (the owner, 2026-10-27: "only whole heard to the
+    // end"): a short text, a preview's; never how a long one begins, an email's subject, a code, a photo or a recording.
+    for (const id of ['330', 'b1c2d3e4']) expect((await said(id)).whole, id).toBe(true);
+    for (const id of ['331', '332', '<m1@example.org>', '1048577', '1048578']) expect((await said(id)).whole, id).toBeUndefined();
   });
 
   it('an email reply goes to the sender of the newest mail, to everyone in it when the person says so (the owner, 2026-10-27), named as the person knows them; it goes out as the sender the mail came to, or one the person names (identities like email apps have)', async () => {
