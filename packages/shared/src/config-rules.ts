@@ -32,6 +32,8 @@ export interface ConfigIssue {
     | 'home_far'
     | 'contrast'
     | 'unreachable'
+    /** An area opens an app the device did not report (G8). */
+    | 'app_missing'
     | 'empty';
   screen?: string;
   area?: string;
@@ -66,9 +68,13 @@ export function depths(c: DeviceConfig): Map<string, number> {
   return out;
 }
 
-export function checkConfig(c: DeviceConfig): { errors: ConfigIssue[]; warnings: ConfigIssue[] } {
+/** `apps`: the apps the device reported (G8), when known: an area for an app it does not have is said so. */
+export function checkConfig(c: DeviceConfig, o: { apps?: readonly string[] } = {}): { errors: ConfigIssue[]; warnings: ConfigIssue[] } {
   const errors: ConfigIssue[] = [];
   const warnings: ConfigIssue[] = [];
+  if (o.apps)
+    for (const [id, s] of Object.entries(c.screens))
+      for (const a of s.areas) if (a.action.type === 'app' && !o.apps.includes(a.action.package)) warnings.push({ code: 'app_missing', screen: id, area: a.id });
   if (!c.screens[c.home]) errors.push({ code: 'home_missing' });
   const depth = depths(c);
   for (const [id, s] of Object.entries(c.screens)) {

@@ -25,6 +25,30 @@ export function registerConfigRoutes(app: AnyApp, o: { configs: Configs }) {
     { preHandler: requireAuth, config: OPEN, bodyLimit: 256 * 1024, schema: { body: Type.Object({ body: DeviceConfig }, { additionalProperties: false }) } },
     async (req) => ({ config: await configs.createForDevice(auth(req).userId, auth(req).deviceId, (req.body as { body: DeviceConfig }).body) }),
   );
+  // The device describes itself (G8): the apps it can open, whether it is the home screen. Open while locked, as the
+  // configuration's state: it reads nothing.
+  app.put(
+    '/api/v1/devices/current/apps',
+    {
+      preHandler: requireAuth,
+      config: OPEN,
+      schema: {
+        body: Type.Object(
+          {
+            apps: Type.Array(Type.Object({ package: Type.String({ maxLength: 200 }), label: Type.String({ maxLength: 100 }) }, { additionalProperties: false }), { maxItems: 400 }),
+            home: Type.Boolean(),
+            // What the kiosk is doing (G9): off, pinned or locked, and whether UCAP is the device owner.
+            kiosk: Type.Optional(Type.Object({ mode: Type.Union([Type.Literal('off'), Type.Literal('pinned'), Type.Literal('locked')]), owner: Type.Boolean() }, { additionalProperties: false })),
+          },
+          { additionalProperties: false },
+        ),
+      },
+    },
+    async (req, reply) => {
+      await configs.describe(auth(req).deviceId, req.body as { apps: { package: string; label: string }[]; home: boolean; kiosk?: { mode: string; owner: boolean } });
+      return reply.code(204).send();
+    },
+  );
   app.post(
     '/api/v1/devices/current/config-state',
     {

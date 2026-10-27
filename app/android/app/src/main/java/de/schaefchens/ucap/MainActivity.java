@@ -21,6 +21,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SmsPlugin.class);
         registerPlugin(PhoneContactsPlugin.class);
         registerPlugin(PreviewsPlugin.class);
+        registerPlugin(LauncherPlugin.class);
+        registerPlugin(KioskPlugin.class);
         super.onCreate(savedInstanceState);
         // The app scales its own text (the person's setting times the system font scale, from the Info plugin).
         // A WebView that scaled it again would make text unpredictable, so its own zoom stays at 100 %.

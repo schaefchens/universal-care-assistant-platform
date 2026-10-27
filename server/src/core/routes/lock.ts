@@ -41,6 +41,12 @@ export function registerLockRoutes(app: AnyApp, o: { lock: Lock; identity: Ident
     lock.unlock(auth(req), (req.body as { code: string }).code),
   );
 
+  // The code checked without unlocking (G9: the person ends the kiosk on the device with it). Open while locked: a kiosk
+  // device may be locked as well.
+  app.post('/api/v1/lock/check', { preHandler: requireAuth, config: OPEN, schema: { body: Type.Object({ code: Type.String({ maxLength: 12 }) }, { additionalProperties: false }) } }, async (req) =>
+    lock.check(auth(req), (req.body as { code: string }).code),
+  );
+
   app.post(
     '/api/v1/lock/unlock-key',
     { preHandler: requireAuth, config: OPEN, schema: { body: Type.Object({ org: Type.String({ maxLength: 200 }), challengeId: Uuid, nonce: B64, proof: B64 }, { additionalProperties: false }) } },

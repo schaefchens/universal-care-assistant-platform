@@ -8,7 +8,7 @@
  * another device, goes back to onboarding and says why.
  */
 import { App as CapApp } from '@capacitor/app';
-import { type DeviceConfig, isLang, liveOf, liveSkips, messagesOf, type Scope, speechOf, t } from '@ucap/shared';
+import { type DeviceConfig, isLang, kioskOf, liveOf, liveSkips, messagesOf, type Scope, speechOf, t } from '@ucap/shared';
 import type { Intent } from '@ucap/speech-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChoiceGrid } from './areas/ChoiceGrid.tsx';
@@ -26,7 +26,7 @@ import { WebPushSetup } from './care/WebPushSetup.tsx';
 import { deviceKey, shareRefWithWorker } from './identity/device-key.ts';
 import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
-import { Alerts, has, Info, Keys, Previews, Reminders, Sms } from './native/plugins.ts';
+import { Alerts, has, Info, Keys, Kiosk, Launcher, Previews, Reminders, Sms } from './native/plugins.ts';
 import { ApiError, deviceRevoked } from './net/api.ts';
 import { emitAppEvent } from './net/events.ts';
 import { Realtime } from './net/realtime.ts';
@@ -58,6 +58,9 @@ import { PersonPage } from './screens/PersonPage.tsx';
 import { DeletedSetting } from './screens/DeletedSetting.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
+import { forgetHomeAsked, HomeSetting, homeAsked } from './screens/HomeSetting.tsx';
+import { KioskPage } from './screens/KioskPage.tsx';
+import { KioskSetting } from './screens/KioskSetting.tsx';
 import { IdentityChangeScreen } from './screens/IdentityChange.tsx';
 import { RepresentedAccess } from './screens/RepresentedAccess.tsx';
 import { NewWords } from './screens/NewWords.tsx';
@@ -157,7 +160,10 @@ type Page =
   /** A change someone else made took effect: said, with keep or undo (S11). */
   | { configChanged: Change }
   /** A helper setting up a person's device (S11). */
-  | { configOf: { id: string; displayName: string } }
+  | { configOf: { id: string; displayName: string; scopes?: readonly string[] } }
+  /** Ending the kiosk on the device, with the person's code (G9), and setting it up there. */
+  | 'kioskEnd'
+  | 'kioskSetup'
   /** Managing access for someone this account represents (G6). */
   | { representing: { id: string; displayName: string } }
   /** New words waiting to take effect (G5), and whether "Abbrechen" was asked for (it may wait for the code). */
@@ -304,6 +310,12 @@ export function App() {
         if (m.recoveryState === 'unconfirmed') ui.say(ui.tr('settings.recovery.reminder'), 'notice');
         // No words at all ("Später einrichten", G5): said at start, once a day.
         if (m.recoveryState === 'none' && onceToday('ucap.noWordsSaid')) ui.say(ui.tr('settings.recovery.noneReminder'), 'notice');
+        void reportDevice(session).catch(() => {});
+        // Android starts UCAP anew when it becomes the home screen (G8): the answer to its question is said now.
+        if (has('Launcher') && homeAsked()) {
+          forgetHomeAsked();
+          void Launcher.state().then((st) => ui.say(ui.tr(st.home ? 'home.done' : 'home.notDone'), 'notice'), () => {});
+        }
         // New words waiting to take effect (G5): said at every start until then.
         const c = await currentChange(session).catch(() => null);
         if (c && !cancelled) setPage((pg) => (busy(pg) ? pg : { identityChange: c }));
@@ -469,6 +481,8 @@ export function App() {
   const intentRef = useRef<(i: Intent) => void>(() => {});
   /** The last change of speech or the screen by voice, for "Rückgängig" right after. */
   const localUndo = useRef<{ at: number; undo: () => void } | null>(null);
+  /** An app an area opened (G8): when UCAP is in front again, it says so. */
+  const openedApp = useRef<string | null>(null);
   const voiceRef = useRef<VoiceController | null>(null);
   voiceRef.current ??= new VoiceController({
     session: () => sessionRef.current,
@@ -774,6 +788,60 @@ export function App() {
       .catch(() => {});
     return r;
   };
+
+  // The kiosk (G9) as the configuration says: at start without a word, and said when it changes. A browser cannot be
+  // locked, and says so when it is switched on.
+  const kioskKey = JSON.stringify(kioskOf(config));
+  const kioskSeen = useRef<string | null>(null);
+  const kioskRun = useRef(0);
+  useEffect(() => {
+    if (!session) return;
+    const k = kioskOf(configRef.current);
+    const changed = kioskSeen.current !== null && kioskSeen.current !== kioskKey;
+    kioskSeen.current = kioskKey;
+    const u = uiRef.current;
+    if (!has('Kiosk')) {
+      if (changed && k.on) u.say(u.tr('kiosk.browser'), 'notice');
+      return;
+    }
+    const run = ++kioskRun.current;
+    void (k.on ? Kiosk.start({ apps: k.apps, notifications: k.notifications, keyguardOff: k.keyguardOff }) : Kiosk.stop()).then(
+      async (st) => {
+        void reportDevice(session).catch(() => {});
+        if (!k.on || st.mode !== 'off') {
+          if (changed) u.say(u.tr(!k.on ? 'kiosk.stopped' : st.mode === 'locked' ? 'kiosk.started' : 'kiosk.pinnedSaid'), 'notice');
+          return;
+        }
+        // Not a dedicated device: Android pins UCAP only once its sheet is confirmed, and asks nothing where pinning is
+        // off in its settings (both seen on the emulator). Said as Android has it, not before.
+        if (changed) u.say(u.tr('kiosk.pinAsk'), 'notice');
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          if (run !== kioskRun.current) return;
+          const now = await Kiosk.state().catch(() => null);
+          if (now && now.mode !== 'off') {
+            void reportDevice(session).catch(() => {});
+            if (changed) u.say(u.tr('kiosk.pinnedNow'), 'notice');
+            return;
+          }
+        }
+        u.say(u.tr('kiosk.notPinned'), 'notice');
+      },
+      () => k.on && u.say(u.tr('kiosk.failed'), 'notice'),
+    );
+  }, [kioskKey, session]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Back from an app an area opened (G8): said where UCAP is, and its "Zurück zu UCAP" notification goes.
+  useEffect(() => {
+    if (!has('App') || !has('Launcher')) return;
+    const resumed = CapApp.addListener('resume', () => {
+      void Launcher.cameBack().catch(() => {});
+      if (!openedApp.current) return;
+      openedApp.current = null;
+      uiRef.current.say(uiRef.current.tr('apps.cameBack'), 'system');
+    });
+    return () => void resumed.then((h) => h.remove());
+  }, []);
 
   // Reminders ring on the device itself too (with the app closed, offline): its alarms follow the schedule. A local
   // alarm while the app is in front, and a tap on a reminder's notification, open its question here.
@@ -1218,6 +1286,13 @@ export function App() {
       u.say(m.madeHow === 'admin' ? u.tr('rep.mine.admin', { name: m.representative.displayName, by: m.madeBy, reason: m.reason ?? '' }) : u.tr('rep.news.active', { name: m.representative.displayName }), 'notice');
     } else if (state === 'active' && r.represented.length) u.say(u.tr('rep.news.youActive', { name: r.represented.at(-1)!.person.displayName }), 'notice');
     else if (state === 'ended') u.say(u.tr('rep.news.endedAny'), 'notice');
+  }
+
+  /** What this device can open and whether it is the home screen (G8), for the editors of its areas. */
+  async function reportDevice(s: Session) {
+    if (!has('Launcher')) return;
+    const [a, st, kiosk] = await Promise.all([Launcher.apps(), Launcher.state(), has('Kiosk') ? Kiosk.state() : Promise.resolve(undefined)]);
+    await s.call('/api/v1/devices/current/apps', { method: 'PUT', body: { apps: a.apps.slice(0, 400), home: st.home, ...(kiosk ? { kiosk } : {}) } });
   }
 
   /** "Abbrechen" on the notice of new words (G5): a locked device asks for the code first, then stops them. */
@@ -1678,6 +1753,29 @@ export function App() {
     );
   } else if (typeof page === 'object' && 'representing' in page) {
     content = <RepresentedAccess session={session} person={page.representing} serverUrl={server.url} refresh={peopleRev} onClose={() => setPage('helpers')} />;
+  } else if (page === 'kioskSetup') {
+    content = <KioskPage config={config} personName={me?.displayName ?? ''} onConfig={updateConfig} onClose={() => setPage('settings')} />;
+  } else if (page === 'kioskEnd') {
+    // The person ends the kiosk with their code (G9): a version of their own; the device follows as for any change.
+    content = (
+      <UnlockScreen
+        config={config}
+        title={ui.tr('kiosk.person.endTitle')}
+        intro={ui.tr('kiosk.person.endIntro')}
+        onCode={async (code) => {
+          const problem = await lockApi(session).check(code);
+          if (problem) return ui.tr(problem.key, problem.params);
+          updateConfig({ ...configRef.current, kiosk: { ...kioskOf(configRef.current), on: false } });
+          setPage('settings');
+          return null;
+        }}
+        onCancel={() => setPage('settings')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+      />
+    );
   } else if (typeof page === 'object' && 'identityChange' in page) {
     const c = page.identityChange;
     content = (
@@ -1758,6 +1856,8 @@ export function App() {
         onClose={() => setPage('areas')}
       >
         <LockSetting session={session} refresh={lockRev} onChanged={() => setLockRev((n) => n + 1)} onSetCode={() => setPage('lockCode')} onLocked={() => void lockNow()} />
+        <HomeSetting onChanged={() => void reportDevice(session)} />
+        <KioskSetting config={config} hasCode={!!lock?.hasCode} onEnd={() => setPage('kioskEnd')} onSetUp={() => setPage('kioskSetup')} />
         <HelpKeySetting />
         <AndroidPushSetup session={session} server={server} />
         <DeletedSetting session={session} />
@@ -1778,6 +1878,21 @@ export function App() {
         onCare={() => setPage('care')}
         onInbox={isHelper ? () => setPage('inbox') : undefined}
         pages={{ notes: () => setPage('notes'), messages: () => setPage('messages'), contacts: () => setPage('contactList'), appointments: () => setPage('appointmentList'), tasks: () => setPage('taskList') }}
+        onApp={
+          has('Launcher')
+            ? (pkg, label) => {
+                openedApp.current = label;
+                // The way back waits in the notifications: Android asks for them once, before the first app opens
+                // (a person who is no helper was never asked; seen on the emulator).
+                void (has('Alerts') ? Alerts.requestNotifications().catch(() => null) : Promise.resolve(null))
+                  .then(() => Launcher.open({ package: pkg, title: ui.tr('apps.back.title'), text: ui.tr('apps.back.text', { app: label }) }))
+                  .catch((e: { code?: string }) => {
+                    openedApp.current = null;
+                    ui.say(ui.tr(e?.code === 'app_missing' ? 'apps.missing' : 'apps.failed', { app: label }), 'system');
+                  });
+              }
+            : undefined
+        }
       />
     );
 

@@ -63,6 +63,32 @@ export function createLock(d: { db: Db; clock: Clock; serverId: string; publicOr
     await sql`update sessions set scopes = ${UNLOCKED_SCOPES} where id = ${a.sessionId} and revoked_at is null`.execute(d.db);
   }
 
+  /**
+   * The person's code, typed on this device: right, and how many were wrong before; wrong, and it counts, with waits that
+   * grow (the person sees them in their history). A wait that runs refuses even the right code until it ends.
+   */
+  async function verify(a: LockActor, code: string): Promise<number> {
+    const r = await sql<{ verifier: Buffer; salt: Buffer; failed: number; wait_until: Date | null }>`
+      select verifier, salt, failed, wait_until from unlock_codes where user_id = ${a.userId}`.execute(d.db);
+    const row = r.rows[0];
+    if (!row) throw new AppError('conflict', { params: { reason: 'lock_no_code' } });
+    if (row.wait_until && row.wait_until.getTime() > d.clock())
+      throw new AppError('rate_limited', { params: { reason: 'lock_wait', retryAfter: Math.ceil((row.wait_until.getTime() - d.clock()) / 1000) } });
+    const ok = CODE.test(code) && timingSafeEqual(await hash(code, row.salt), row.verifier);
+    if (ok) {
+      await sql`update unlock_codes set failed = 0, wait_until = null where user_id = ${a.userId}`.execute(d.db);
+      return row.failed;
+    }
+    const failed = row.failed + 1;
+    const waitS = failed > FREE_TRIES ? WAITS_S[Math.min(failed - FREE_TRIES - 1, WAITS_S.length - 1)]! : 0;
+    await sql`
+      update unlock_codes set failed = ${failed}, wait_until = ${waitS ? new Date(d.clock() + waitS * 1000) : null}
+      where user_id = ${a.userId}`.execute(d.db);
+    if (waitS) await audit(d.db, d.clock, { actorDevice: a.deviceId, subjectUser: a.userId, action: 'lock.wrong', targetType: 'device', targetId: a.deviceId, detail: { failed, waitS } });
+    // 403, never 401: a device takes 401 for an expired token, signs in again and would send the same code twice.
+    throw new AppError('forbidden', { params: { reason: 'lock_code', failed, ...(waitS ? { retryAfter: waitS } : {}) } });
+  }
+
   return {
     /** The lock as this device knows it: whether it locks, whether the person has a code, Android's extra, a wait. */
     async state(a: LockActor) {
@@ -127,26 +153,15 @@ export function createLock(d: { db: Db; clock: Clock; serverId: string; publicOr
      * many in their history once a wait starts). A wait that runs refuses even the right code until it ends.
      */
     async unlock(a: LockActor, code: string) {
-      const r = await sql<{ verifier: Buffer; salt: Buffer; failed: number; wait_until: Date | null }>`
-        select verifier, salt, failed, wait_until from unlock_codes where user_id = ${a.userId}`.execute(d.db);
-      const row = r.rows[0];
-      if (!row) throw new AppError('conflict', { params: { reason: 'lock_no_code' } });
-      if (row.wait_until && row.wait_until.getTime() > d.clock())
-        throw new AppError('rate_limited', { params: { reason: 'lock_wait', retryAfter: Math.ceil((row.wait_until.getTime() - d.clock()) / 1000) } });
-      const ok = CODE.test(code) && timingSafeEqual(await hash(code, row.salt), row.verifier);
-      if (ok) {
-        await sql`update unlock_codes set failed = 0, wait_until = null where user_id = ${a.userId}`.execute(d.db);
-        await lift(a);
-        return { unlocked: true, failedBefore: row.failed };
-      }
-      const failed = row.failed + 1;
-      const waitS = failed > FREE_TRIES ? WAITS_S[Math.min(failed - FREE_TRIES - 1, WAITS_S.length - 1)]! : 0;
-      await sql`
-        update unlock_codes set failed = ${failed}, wait_until = ${waitS ? new Date(d.clock() + waitS * 1000) : null}
-        where user_id = ${a.userId}`.execute(d.db);
-      if (waitS) await audit(d.db, d.clock, { actorDevice: a.deviceId, subjectUser: a.userId, action: 'lock.wrong', targetType: 'device', targetId: a.deviceId, detail: { failed, waitS } });
-      // 403, never 401: a device takes 401 for an expired token, signs in again and would send the same code twice.
-      throw new AppError('forbidden', { params: { reason: 'lock_code', failed, ...(waitS ? { retryAfter: waitS } : {}) } });
+      const failedBefore = await verify(a, code);
+      await lift(a);
+      return { unlocked: true, failedBefore };
+    },
+
+    /** The code checked without unlocking anything (G9: ending the kiosk on the device); wrong codes count the same. */
+    async check(a: LockActor, code: string) {
+      await verify(a, code);
+      return { ok: true };
     },
 
     /** Android's extra: the key bound to the phone's own lock signs `session.unlock` on a challenge for this device. */

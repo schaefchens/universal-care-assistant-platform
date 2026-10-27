@@ -1541,6 +1541,20 @@ test('15 · removed for good (docs/decisions.md, M3, 20: "we keep messages forev
   await home(clara);
 });
 
+/**
+ * A day's jump passes three in the afternoon (step 6's "Trinken") and, depending on the hour the walk runs, other
+ * reminders (an appointment's): each that asks is answered "Erledigt", until none asks for a few seconds.
+ */
+async function answerReminders(page: Page): Promise<void> {
+  const done = page.getByRole('button', { name: 'Erledigt', exact: true });
+  await expect(done).toBeVisible({ timeout: 30_000 });
+  for (let i = 0; i < 6; i++) {
+    // A reminder's screen can also go by itself (seen: the second of two, gone before its click): then the next.
+    await done.click({ timeout: 15_000 }).catch(() => {});
+    if (!(await done.waitFor({ timeout: 5_000 }).then(() => true, () => false))) return;
+  }
+}
+
 test('G5 · new words that wait a day (docs/plan-m4.md, G5; acceptance 5, 12): Clara lost her card: new words from her tablet are said at once and at every start; "Abbrechen" stops them; asked again, help still works while they wait', async () => {
   await home(clara);
   const ask = async () => {
@@ -1655,9 +1669,8 @@ test('G5c · a day later (docs/plan-m4.md, G5; acceptance 5, 11): Clara’s new 
   const from = await mark(clara);
   await clocks.advance(24 * 3_600_000 + 60_000);
   await said(clara, /^Ab jetzt gelten die neuen Wiederherstellungswörter\. Die alten funktionieren nicht mehr\.$/, from);
-  // The jump passed three in the afternoon: step 6's "Trinken" asks again, and Clara answers it.
-  await expect(heading(clara)).toHaveText('Trinken', { timeout: 30_000 });
-  await clara.getByRole('button', { name: 'Erledigt', exact: true }).click();
+  // The jump passed three in the afternoon (step 6's "Trinken"), perhaps more: Clara answers what asks.
+  await answerReminders(clara);
   const old = words.get('Clara')!;
   words.set('Clara', words.get('Clara, neu')!);
   words.delete('Clara, neu');
@@ -1807,8 +1820,7 @@ test('G7 · trusted persons (docs/plan-m4.md, G7; acceptance 6): Clara asks Mari
   await expect(tablet.getByText(/^Dieses Gerät gehört ab .+ Uhr zu Clara/)).toBeVisible({ timeout: 30_000 });
   from = await mark(clara);
   await clocks.advance(24 * 3_600_000 + 60_000);
-  await expect(heading(clara)).toHaveText('Trinken', { timeout: 30_000 });
-  await clara.getByRole('button', { name: 'Erledigt', exact: true }).click();
+  await answerReminders(clara);
   await tablet.getByRole('button', { name: 'Jetzt nachsehen', exact: true }).click();
   await said(tablet, /^Dieses Gerät gehört jetzt zu Clara\. /);
   await laterVoice(tablet);
@@ -1817,6 +1829,38 @@ test('G7 · trusted persons (docs/plan-m4.md, G7; acceptance 6): Clara asks Mari
   await said(clara, /^Ein neues Gerät gehört jetzt zu dir: /, from);
   words.set('Clara', newWords);
   await tablet.close();
+});
+
+test('G9 · the kiosk permission (docs/plan-m4.md, G9; acceptance 9): Clara lets Maria "Kiosk-Modus einstellen"; Maria switches the kiosk on for Clara’s browser, which says it, and that a browser cannot be locked; off again, said too', async () => {
+  // Clara gives Maria the new permission, apart from setting up the device.
+  await helpersPage(clara);
+  const mariaItem = clara.locator('li.device').filter({ has: clara.getByRole('heading', { name: 'Maria', exact: true }) });
+  await mariaItem.getByRole('button', { name: 'Ändern', exact: true }).click();
+  await setChoice(mariaItem.getByRole('checkbox', { name: 'Kiosk-Modus einstellen' }));
+  await mariaItem.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(mariaItem.getByText(/Kiosk-Modus einstellen/)).toBeVisible();
+  await home(clara);
+  const kiosk = async (on: boolean) => {
+    await home(maria);
+    await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+    await maria.getByRole('button', { name: 'Helfer', exact: true }).click();
+    await maria.getByRole('button', { name: 'Gerät einrichten' }).click();
+    await expect(heading(maria)).toHaveText('Gerät von Clara');
+    await setChoice(maria.getByRole('switch', { name: 'Kiosk-Modus an' }), on);
+    if (on) await choose(maria.getByRole('radiogroup', { name: 'Wer kann ihn auf dem Gerät beenden?' }), 'Clara und die Helfer, die das dürfen');
+    const from = await mark(clara);
+    await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
+    await expect(heading(clara)).toHaveText('Neue Einstellungen', { timeout: 60_000 });
+    const told = await said(clara, /^Neue Einstellungen\. /, from);
+    await clara.getByRole('button', { name: 'Behalten', exact: true }).click();
+    return { told, from };
+  };
+  const on = await kiosk(true);
+  expect(on.told).toMatch(/Maria hat den Kiosk-Modus eingeschaltet\. Beenden kannst du ihn selbst, mit deinem Code, oder deine Helfer\./);
+  await said(clara, /^Ein Browser lässt sich nicht sperren\./, on.from);
+  await axe(maria, 'Gerät von Clara, the kiosk');
+  const off = await kiosk(false);
+  expect(off.told).toMatch(/Maria hat den Kiosk-Modus ausgeschaltet\./);
 });
 
 test('10 · recovery: on a new device the English words recover the same account; the other device is told; signed out, it loses its connection at once', async ({ browser }) => {

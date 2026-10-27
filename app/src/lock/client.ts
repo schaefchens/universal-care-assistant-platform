@@ -40,6 +40,19 @@ export const lockApi = (s: Session) => ({
       throw e;
     }
   },
+  /** The code checked without unlocking anything (G9: the person ends the kiosk); wrong codes count the same. */
+  async check(code: string): Promise<null | { key: string; params?: Record<string, number> }> {
+    try {
+      await s.call('/api/v1/lock/check', { body: { code } });
+      return null;
+    } catch (e) {
+      if (!(e instanceof ApiError)) throw e;
+      const retry = Number(e.params.retryAfter ?? 0);
+      if (e.params.reason === 'lock_wait' || retry) return { key: 'lock.wait', params: { minutes: Math.max(1, Math.ceil(retry / 60)) } };
+      if (e.params.reason === 'lock_code') return { key: 'lock.wrong' };
+      throw e;
+    }
+  },
 });
 
 /**

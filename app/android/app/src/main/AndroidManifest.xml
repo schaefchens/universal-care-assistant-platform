@@ -26,7 +26,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- UCAP as the home screen (docs/plan-m4.md, G8): offered to Android, the role taken only when the person
+                 agrees to Android's question. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
         </activity>
+
+        <!-- The kiosk's device administrator (docs/plan-m4.md, G9): active only where an operator made UCAP the device
+             owner of a dedicated device (operator.md). -->
+        <receiver
+            android:name=".UcapAdmin"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/ucap_device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
         <!-- The help alarm (docs/plan.md, S5): the full-screen alarm over the lock screen, native, outside the
              WebView. -->
@@ -170,6 +190,11 @@
         <intent>
             <action android:name="android.intent.action.SENDTO" />
             <data android:scheme="smsto" />
+        </intent>
+        <!-- The apps an area can open (G8): those a launcher sees, never every installed package. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
         <!-- The messengers whose previews UCAP offers (K5), by name on its page: Signal, Threema, Instagram, Facebook
              Messenger, and WhatsApp's own notifications for people without the link. -->

@@ -14,6 +14,7 @@ import type { Session } from '../identity/account.ts';
 import { ApiError } from '../net/api.ts';
 import { areaText, screenTitle } from './AreaScreen.tsx';
 import { useUi } from '../ui.tsx';
+import { KioskEditor } from './KioskEditor.tsx';
 import { LiveSettings } from './LiveSettings.tsx';
 import { MessagesSetting } from './MessagesSetting.tsx';
 import { ScreensEditor } from './ScreensEditor.tsx';
@@ -40,6 +41,8 @@ interface Loaded {
   body: DeviceConfig;
   versions: Version[];
   state: { deliveredVersion: number | null; appliedVersion: number | null; deferredReason: string | null; repaired: string[] };
+  /** What the device reported of itself (G8): its apps, whether it is the home screen. */
+  device?: { apps: { package: string; label: string }[] | null; home: boolean | null; kiosk: { mode: 'off' | 'pinned' | 'locked'; owner: boolean } | null };
 }
 
 /** Two configurations alike, whatever order their keys came in (the server's store keeps its own). */
@@ -61,7 +64,10 @@ function Range(p: { label: string; value: number; min: number; max: number; step
   );
 }
 
-export function DeviceEditor(p: { session: Session; person: { id: string; displayName: string }; myName: string; refresh: number; onClose: () => void }) {
+export function DeviceEditor(p: { session: Session; person: { id: string; displayName: string; scopes?: readonly string[] }; myName: string; refresh: number; onClose: () => void }) {
+  // What this helper may change (G9): the device's setup, the kiosk, or both.
+  const configure = !p.person.scopes || p.person.scopes.includes('device.configure');
+  const kiosk = !p.person.scopes || p.person.scopes.includes('device.kiosk');
   const ui = useUi();
   const { tr, say } = ui;
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
@@ -119,7 +125,9 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
     void loadConfig();
   }, [deviceId, devices]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const check = useMemo(() => (draft ? checkConfig(draft) : { errors: [] as ConfigIssue[], warnings: [] as ConfigIssue[] }), [draft]);
+  // An area for an app the device did not report is said so (G8).
+  const apps = cfg?.device?.apps;
+  const check = useMemo(() => (draft ? checkConfig(draft, apps ? { apps: apps.map((a) => a.package) } : {}) : { errors: [] as ConfigIssue[], warnings: [] as ConfigIssue[] }), [draft, apps]);
   const willSay = useMemo(() => (cfg && draft ? describeChange({ lang: ui.lang, form: ui.form, author: p.myName, before: cfg.body, after: draft, max: 6 }) : []), [cfg, draft, ui.lang, ui.form, p.myName]);
   const issueText = (i: ConfigIssue) => {
     const s = draft?.screens[i.screen ?? ''];
@@ -204,6 +212,9 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
 
       {draft && cfg && (
         <Form className="stack" onSubmit={save}>
+          {kiosk && <KioskEditor draft={draft} onDraft={setDraft} apps={cfg?.device?.apps ?? []} state={cfg?.device?.kiosk ?? null} personName={p.person.displayName} />}
+          {configure && (
+            <>
           <section className="settings-section">
             <h2>{tr('config.editor.look')}</h2>
             <RadioGroup className="choice" value={draft.visual.theme} onChange={(v) => setVisual({ theme: v as ThemeId })}>
@@ -252,7 +263,9 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
             </RadioGroup>
           </section>
 
-          <ScreensEditor draft={draft} onDraft={setDraft} tell={tell} />
+          <ScreensEditor draft={draft} onDraft={setDraft} tell={tell} apps={cfg?.device?.apps ?? []} />
+            </>
+          )}
 
           {willSay.length > 0 && (
             <section className="settings-section">

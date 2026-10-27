@@ -2223,3 +2223,30 @@ The plan: [plan-m4.md](plan-m4.md).
   people who trust them can be meant; wrong codes are limited), compares the pictures, says whose device it is and
   yes, signed by their device. When enough said yes, the new words wait a day (G5), every device of the person hears it
   with "Abbrechen", and the new device waits as after an operator's reset. A trusted person who left counts no more.
+- **G8, the device describes itself**: the apps it can open (what a launcher may see, by name), whether UCAP is the home
+  screen, and (G9) what the kiosk is doing. Sent at every start and after a change, kept per device, shown to the person
+  and to helpers who may set the device up (decisions To confirm 7). An area that opens an app the device did not
+  report is a warning in the editor; a browser says it opens no apps.
+- **G8, the home screen** is Android's role, asked for after UCAP says what Android will ask, given back in Android's
+  settings. Android starts UCAP anew when it takes the role (spikes/m4.md, B), so the answer is said at that start.
+- **G8, the way back**: Home (as the home screen), and the notification "Zurück zu UCAP" while another app is in front;
+  UCAP says "Zurück in UCAP. Startseite." when it is in front again. The notification needs Android's permission, which
+  a person who is no helper was never asked for (seen on the emulator: blocked): it is asked before the first app opens.
+  "Zurück" by voice from another app is not built: LIVE does not run its page while another app is in front.
+- **G9, two permissions, two parts of the configuration**: changing the kiosk needs "Kiosk-Modus einstellen", the rest
+  "Bedienung der Geräte einstellen" (checked on every new version and every version set again); either opens the
+  editor, which shows each part only to whom it belongs. The person sets the kiosk up on their own device too.
+- **G9, ending the kiosk on the device** needs the person's app-lock code (checked without unlocking anything), where
+  the setting lets the person end it; without a code the page says to set one. Helpers end it remotely as any change.
+- **G1 to G9 on the scratch emulator (2026-10-27), G8 and G9**: the home role taken through Android's question, Home
+  from Android's settings leading to UCAP; an area turned into "Clock" from the person's own page, said "Clock. Öffnet
+  die App Clock.", opened, and Home leading back with "Zurück in UCAP. Startseite."; as device owner (`dpm
+  set-device-owner`), the kiosk switched on by the person with Clock allowed: lock task locked at once, Clock opened
+  inside it, Android's settings refused ("Lock Task Mode violation"), Home back to UCAP; ended with the person's code;
+  "Kiosk-Gerät wieder normal machen" left no owner. Without device owner: Android's pinning sheet, pinned once
+  accepted, ended with the code. Found and fixed: the way-back notification blocked (above); the pinning sentence. Android
+  pins only once its sheet is confirmed, and where pinning is off in its settings it asks nothing and pins nothing
+  (seen in the G10 check, where UCAP had said "angeheftet" all the same): UCAP now says "angeheftet" once Android
+  reports it, checks for half a minute, and otherwise says that UCAP is not pinned and what Android needs for it. And
+  UCAP started again while pinned asked again, and Android showed its sheet over the screen once more: it asks only
+  when it is not pinned or locked already.

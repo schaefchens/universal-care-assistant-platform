@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UCAP's device administrator (docs/plan-m4.md, G9): lock task and the lock screen need being the device owner, which
+     an operator sets up on a dedicated device; no policy of its own. -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies />
+</device-admin>

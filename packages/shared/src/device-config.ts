@@ -19,6 +19,8 @@ export const AreaAction = Type.Union([
   Type.Object({ type: Type.Literal('time') }),
   Type.Object({ type: Type.Literal('where') }),
   Type.Object({ type: Type.Literal('settings') }),
+  // An app on the device (docs/plan-m4.md, G8; CONCEPT §20: "apps he might wanna use and can open"), by its package.
+  Type.Object({ type: Type.Literal('app'), package: Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$', maxLength: 200 }) }),
 ]);
 export type AreaAction = Type.Static<typeof AreaAction>;
 
@@ -159,6 +161,21 @@ export const liveSkips = (l: LiveConfig): LiveService[] => LIVE_SERVICES.filter(
  * never a one-time code), in its announcement and in UCAP's SMS notification on the phone; off, who wrote alone.
  */
 export const MessagesConfig = Type.Object({ text: Type.Boolean() });
+
+/**
+ * The kiosk (docs/plan-m4.md, G9): the device locked into UCAP and the apps allowed. Who may end it from the device:
+ * the person and their helpers, or the helpers only (said when it starts). Android's lock screen can be off on a
+ * dedicated device (then UCAP's own lock, G4, is the device's). Changed by the person and helpers with device.kiosk.
+ */
+export const KioskConfig = Type.Object({
+  on: Type.Boolean(),
+  apps: Type.Array(Type.String({ maxLength: 200 }), { maxItems: 20 }),
+  endBy: Type.Union([Type.Literal('person'), Type.Literal('helpers')]),
+  notifications: Type.Boolean(),
+  keyguardOff: Type.Boolean(),
+});
+export type KioskConfig = Type.Static<typeof KioskConfig>;
+export const DEFAULT_KIOSK: KioskConfig = { on: false, apps: [], endBy: 'person', notifications: false, keyguardOff: false };
 export type MessagesConfig = Type.Static<typeof MessagesConfig>;
 
 export const DEFAULT_MESSAGES: MessagesConfig = { text: true };
@@ -185,11 +202,15 @@ export const DeviceConfig = Type.Object({
   live: Type.Optional(LiveConfig),
   messages: Type.Optional(MessagesConfig),
   speech: Type.Optional(SpeechConfig),
+  kiosk: Type.Optional(KioskConfig),
 });
 export type DeviceConfig = Type.Static<typeof DeviceConfig>;
 
 /** A configuration's LIVE part; versions from before M2 have none, and it is off. */
 export const liveOf = (c: DeviceConfig): LiveConfig => c.live ?? DEFAULT_LIVE;
+
+/** The kiosk; versions from before M4 have none (off). */
+export const kioskOf = (c: DeviceConfig): KioskConfig => c.kiosk ?? DEFAULT_KIOSK;
 
 /** How new messages are told; versions from before have none, and they are told with what they say. */
 export const messagesOf = (c: DeviceConfig): MessagesConfig => c.messages ?? DEFAULT_MESSAGES;

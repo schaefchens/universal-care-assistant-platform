@@ -112,6 +112,18 @@ describe('a change as the person hears it', () => {
     expect(checkConfig(a)).toEqual({ errors: [], warnings: [] });
   });
 
+  it('the kiosk (docs/plan-m4.md, G9): on with who may end it, off; an area for an app the device lacks is a warning (G8)', () => {
+    const a = base();
+    a.kiosk = { on: true, apps: [], endBy: 'helpers', notifications: false, keyguardOff: false };
+    expect(say(base(), a)).toEqual(['Maria hat den Kiosk-Modus eingeschaltet. Beenden können ihn deine Helfer.']);
+    expect(say(a, base())).toEqual(['Maria hat den Kiosk-Modus ausgeschaltet.']);
+    const b = base();
+    Object.assign(area(b, 'notes'), { action: { type: 'app', package: 'org.radio.app' }, label: 'Radio', labelKey: undefined, descriptionKey: undefined });
+    expect(checkConfig(b, { apps: ['org.radio.app'] })).toEqual({ errors: [], warnings: [] });
+    expect(checkConfig(b, { apps: [] }).warnings).toEqual([{ code: 'app_missing', screen: 'home', area: 'notes' }]);
+    expect(checkConfig(b).warnings).toEqual([]);
+  });
+
   it('areas moved (swapped), renamed, recoloured; a moved help area always first', () => {
     const a = base();
     area(a, 'messages').cell = { row: 1, col: 0 };

@@ -14,7 +14,8 @@ import { TalkButton, VoiceContext } from '../voice/TalkButton.tsx';
 export function areaText(a: AreaDef, tr: (key: string, params?: Record<string, string | number | Date>) => string): AreaText {
   return {
     label: a.label ?? (a.labelKey ? tr(a.labelKey) : a.id),
-    description: a.description ?? (a.descriptionKey ? tr(a.descriptionKey, { sos: '112' }) : ''),
+    // An app (G8) says what it opens: "Öffnet die App YouTube."
+    description: a.description ?? (a.descriptionKey ? tr(a.descriptionKey, { sos: '112' }) : a.action.type === 'app' ? tr('area.app.description', { app: a.label ?? a.action.package }) : ''),
   };
 }
 
@@ -46,6 +47,8 @@ export function AreaScreen(p: {
   onCare?: () => void;
   /** This user helps someone: the top bar leads to their help requests. */
   onInbox?: () => void;
+  /** An area that opens an app (G8); absent in a browser. */
+  onApp?: (pkg: string, label: string) => void;
   /** Screens the app implements itself (the notes), opened by their areas. */
   pages?: Record<string, () => void>;
 }) {
@@ -105,6 +108,11 @@ export function AreaScreen(p: {
           return;
         case 'settings':
           p.onSettings();
+          return;
+        case 'app':
+          // A browser opens no apps, and says so.
+          if (!p.onApp) say(tr('apps.browser'), 'system');
+          else p.onApp(act.package, areaText(a, tr).label);
           return;
       }
     },

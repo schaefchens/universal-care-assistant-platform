@@ -72,7 +72,7 @@ export function Helpers(p: {
   /** The reminders of someone this helper supports, as far as their scopes reach. */
   onReminders?: (person: { id: string; displayName: string }, canManage: boolean, canRead: boolean) => void;
   /** Setting up the person's device (device.configure, S11). */
-  onConfigure?: (person: { id: string; displayName: string }) => void;
+  onConfigure?: (person: { id: string; displayName: string; scopes?: readonly string[] }) => void;
   /** A helper's page for one person: everything one may do for them (docs/plan-m4.md, G2). */
   onPerson?: (person: { id: string; displayName: string; scopes: Scope[] }) => void;
   onContacts?: (person: { id: string; displayName: string }) => void;
@@ -355,8 +355,8 @@ export function Helpers(p: {
                       {scopeLabel('care.configure', tr)}
                     </Button>
                   )}
-                  {r.state === 'active' && r.scopes.includes('device.configure') && (
-                    <Button className="button" onPress={() => p.onConfigure?.(r.person)}>
+                  {r.state === 'active' && (r.scopes.includes('device.configure') || r.scopes.includes('device.kiosk')) && (
+                    <Button className="button" onPress={() => p.onConfigure?.({ ...r.person, scopes: r.scopes })}>
                       {tr('config.editor.open')}
                     </Button>
                   )}

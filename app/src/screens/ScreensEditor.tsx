@@ -51,25 +51,28 @@ const FUNCTIONS: (AreaFunction & { id: string })[] = [
   { id: 'home', action: { type: 'home' }, role: 'nav' },
 ].map((f) => ({ ...f, action: f.action as AreaDef['action'], role: f.role as AreaDef['role'], labelKey: `area.${f.id}.label`, descriptionKey: `area.${f.id}.description` }));
 
-/** The function an area has, as the editor names it: one of FUNCTIONS, a screen of areas (`screen:<id>`), or none. */
+/** The function an area has, as the editor names it: one of FUNCTIONS, a screen of areas (`screen:<id>`), an app
+ *  (`app:<package>`, G8), or none. */
 function functionOf(a: AreaDef, c: DeviceConfig): string | null {
   const known = FUNCTIONS.find((f) => JSON.stringify(f.action) === JSON.stringify(a.action));
   if (known) return known.id;
+  if (a.action.type === 'app') return `app:${a.action.package}`;
   if (a.action.type === 'screen' && c.screens[a.action.screen]) return `screen:${a.action.screen}`;
   return null;
 }
 
-/** The functions an area on this screen may take: a screen never opens itself. */
-function functionsFor(c: DeviceConfig, screenId: string, tr: Tr): { id: string; text: string; fn: AreaFunction }[] {
+/** The functions an area on this screen may take: a screen never opens itself; the device's apps (G8) by name. */
+function functionsFor(c: DeviceConfig, screenId: string, tr: Tr, apps: readonly { package: string; label: string }[]): { id: string; text: string; fn: AreaFunction }[] {
   const own = areaScreens(c)
     .filter((id) => id !== c.home && id !== screenId)
     .map((id) => ({ id: `screen:${id}`, text: tr('screens.function.screen', { screen: screenTitle(c.screens[id]!, tr) }), fn: { action: { type: 'screen' as const, screen: id }, role: 'neutral' as const, label: screenTitle(c.screens[id]!, tr) } }));
-  return [...FUNCTIONS.map((f) => ({ id: f.id, text: tr(f.labelKey!), fn: f })), ...own];
+  const opens = apps.map((a) => ({ id: `app:${a.package}`, text: tr('screens.function.app', { app: a.label }), fn: { action: { type: 'app' as const, package: a.package }, role: 'neutral' as const, label: a.label.slice(0, 60) } }));
+  return [...FUNCTIONS.map((f) => ({ id: f.id, text: tr(f.labelKey!), fn: f })), ...own, ...opens];
 }
 
 const layoutId = (g: { rows: number; cols: number }) => `${g.rows}x${g.cols}`;
 
-export function ScreensEditor(p: { draft: DeviceConfig; onDraft: (c: DeviceConfig) => void; tell: (text: string) => void }) {
+export function ScreensEditor(p: { draft: DeviceConfig; onDraft: (c: DeviceConfig) => void; tell: (text: string) => void; apps?: readonly { package: string; label: string }[] }) {
   const ui = useUi();
   const { tr, say } = ui;
   const [screenId, setScreenId] = useState(p.draft.home);
@@ -142,7 +145,7 @@ export function ScreensEditor(p: { draft: DeviceConfig; onDraft: (c: DeviceConfi
     p.tell(tr('screens.removed', { screen: screenTitle(screen!, tr) }));
   }
 
-  const choices = functionsFor(p.draft, id, tr);
+  const choices = functionsFor(p.draft, id, tr, p.apps ?? []);
   const free = freeCells(screen);
   const preview = themeVariables(resolveTheme(p.draft.visual.theme, platformPrefs()), p.draft.visual) as CSSProperties;
   const ordered = [...screen.areas].sort((a, b) => a.cell.row - b.cell.row || a.cell.col - b.cell.col);

@@ -289,6 +289,32 @@ export const UnlockKey = registerPlugin<UnlockKeyPlugin>('UnlockKey');
 export const Alerts = registerPlugin<AlertsPlugin>('Alerts');
 export const Keys = registerPlugin<KeysPlugin>('Keys');
 export const Reminders = registerPlugin<RemindersPlugin>('Reminders');
+
+/** UCAP as the home screen, and the apps its areas open (docs/plan-m4.md, G8). */
+export interface LauncherPlugin {
+  state(): Promise<{ home: boolean; askable: boolean }>;
+  requestHome(): Promise<{ home: boolean }>;
+  homeSettings(): Promise<void>;
+  apps(): Promise<{ apps: { package: string; label: string }[] }>;
+  open(o: { package: string; title: string; text: string }): Promise<void>;
+  cameBack(): Promise<void>;
+  toFront(): Promise<void>;
+}
+export const Launcher = registerPlugin<LauncherPlugin>('Launcher');
+
+/** The kiosk (docs/plan-m4.md, G9): lock task as device owner, else screen pinning. */
+export interface KioskState {
+  mode: 'off' | 'pinned' | 'locked';
+  owner: boolean;
+}
+export interface KioskPlugin {
+  state(): Promise<KioskState>;
+  start(o: { apps: string[]; notifications: boolean; keyguardOff: boolean }): Promise<KioskState>;
+  stop(): Promise<KioskState>;
+  endOwner(): Promise<KioskState>;
+}
+export const Kiosk = registerPlugin<KioskPlugin>('Kiosk');
+
 export const VoiceCapture = registerPlugin<VoiceCapturePlugin>('VoiceCapture');
 export const Sms = registerPlugin<SmsPlugin>('Sms');
 export const PhoneContacts = registerPlugin<PhoneContactsPlugin>('PhoneContacts');

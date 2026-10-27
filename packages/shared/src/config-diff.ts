@@ -5,7 +5,7 @@
  * umgestellt." A help area that moved is always said, first; of the rest at most three, then "und weitere".
  */
 import { positionKey } from './config-edit.ts';
-import { type AreaDef, type DeviceConfig, liveOf, messagesOf, type ScreenDef, speechOf } from './device-config.ts';
+import { type AreaDef, type DeviceConfig, kioskOf, liveOf, messagesOf, type ScreenDef, speechOf } from './device-config.ts';
 import { type AddressForm, type Lang, t } from './i18n.ts';
 
 const VISUAL_LOOK = ['font', 'weight', 'letterSpacing', 'borderPx', 'focusPx', 'gapPx', 'reducedMotion'] as const;
@@ -39,6 +39,11 @@ export function describeChange(o: { lang: Lang; form: AddressForm; author: strin
   // How it speaks (docs/plan-m4.md, G2); a version without it counts as the usual speed.
   if (speechOf(before).rate !== speechOf(after).rate) rest.push(tr(speechOf(after).rate < speechOf(before).rate ? 'config.change.slower' : 'config.change.faster'));
   if (speechOf(before).guidance !== speechOf(after).guidance) rest.push(tr(speechOf(after).guidance === 'short' ? 'config.change.guidanceShort' : 'config.change.guidanceFull'));
+  // The kiosk (G9): on with who may end it, off, or its apps.
+  const kb = kioskOf(before);
+  const ka = kioskOf(after);
+  if (kb.on !== ka.on) rest.push(tr(ka.on ? (ka.endBy === 'person' ? 'config.change.kioskOn.person' : 'config.change.kioskOn.helpers') : 'config.change.kioskOff'));
+  else if (ka.on && (JSON.stringify(kb.apps) !== JSON.stringify(ka.apps) || kb.endBy !== ka.endBy || kb.keyguardOff !== ka.keyguardOff || kb.notifications !== ka.notifications)) rest.push(tr('config.change.kiosk'));
 
   if (before.visual.theme !== after.visual.theme) rest.push(tr('config.change.theme', { theme: t(lang, `config.theme.${after.visual.theme}`) }));
   if (before.visual.textScale !== after.visual.textScale)

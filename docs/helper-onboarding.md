@@ -110,3 +110,40 @@ question or help request), then says what changed and offers to undo it. Your pa
 yet received (the device is offline), received and waiting (and why), applied. The history lists every version with
 who made it; "Wieder so einstellen" sets an earlier one again. A change that would remove help, the way back or the way
 home cannot be saved.
+
+## Everything for one person (M4)
+
+Helfer → **"Alles für Clara"**: what you may do for the person, in one place, by permission: their devices (when they
+were last reachable, whether your setup is applied or waiting, whether the app lock is on), their voices for answers
+and for reading aloud (a voice that needs the person's consent is shown, but only the person can agree to it), how
+long answers are, the language and the form of address, the help settings (who is alerted when, whom the device offers
+to call without a connection, what an unanswered help question does), and the ways to their reminders, contacts,
+appointments, tasks and the device's setup. Each change is said on the person's devices with "Rückgängig", and kept in
+their history.
+
+In the device's setup you can also shape **every screen**: how many areas and how they are laid out, new screens and
+the areas leading to them, each area's function, words, sound and vibration, how fast the device speaks and how much
+an area says when a finger rests on it. On a phone or tablet with UCAP, an area can **open an app** the device has.
+
+## The kiosk (M4)
+
+With **"Kiosk-Modus einstellen"** (a permission of its own, apart from setting up the device) you can lock a device into
+UCAP and the apps you allow, and say who may end it there: the person (with their code) and you, or helpers only.
+On a dedicated device (operator.md) it is a real lock; on any other phone or tablet it is Android's screen pinning,
+which one gesture ends. A browser cannot be locked. Help always works inside it.
+
+## Representing someone (M4)
+
+A person can make you their **representative** (or the operator can, with a reason, when the person cannot). You then
+decide for them who may help and with what: approve or decline helpers who asked, change and withdraw permissions,
+end connections, invite a helper, sign out one of their devices (Helfer → "Als Vertretung von …"). You never see their
+messages or notes because of it, never link devices or recover their account, and never give yourself more
+permissions. Everything you do is said on their devices as your act as their representative, and is in their history.
+
+## Being a trusted person (M4)
+
+Someone may ask you to be one of their **trusted persons** (Helfer → "Du bist Vertrauensperson"): if they lose every
+device and their words, you and the others confirm their new device. You see nothing of their data because of it.
+When they ask you: their new device shows a six-digit code and four pictures; enter the code under Helfer, check that
+you see the same four pictures, choose whose device it is, and say yes. When enough trusted persons agreed, the new
+device becomes theirs **a day later**, and any of their devices can still stop it.

@@ -117,7 +117,7 @@ export function PersonPage(p: {
           ))}
         </ul>
         <div className="row">
-          {may('device.configure') && (
+          {(may('device.configure') || may('device.kiosk')) && (
             <Button className="button" onPress={p.onConfigure}>
               {tr('config.editor.open')}
             </Button>

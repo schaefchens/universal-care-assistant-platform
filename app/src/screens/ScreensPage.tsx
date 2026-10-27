@@ -5,8 +5,9 @@
  * protected controls hold as everywhere: what would remove help or the way back cannot be applied.
  */
 import { checkConfig, type ConfigIssue, type DeviceConfig } from '@ucap/shared';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox } from 'react-aria-components';
+import { has, Launcher } from '../native/plugins.ts';
 import { useUi } from '../ui.tsx';
 import { areaText, screenTitle } from './AreaScreen.tsx';
 import { ScreensEditor } from './ScreensEditor.tsx';
@@ -20,7 +21,12 @@ export function ScreensPage(p: { config: DeviceConfig; onConfig: (c: DeviceConfi
     setStatus(text);
     say(text, 'system');
   };
-  const check = useMemo(() => checkConfig(draft), [draft]);
+  // This device's apps (G8), for areas that open them; a browser has none.
+  const [apps, setApps] = useState<{ package: string; label: string }[]>([]);
+  useEffect(() => {
+    if (has('Launcher')) void Launcher.apps().then((r) => setApps(r.apps), () => {});
+  }, []);
+  const check = useMemo(() => checkConfig(draft, has('Launcher') ? { apps: apps.map((a) => a.package) } : {}), [draft, apps]);
   const issueText = (i: ConfigIssue) => {
     const s = draft.screens[i.screen ?? ''];
     const a = i.area && s?.areas.find((x) => x.id === i.area);
@@ -48,7 +54,7 @@ export function ScreensPage(p: { config: DeviceConfig; onConfig: (c: DeviceConfi
       <p role="status" className="status">
         {status}
       </p>
-      <ScreensEditor draft={draft} onDraft={setDraft} tell={tell} />
+      <ScreensEditor draft={draft} onDraft={setDraft} tell={tell} apps={apps} />
       {check.errors.length > 0 && (
         <div className="status warning" role="alert">
           {tr('config.editor.errors')} {check.errors.map(issueText).join(' ')}

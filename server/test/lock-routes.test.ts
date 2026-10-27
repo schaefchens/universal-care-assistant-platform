@@ -21,12 +21,16 @@ const OPEN_WHILE_LOCKED = [
   'POST /api/v1/lock/unlock',
   'POST /api/v1/lock/unlock-key',
   'POST /api/v1/lock/lock',
+  // The code checked without unlocking (G9: ending the kiosk on the device).
+  'POST /api/v1/lock/check',
   // Android's key forgotten (the phone's lock was removed): dropping a way in opens nothing.
   'DELETE /api/v1/lock/android-key',
   // Its own screens and settings.
   'GET /api/v1/devices/current/config',
   'PUT /api/v1/devices/current/config',
   'POST /api/v1/devices/current/config-state',
+  // What the device reports of itself (G8): its apps, whether it is the home screen.
+  'PUT /api/v1/devices/current/apps',
   // Help requests, the person's and a helper's.
   'GET /api/v1/care/requests',
   'GET /api/v1/care/requests/:id',

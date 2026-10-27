@@ -164,6 +164,49 @@ them with the permissions "Kontakte verwalten" and "Termine und Aufgaben verwalt
 change is said on the person's device and kept in their history. An appointment's reminders are ordinary reminders:
 they ring with the assistant and the connectors stopped.
 
+### Accounts set up for someone, resets and representatives (M4)
+
+On **Server und Konten**:
+
+- **"Ich richte das Konto für diese Person ein …"** with an invitation: an account you set up on the person's device
+  and hand over. You become their helper (help requests, setting up devices) once they agree on their device. Such an
+  account may start without recovery words ("Später einrichten"): it cannot be recovered until words are set up, and
+  the device reminds the person once a day. Linking a second device or naming trusted persons are the other ways.
+- **"Zurücksetzen"** on an account, for someone who lost their words and every device and has no trusted persons: with
+  a reason the person hears, never for your own account. You get a link and a spoken code, valid for a day; the
+  person's new device takes it, makes new words, and becomes theirs **24 hours later**. Every device of the person
+  hears at once that a code exists and, once a device took it, until when; any of their devices or their old words
+  stop it. You see no data of the person's at any point; the list shows only that something waits, and until when.
+- **"Vertretung bestimmen"** on an account, when the person cannot decide themselves: an account that manages for them
+  who may help and with what (helpers, their permissions, signing out devices), never their messages or notes,
+  never device linking or recovery, never more permissions for itself. A reason is required and the person hears it;
+  you cannot name yourself. The person, or you, ends it. People usually name their representative themselves (Helfer →
+  Vertretung).
+
+### Dedicated devices: the kiosk (M4)
+
+A tablet that should stay in UCAP (and a few allowed apps) is set up once as a **dedicated device**, with UCAP as its
+device owner. Android allows that only on a device with **no Google account** on it: a new or reset device, before
+its setup adds an account.
+
+1. Reset the device (or take a new one), skip adding an account, and enable USB debugging.
+2. Install the app, then on a computer: `adb shell dpm set-device-owner de.schaefchens.ucap/.UcapAdmin`.
+3. Sign the device in (an invitation, the person's words, or "Mit einem anderen Gerät verbinden").
+4. A helper with **"Kiosk-Modus einstellen"** (or the person) switches the kiosk on in the device's setup: the apps
+   allowed besides UCAP, who may end it on the device (the person, with their code, and the helpers; or the helpers
+   only), Android's notifications, and whether Android's own lock screen is off (then UCAP's app lock is the device's).
+
+Inside the kiosk Home leads to UCAP, recents and the notification shade do nothing (unless allowed), and an app that is
+not allowed does not open. Help always works: it is UCAP's own screen. On a device that is not dedicated, the kiosk is
+Android's **screen pinning**: Android asks first, and one gesture ends it (swipe up and hold); the setup page says so.
+Where Android's settings do not allow pinning, Android asks nothing and pins nothing, and UCAP says that it is not
+pinned.
+To make a dedicated device an ordinary one again, end the kiosk, then in UCAP's settings "Kiosk-Gerät wieder normal
+machen" (only the app itself can end being the device owner), or reset the device.
+
+On a phone, a kiosk needs UCAP as the phone app too: with another phone app, an incoming call rings inside the kiosk
+but cannot be answered (spikes/m4.md, C).
+
 ### herde
 
 KI und Stimmen verwalten → herde → invitation: the page shows `herde join <address> <code>`. On the machine that runs

@@ -9,7 +9,7 @@
  *   (saved, received, applied).
  * - **The device's own:** a device that has none yet makes version 1 from what it has (the person's own settings).
  */
-import { checkConfig, type DeviceConfig, protectConfig, uuidv7, warningKey } from '@ucap/shared';
+import { checkConfig, type DeviceConfig, kioskOf, protectConfig, uuidv7, warningKey } from '@ucap/shared';
 import { sql } from 'kysely';
 import { audit } from '../../lib/audit.ts';
 import type { Clock } from '../../lib/clock.ts';
@@ -61,8 +61,21 @@ const stateView = (r: { delivered_version: number | null; applied_version: numbe
 export function createConfigs(d: { db: Db; clock: Clock; people: PeopleService }) {
   const now = () => new Date(d.clock());
 
+  /** Opening the editor: the person, or a helper who may set up the devices or the kiosk (G9). */
   async function mayEdit(actorId: string, personId: string): Promise<boolean> {
-    return actorId === personId || (await d.people.can(actorId, 'device.configure', personId));
+    return actorId === personId || (await d.people.can(actorId, 'device.configure', personId)) || (await d.people.can(actorId, 'device.kiosk', personId));
+  }
+
+  /**
+   * What a change touches decides who may make it (G9; the owner: "Person + new permission"): the kiosk needs
+   * "Kiosk-Modus einstellen", everything else "Bedienung der Geräte einstellen"; the person may change both.
+   */
+  async function mayChange(actorId: string, personId: string, before: DeviceConfig, after: DeviceConfig) {
+    if (actorId === personId) return;
+    const kiosk = sorted(kioskOf(before)) !== sorted(kioskOf(after));
+    const rest = sorted({ ...before, kiosk: null }) !== sorted({ ...after, kiosk: null });
+    if (kiosk && !(await d.people.can(actorId, 'device.kiosk', personId))) throw new AppError('forbidden', { params: { reason: 'kiosk_scope' } });
+    if (rest && !(await d.people.can(actorId, 'device.configure', personId))) throw new AppError('forbidden', { params: { reason: 'configure_scope' } });
   }
 
   /** The person's devices get the new version; helpers who may configure them see it too (their editor). */
@@ -188,6 +201,11 @@ export function createConfigs(d: { db: Db; clock: Clock; people: PeopleService }
       return out;
     },
 
+    /** The device's own report (G8): what it can open, whether it is the home screen. */
+    async describe(deviceId: string, o: { apps: { package: string; label: string }[]; home: boolean; kiosk?: { mode: string; owner: boolean } }) {
+      await sql`update devices set apps = ${JSON.stringify(o.apps)}::jsonb, home = ${o.home}, kiosk = ${o.kiosk ? JSON.stringify(o.kiosk) : null}::jsonb where id = ${deviceId}`.execute(d.db);
+    },
+
     /** A configuration with its current body, its last versions and the device's state. */
     async get(actorId: string, configId: string) {
       const c = await configRow(d.db, configId);
@@ -204,6 +222,10 @@ export function createConfigs(d: { db: Db; clock: Clock; people: PeopleService }
         body: v.body,
         versions: vs.rows.map((x): VersionView => ({ version: x.version, kind: x.kind, author: x.author_user ? { id: x.author_user, name: x.name ?? '' } : null, note: x.note, createdAt: x.created_at.toISOString() })),
         state: await stateOf(d.db, c.id),
+        // What the device reported of itself (G8): the editor offers its apps for areas.
+        device: await sql<{ apps: { package: string; label: string }[] | null; home: boolean | null; kiosk: { mode: string; owner: boolean } | null }>`select apps, home, kiosk from devices where id = ${c.device_id}`
+          .execute(d.db)
+          .then((r) => ({ apps: r.rows[0]?.apps ?? null, home: r.rows[0]?.home ?? null, kiosk: r.rows[0]?.kiosk ?? null })),
       };
     },
 
@@ -227,6 +249,7 @@ export function createConfigs(d: { db: Db; clock: Clock; people: PeopleService }
         const cur = await body(trx, c.id, c.current_version);
         // jsonb keeps its own key order: compared with keys sorted.
         if (sorted(cur.body) === sorted(o.body)) return { version: c.current_version, unchanged: true };
+        await mayChange(actorId, c.person_id, cur.body, o.body);
         const kind = o.fromDevice && o.fromDevice === c.device_id && actorId === c.person_id ? 'device' : 'edit';
         const version = await insertVersion(trx, c, { actorId, body: o.body, base: o.base, kind, note: o.note?.trim() || null, acknowledged: keys });
         return { version, unchanged: false };
@@ -241,8 +264,9 @@ export function createConfigs(d: { db: Db; clock: Clock; people: PeopleService }
         if (o.base !== c.current_version) throw new AppError('conflict', { params: { reason: 'stale', current: c.current_version } });
         if (o.to === c.current_version) return { version: c.current_version, unchanged: true };
         const old = await body(trx, c.id, o.to);
-        // An old version is set again only as the rules stand now.
+        // An old version is set again only as the rules stand now, and only by who may change what it changes (G9).
         const { config } = protectConfig(old.body);
+        await mayChange(actorId, c.person_id, (await body(trx, c.id, c.current_version)).body, config);
         const version = await insertVersion(trx, c, { actorId, body: config, base: o.base, kind: 'revert', note: null, acknowledged: [] });
         return { version, unchanged: false };
       });

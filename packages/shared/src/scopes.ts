@@ -10,8 +10,13 @@ export const M1_SCOPES = ['care.respond', 'care.configure', 'reminders.manage', 
  * appointments and tasks the person did not mark private (K7); neither ever reaches messages or notes.
  */
 export const M3_SCOPES = ['contacts.manage', 'agenda.manage'] as const;
+/**
+ * M4 (docs/plan-m4.md, G9; the owner, 2026-10-27: "Person + new permission"): "Kiosk-Modus einstellen", locking a
+ * device into UCAP and the apps allowed; separate from setting the device up, which it does not include.
+ */
+export const M4_SCOPES = ['device.kiosk'] as const;
 /** Every scope a person can grant, in the order they are named. */
-export const SCOPES = [...M1_SCOPES, ...M3_SCOPES] as const;
+export const SCOPES = [...M1_SCOPES, ...M3_SCOPES, ...M4_SCOPES] as const;
 export type Scope = (typeof SCOPES)[number];
 
 /** Built into the data model, not grantable. */
