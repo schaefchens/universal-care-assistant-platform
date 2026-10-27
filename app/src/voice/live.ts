@@ -63,6 +63,8 @@ export interface LiveHost {
 export interface TouchFor {
   context?: 'dictation' | 'reply';
   conversation?: string;
+  /** An email reply to everyone in the thread ("Allen antworten"). */
+  all?: boolean;
 }
 
 /** After a question nobody answered, the gate does not stay open as long as after a conversation. */

@@ -9,7 +9,7 @@
  *   the app's recovery adds a device. It forwards the SMS that come in, signed with its key as the native code does
  *   with the app closed, and takes what waits for it to send, reporting each state as Android's sent report would.
  */
-import { createECDH, randomBytes } from 'node:crypto';
+import { createECDH, createHash, randomBytes } from 'node:crypto';
 import { b64url, deriveIdentity, formatSigHeader, fromWords, inviteDigest, type Json, newEntropy, type Purpose, signedRequestPayload, signIdentity, statement } from '@ucap/identity';
 import { type DeviceEvent, type DeviceSend, uuidv7 } from '@ucap/shared';
 import ece from 'http_ece';
@@ -234,8 +234,9 @@ export async function smsPhone(name: string, words: readonly string[], origin = 
     roleGone: () => forward([{ t: 'conn.state', state: 'off' }]),
     /**
      * Previews (K5): another app's notification on this phone shows a message, and the previews process reports it, as
-     * PreviewLogic does: a conversation known by its notification, its sender by the name shown, never a contact. The
-     * app is connected on the first one (the person chose it on the phone).
+     * PreviewLogic does: a conversation known by its notification, its sender by the name shown, never a contact; their
+     * ids made as PreviewLogic makes them ("p" and the first 12 bytes of a SHA-256, in hex). The app is connected on the
+     * first one (the person chose it on the phone).
      */
     async preview(app: { package: string; name: string }, from: string, text: string, at = Date.now()) {
       let id = previews.get(app.package);
@@ -243,14 +244,16 @@ export async function smsPhone(name: string, words: readonly string[], origin = 
         id = (await call<{ connection: { id: string } }>('POST', '/api/v1/messaging/connections', { service: 'notifications', app })).connection.id;
         previews.set(app.package, id);
       }
-      const conv = `c-${app.package}-${from}`;
+      const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 24);
+      const conv = `c${hash(`${app.package}|${from}`)}`;
+      const person = `p${hash(`${app.package}|n:${from}`)}`;
       const externalId = `m${++nextId}`;
       await signed('POST', '/api/v1/messaging/device/events', {
         connectionId: id,
         events: [
-          { t: 'user.upsert', user: { externalId: `p-${from}`, name: from, isContact: false, isBot: false } },
-          { t: 'chat.upsert', chat: { externalId: conv, title: from, kind: 'private', userId: `p-${from}`, muted: false, unread: 1, readInboxMaxId: null, readOutboxMaxId: null } },
-          { t: 'msg.upsert', msg: { chatId: conv, externalId, fromId: `p-${from}`, outgoing: false, date: Math.floor(at / 1000), editDate: null, kind: 'text', text, file: null, fileName: null }, live: true },
+          { t: 'user.upsert', user: { externalId: person, name: from, isContact: false, isBot: false } },
+          { t: 'chat.upsert', chat: { externalId: conv, title: from, kind: 'private', userId: person, muted: false, unread: 1, readInboxMaxId: null, readOutboxMaxId: null } },
+          { t: 'msg.upsert', msg: { chatId: conv, externalId, fromId: person, outgoing: false, date: Math.floor(at / 1000), editDate: null, kind: 'text', text, file: null, fileName: null }, live: true },
         ] as unknown as Json[],
       });
       return externalId;

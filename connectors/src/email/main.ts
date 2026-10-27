@@ -26,6 +26,8 @@ async function start(c: Start) {
   const running = conns.get(c.id);
   const account = accountOf(c);
   if (running && !running.conn.ended() && running.account === account) {
+    // The same account again: the person's senders may have changed.
+    running.conn.setIdentities(c.identities);
     running.conn.replay();
     return;
   }
@@ -44,6 +46,7 @@ async function start(c: Start) {
     id: c.id,
     lang: c.lang === 'en' ? 'en' : 'de',
     address: c.address,
+    identities: c.identities,
     smtp: c.smtp,
     statePath: join(STATE_DIR, `${c.id}.json`),
     makeImap: imapClient(c),
@@ -97,7 +100,7 @@ function handle(cmd: ToConnectors) {
       emit({ t: 'login.error', id: cmd.id, error: 'login_state' });
       return;
     case 'send':
-      void conn.send(cmd.requestId, cmd.chatId, cmd.text, cmd.subject, cmd.to);
+      void conn.send(cmd.requestId, cmd.chatId, cmd.text, cmd.subject, cmd.to, { all: cmd.all, from: cmd.from });
       return;
     case 'download':
       // Email has no voice messages to fetch; attachments are named, never opened.

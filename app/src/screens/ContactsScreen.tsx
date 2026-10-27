@@ -135,7 +135,8 @@ export function ContactsScreen(p: { session: Session; config: DeviceConfig; onHo
                 .map((h) => (
                   <li key={`${h.kind}:${h.value}`}>
                     {tr(`contacts.kind.${h.kind}`)}
-                    {h.label ? ` (${h.label})` : ''}: {h.display}
+                    {h.label ? ` (${h.label})` : ''}
+                    {h.display ? `: ${h.display}` : ''}
                   </li>
                 ))}
             </ul>

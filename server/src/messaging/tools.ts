@@ -12,9 +12,11 @@
  * A reply goes back on the service its conversation is on. A name found on several services goes where that person
  * last wrote lately; otherwise UCAP says which services, and the model asks the person (CONCEPT §2: "a focused
  * clarification rather than a guess"). Someone in the person's contacts with no conversation gets a new message (K6),
- * to their number, address or Telegram id: a new email with a subject the model proposes, read back in C1. A message is
- * marked read on its service only when the person heard its original, never because the model read it. The model
- * never confirms: the person's yes comes from their device.
+ * to their number, address or Telegram id: a new email with a subject the model proposes, read back in C1. An email
+ * reply goes to the sender of the thread's newest mail, to everyone in it when the person asks (the owner, 2026-10-27:
+ * "default only sender with option to reply all"), as the sender the person named, else the one the mail came to
+ * (C1 names it when the account has several). A message is marked read on its service only when the person heard its
+ * original, never because the model read it. The model never confirms: the person's yes comes from their device.
  */
 import { quoteHeader, t } from '@ucap/shared';
 import type { JsonSchema } from '../ai/llm/reply.ts';
@@ -75,6 +77,8 @@ function asData(ctx: ToolContext, i: Item) {
     ...(i.kind === 'voice' ? { transcript: i.transcriptState === 'done' ? { text: i.transcript, automatic: true } : null } : {}),
     // A preview is all UCAP knows of that conversation (CONCEPT §3).
     ...(i.service === 'notifications' ? { preview: true } : {}),
+    // An email thread with several people: a reply goes to `replyTo`, a reply to all to `everyone`.
+    ...(i.reply && i.reply.all.length > i.reply.to.length ? { replyTo: i.reply.to, everyone: i.reply.all } : {}),
     unread: i.unread,
     // The person's own message reached the other side's phone (an SMS delivery report).
     ...(i.delivered ? { delivered: true } : {}),
@@ -97,6 +101,19 @@ async function conversationOf(ctx: ToolContext, to: unknown, o: { forSending: bo
 }
 
 const C1: Partial<Record<Service, string>> = { email: 'messages.C1.email', sms: 'messages.C1.sms', notifications: 'messages.C1.preview' };
+
+/**
+ * An email's recipients and sender (the owner, 2026-10-27): in a thread, its sender or (`all`) everyone in it, by name
+ * ("Anna, Bernd und Carla"); the sender it goes out as, said in C1 when the account has several. A sender the person
+ * named that fits none of theirs, or several: sender_unknown with their addresses.
+ */
+async function emailOf(ctx: ToolContext, r: Found, all: boolean, from: string | null) {
+  const e = await messaging(ctx).emailReply(ctx.userId, { conversationId: r.conversationId, connectionId: r.to?.connectionId ?? null, all, from });
+  if (!e) return null;
+  if ('senders' in e) throw new ToolError(`sender_unknown: ${e.senders.join(', ')}`);
+  const names = e.to && r.conversationId ? new Intl.ListFormat(ctx.lang === 'de' ? 'de-DE' : 'en-GB', { type: 'conjunction' }).format(e.to) : null;
+  return { to: names, all: all && r.conversationId !== null, sender: e.sender, several: e.several };
+}
 
 export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
   {
@@ -208,6 +225,8 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
             sends: c.capabilities.send,
             sent: c.capabilities.sent,
             voiceMessages: c.capabilities.voice,
+            // An email account with several senders: the person's addresses on it, the default first.
+            ...(c.identities && c.identities.length > 1 ? { senders: c.identities.map((x) => x.address) } : {}),
           })),
         },
       };
@@ -225,6 +244,13 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
       subject: nullableStr("An email's subject: for a new email (UCAP answers subject_missing), a short one you propose from the message; in a thread only when the person wants their own, else null for the thread's (\"Re: …\")."),
       address: nullableStr('Which of the contact\'s numbers or addresses, when UCAP asked (address_ambiguous): as UCAP named it ("Handy"); else null.'),
       draft: nullableStr('Only after UCAP answered draft_exists: "send" sends the words kept from before instead, "replace" sends this text and drops them; else null.'),
+      all: {
+        anyOf: [{ type: 'boolean' }, { type: 'null' }],
+        description: 'An email reply to everyone in the thread, when the person says so ("Antworte allen", "an alle"): true; else null, and it goes to the sender of the newest mail alone.',
+      },
+      from: nullableStr(
+        'Which of the person\'s own email addresses it goes out from, when they named one (an address, or a name such as "Praxis"; UCAP answers sender_unknown with their addresses when it fits none); else null: a reply goes from the address the mail came to, a new email from the default.',
+      ),
     },
     async prepare(ctx, args) {
       const r = await conversationOf(ctx, args.chat, { forSending: true, service: args.service, address: args.address });
@@ -238,11 +264,16 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
       // A new email (K6; plan-m3.md, K3: "a new mail gets a subject (proposed by the model, read back in C1)").
       const subject = r.service !== 'email' ? null : r.conversationId ? replySubject(r.subject, written) : cleanText(written ?? '').slice(0, MAX_SUBJECT);
       if (subject === '') throw new ToolError('subject_missing');
-      const ask = tr(ctx, C1[r.service] ?? 'messages.C1', { recipient: r.name, service: serviceName(r.service, r.label), text, subject: subject ?? '' });
+      // An email (the owner, 2026-10-27): to its sender or everyone in the thread, named; as one of the person's senders.
+      const mail = r.service === 'email' ? await emailOf(ctx, r, args.all === true, typeof args.from === 'string' ? args.from : null) : null;
+      const recipient = mail?.to ?? r.name;
+      const key = mail?.several ? 'messages.C1.email.from' : (C1[r.service] ?? 'messages.C1');
+      const ask = tr(ctx, key, { recipient, service: serviceName(r.service, r.label), text, subject: subject ?? '', from: mail?.sender.address ?? '' });
       // Someone renamed "Maria (Tochter)" is still not Maria: a stranger's chat is named as such (Appendix E).
       const confirm = r.contact === false ? `${tr(ctx, 'messages.C1.notContact', { name: r.name })} ${ask}` : ask;
       const to = r.to ? { connectionId: r.to.connectionId, to: r.to.address, contactId: r.to.contactId } : {};
-      return { args: { conversationId: r.conversationId, ...to, recipient: r.name, text, service: r.service, ...(subject ? { subject } : {}) }, confirm };
+      const email = mail ? { sender: mail.sender, ...(mail.all ? { all: true } : {}) } : {};
+      return { args: { conversationId: r.conversationId, ...to, recipient, text, service: r.service, ...(subject ? { subject } : {}), ...email }, confirm };
     },
     async run(ctx, args) {
       const service = String(args.service ?? 'telegram') as Service;
@@ -255,6 +286,9 @@ export const MESSAGE_TOOLS: (ReadTool | ActTool)[] = [
         to: typeof args.to === 'string' ? { connectionId: String(args.connectionId), address: args.to, recipient: String(args.recipient), contactId: typeof args.contactId === 'string' ? args.contactId : null } : null,
         text: String(args.text),
         subject: typeof args.subject === 'string' ? args.subject : null,
+        // An email's: to everyone, its recipients as C1 named them, its sender.
+        ...(service === 'email' && conversationId ? { all: args.all === true, recipient: String(args.recipient) } : {}),
+        ...(service === 'email' && args.sender ? { sender: args.sender as { name: string; address: string } } : {}),
       });
       // Waiting: for its connection to come back, or for the phone that sends it.
       const waiting = isServerService(service) ? 'messages.C9' : 'messages.C9.device';

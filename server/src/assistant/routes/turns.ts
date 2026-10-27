@@ -19,6 +19,8 @@ const Query = Type.Object({
   lang: Type.Union([Type.Literal('de'), Type.Literal('en')]),
   /** A reply's conversation (context `reply`). */
   conversation: Type.Optional(Type.String({ format: 'uuid' })),
+  /** The reply goes to everyone in an email thread ("Allen antworten"; the owner, 2026-10-27). */
+  all: Type.Optional(Type.Literal('1')),
   /** LIVE mode (docs/plan-m2.md): heard right after the assistant's name or a touch, or in the open conversation. */
   mode: Type.Optional(Type.Union([Type.Literal('push'), Type.Literal('live')])),
   via: Type.Optional(Type.Union([Type.Literal('keyword'), Type.Literal('named'), Type.Literal('touch'), Type.Literal('open')])),
@@ -37,7 +39,7 @@ export function registerTurnRoutes(app: AnyApp, o: { turns: Turns; stt: Stt; llm
 
     scope.post('/api/v1/assistant/turns', { preHandler: requireAuth, bodyLimit: AUDIO_LIMIT, schema: { querystring: Query } }, async (req, reply) => {
       const a = auth(req);
-      const q = req.query as { id: string; context: 'global' | 'confirm' | 'reminder' | 'dictation' | 'reply'; lang: 'de' | 'en'; conversation?: string; mode?: 'push' | 'live'; via?: 'keyword' | 'named' | 'touch' | 'open'; undo?: 'device'; calls?: '1' };
+      const q = req.query as { id: string; context: 'global' | 'confirm' | 'reminder' | 'dictation' | 'reply'; lang: 'de' | 'en'; conversation?: string; all?: '1'; mode?: 'push' | 'live'; via?: 'keyword' | 'named' | 'touch' | 'open'; undo?: 'device'; calls?: '1' };
       const body = req.body as Buffer | { text?: unknown } | undefined;
       let audio: Uint8Array<ArrayBuffer> | undefined;
       let text: string | undefined;
@@ -55,7 +57,7 @@ export function registerTurnRoutes(app: AnyApp, o: { turns: Turns; stt: Stt; llm
         lines.push(`${JSON.stringify(e)}\n`);
         wake?.();
       };
-      void o.turns.run({ userId: a.userId, deviceId: a.deviceId, id: q.id, context: q.context, lang: q.lang, conversation: q.conversation, audio, text, mode: q.mode, via: q.via, undoHere: q.undo === 'device', canCall: q.calls === '1', signal: abort.signal }, emit).finally(() => {
+      void o.turns.run({ userId: a.userId, deviceId: a.deviceId, id: q.id, context: q.context, lang: q.lang, conversation: q.conversation, all: q.all === '1', audio, text, mode: q.mode, via: q.via, undoHere: q.undo === 'device', canCall: q.calls === '1', signal: abort.signal }, emit).finally(() => {
         finished = true;
         wake?.();
       });

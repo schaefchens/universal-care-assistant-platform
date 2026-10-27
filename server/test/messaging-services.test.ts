@@ -69,7 +69,7 @@ describe('messaging across services', () => {
       .filter(Boolean)
       .map((l) => JSON.parse(l) as { t: string; [k: string]: unknown });
   };
-  type View = { id: string; service: string; account: string; name: string; deviceId: string | null; state: string; capabilities: Record<string, unknown>; historySince: string | null; running: boolean };
+  type View = { id: string; service: string; account: string; name: string; deviceId: string | null; state: string; capabilities: Record<string, unknown>; historySince: string | null; running: boolean; identities?: { name: string; address: string }[] };
   const connections = async (a: Account) => ((await as(a, 'GET', '/api/v1/messaging/connections')).json() as { connections: View[]; offered: Record<string, boolean> });
   const email = (address: string, password: string, imap: Record<string, unknown> = IMAP) => ({ service: 'email', address, password, imap, smtp: SMTP });
   const now = () => Math.floor(clock() / 1000);
@@ -125,7 +125,19 @@ describe('messaging across services', () => {
     // Named in the language asked for.
     const en = (await as(anna, 'GET', '/api/v1/messaging/connections?lang=en')).json() as { connections: View[] };
     expect(en.connections.find((x) => x.id === c.id)!.name).toBe('Email');
-    expect(await mail.next('start')).toEqual({ t: 'start', id: c.id, service: 'email', address: 'anna.beispiel@example.org', password: 'pw-geheim-123', imap: IMAP, smtp: SMTP, lang: 'de' });
+    // Its first sender: the address, without a name (none was given).
+    expect(c.identities).toEqual([{ name: '', address: 'anna.beispiel@example.org' }]);
+    expect(await mail.next('start')).toEqual({
+      t: 'start',
+      id: c.id,
+      service: 'email',
+      address: 'anna.beispiel@example.org',
+      password: 'pw-geheim-123',
+      imap: IMAP,
+      smtp: SMTP,
+      lang: 'de',
+      identities: [{ name: '', address: 'anna.beispiel@example.org' }],
+    });
     expect(tg.got).toEqual([]);
     const sealed = (await sql<{ secret_sealed: Buffer }>`select secret_sealed from messaging_connections where id = ${c.id}`.execute(db)).rows[0]!.secret_sealed;
     expect(sealed.toString('latin1')).not.toContain('pw-geheim-123');
@@ -234,7 +246,7 @@ describe('messaging across services', () => {
     expect(tg.got.slice(t0).filter((c) => c.t === 'send')).toEqual([]);
   });
 
-  it("an email reply is sent at the mail server's 250 (C3); a report that it came back is told (C13) with its reason, once; a quoted part is named after the new text", async () => {
+  it("an email reply is sent at the mail server's 250 (C3); a report that it came back is told (C13) as not delivered, with its reason, once; a quoted part is named after the new text", async () => {
     const cmd = [...mail.got].reverse().find((c) => c.t === 'send') as Extract<ToConnectors, { t: 'send' }>;
     const row = async (id: string) => (await sql<{ state: string; told: string[]; error: string | null }>`select state, told, error from messaging_outbound where id = ${id}`.execute(db)).rows[0]!;
     mail.emit({ t: 'send.result', id: emailId, requestId: cmd.requestId, state: 'pending_service', tempId: 'r1@example.org' });
@@ -243,8 +255,8 @@ describe('messaging across services', () => {
     mail.emit({ t: 'send.bounced', id: emailId, externalId: 'r1@example.org', status: '5.1.1' });
     await until(async () => (await row(cmd.requestId)).state === 'bounced', 'bounced');
     expect(await row(cmd.requestId)).toEqual({ state: 'bounced', told: ['C3', 'C13'], error: 'bounce_5.1.1' });
-    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'de'))?.say).toBe('Die E-Mail an Praxis Dr. Klein kam zurück: der Mailserver kennt diese Adresse nicht.');
-    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'en'))?.say).toBe('The email to Praxis Dr. Klein came back: the mail server does not know this address.');
+    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'de'))?.say).toBe('Die E-Mail an Praxis Dr. Klein konnte nicht zugestellt werden und kam zurück: der Mailserver kennt diese Adresse nicht.');
+    expect((await assistant.messaging.outbound(anna.userId, cmd.requestId, 'en'))?.say).toBe('The email to Praxis Dr. Klein could not be delivered and came back: the mail server does not know this address.');
     // A second report changes nothing (the events of one process are applied in order: the mail after it shows it was).
     mail.emit({ t: 'send.bounced', id: emailId, externalId: 'r1@example.org', status: '5.2.2' });
     mail.emit({
@@ -268,6 +280,18 @@ describe('messaging across services', () => {
     mail.emit({ t: 'send.result', id: emailId, requestId: second.requestId, state: 'failed', error: 'smtp_550' });
     await until(async () => (await row(second.requestId)).state === 'failed', 'failed');
     expect((await assistant.messaging.outbound(anna.userId, second.requestId, 'de'))?.say).toBe('Nicht gesendet: der Mailserver hat sie abgelehnt. Der Entwurf ist gespeichert.');
+
+    // A report without a reason UCAP knows: that it could not be delivered, nothing more.
+    script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Praxis Dr. Klein', text: 'Oder am Montag?' }], help: false });
+    const b = (await turn(anna, 'Antworte der Praxis: Oder am Montag?')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string };
+    const k = mail.got.length;
+    await as(anna, 'POST', `/api/v1/assistant/actions/${b.id}/confirm`, { contentHash: b.contentHash, via: 'voice' });
+    const third = await mail.next('send', k);
+    mail.emit({ t: 'send.result', id: emailId, requestId: third.requestId, state: 'sent', externalId: 'r3@example.org', tempId: 'r3@example.org' });
+    await until(async () => (await row(third.requestId)).state === 'sent', 'the third sent');
+    mail.emit({ t: 'send.bounced', id: emailId, externalId: 'r3@example.org', status: null });
+    await until(async () => (await row(third.requestId)).state === 'bounced', 'the third bounced');
+    expect((await assistant.messaging.outbound(anna.userId, third.requestId, 'de'))?.say).toBe('Die E-Mail an Praxis Dr. Klein konnte nicht zugestellt werden und kam zurück.');
   });
 
   it('the model is told which services are connected, in the order they were connected; a link not finished is not named', async () => {
@@ -781,6 +805,182 @@ describe('messaging across services', () => {
     seen.length = 0;
     await turn(anna, 'Lies die letzten 3 Nachrichten');
     expect([...seen.at(-1)!.messages.at(-1)!.content.matchAll(/"ref":"msg:/g)]).toHaveLength(3);
+  });
+
+  it('a new message is announced with what it says (the owner, 2026-10-27: "should say what, in general for all messages"): a short text word for word, a longer one by how it begins, an email by its subject, a photo with its caption, a voice message by its length, a preview as one, a one-time code never; each begins as news', async () => {
+    const said = async (externalId: string) => {
+      const id = (await sql<{ id: string }>`select id from messaging_messages where external_id = ${externalId}`.execute(db)).rows[0]!.id;
+      return ((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { say: { announce: string; news: string } }).say;
+    };
+    const sms = (externalId: string, text: string) => ({ t: 'msg.upsert', msg: { chatId: '12', externalId, fromId: '+4917012345', outgoing: false, date: now(), editDate: null, kind: 'text', text, file: null, fileName: null }, live: true });
+    const long = `Liebe Anna, ${'ich wollte dir nur kurz sagen, dass wir am Sonntag später kommen, weil der Zug ausfällt. '.repeat(3)}`;
+    await forward(anna, [sms('330', 'Bist du morgen da?'), sms('331', long), sms('332', 'Dein WhatsApp-Code: 123-456. Teile ihn nicht.')]);
+    await forward(
+      anna,
+      [{ t: 'msg.upsert', msg: { chatId: 'lena', externalId: 'b1c2d3e4', fromId: 'lena', outgoing: false, date: now(), editDate: null, kind: 'text', text: 'Bin um sechs da.', file: null, fileName: null }, live: true }],
+      previewId,
+    );
+    tg.emit({
+      t: 'msg.upsert',
+      id: telegramId,
+      msg: { chatId: '777001', externalId: '1048577', fromId: 'user:42', outgoing: false, date: now(), editDate: null, kind: 'photo', text: 'Unser Garten', file: { fileId: 7, mime: 'image/jpeg', size: 2048, durationS: null }, fileName: null },
+      live: true,
+    });
+    tg.emit({
+      t: 'msg.upsert',
+      id: telegramId,
+      msg: { chatId: '777001', externalId: '1048578', fromId: 'user:42', outgoing: false, date: now(), editDate: null, kind: 'voice', text: '', file: { fileId: 8, mime: 'audio/ogg', size: 4096, durationS: 4 }, fileName: null },
+      live: true,
+    });
+    await until(async () => (await sql`select 1 from messaging_messages where external_id = '1048578'`.execute(db)).rows.length > 0, 'the photo and the voice message');
+    expect((await said('330')).news).toBe('Neue Nachricht von Mama per SMS: „Bist du morgen da?“');
+    expect((await said('331')).news).toBe('Neue Nachricht von Mama per SMS, sie beginnt: „Liebe Anna, ich wollte dir nur kurz sagen, dass wir am Sonntag später kommen, weil der Zug ausfällt. ich wollte dir nur …“');
+    expect((await said('332')).news).toBe('Neue Nachricht von Mama per SMS mit einem Code. Codes lese ich nur vor, wenn du darum bittest.');
+    expect((await said('<m1@example.org>')).news).toBe('Neue E-Mail von Praxis Dr. Klein, Betreff „Ihr Termin am Dienstag“.');
+    expect((await said('b1c2d3e4')).news).toBe('Vorschau von Signal: neue Nachricht von Lena: „Bin um sechs da.“');
+    expect((await said('1048577')).news).toBe('Neues Foto von Clara Beispiel auf Telegram. Mit dem Text: „Unser Garten“');
+    expect((await said('1048578')).news).toBe('Neue Sprachnachricht von Clara Beispiel auf Telegram, 4 Sekunden.');
+    // Who alone stays as it was, for a device set so.
+    expect((await said('330')).announce).toBe('Neue Nachricht von Mama per SMS.');
+    expect((await said('332')).announce).toBe('Neue Nachricht von Mama per SMS.');
+  });
+
+  it('an email reply goes to the sender of the newest mail, to everyone in it when the person says so (the owner, 2026-10-27), named as the person knows them; it goes out as the sender the mail came to, or one the person names (identities like email apps have)', async () => {
+    const contacts = (method: 'POST' | 'DELETE', path: string, body?: unknown) =>
+      core.app.inject({ method, url: `/api/v1/people/${anna.userId}/contacts${path}`, payload: body as Record<string, unknown>, headers: { authorization: `Bearer ${anna.token}` } });
+    // The person's senders: the account's address, and an alias of the practice.
+    const before = mail.got.length;
+    const put = await as(anna, 'PUT', `/api/v1/messaging/connections/${emailId}/identities`, {
+      identities: [
+        { name: 'Anna Beispiel', address: 'Anna.Beispiel@example.org' },
+        { name: 'Praxis Beispiel', address: 'praxis@beispiel.de' },
+      ],
+    });
+    expect(put.statusCode).toBe(200);
+    const senders = [
+      { name: 'Anna Beispiel', address: 'anna.beispiel@example.org' },
+      { name: 'Praxis Beispiel', address: 'praxis@beispiel.de' },
+    ];
+    expect((put.json() as { connection: View }).connection.identities).toEqual(senders);
+    // The running account takes them: its start again, with them.
+    expect(await mail.next('start', before)).toMatchObject({ t: 'start', id: emailId, identities: senders });
+    expect((await as(anna, 'PUT', `/api/v1/messaging/connections/${emailId}/identities`, { identities: [{ name: 'X', address: 'kein Absender' }] })).json()).toMatchObject({ error: { code: 'bad_request', params: { reason: 'address' } } });
+
+    // A thread with three people, its newest mail from Anna Fröhlich to the practice's address.
+    const people = [
+      { address: 'anna.f@example.org', name: 'Anna Fröhlich' },
+      { address: 'bernd.b@example.org', name: 'Bernd Bauer' },
+      { address: 'carla@example.org', name: '' },
+    ];
+    mail.emit({
+      t: 'chat.upsert',
+      id: emailId,
+      chat: {
+        externalId: '<thread-2@example.org>',
+        title: 'Grillfest am Samstag',
+        subject: 'Grillfest am Samstag',
+        kind: 'group',
+        userId: null,
+        muted: false,
+        unread: 1,
+        readInboxMaxId: null,
+        readOutboxMaxId: null,
+        mail: { reply: [people[0]!], all: people, to: 'praxis@beispiel.de' },
+      },
+    });
+    mail.emit({
+      t: 'msg.upsert',
+      id: emailId,
+      msg: { chatId: '<thread-2@example.org>', externalId: '<g1@example.org>', fromId: 'anna.f@example.org', outgoing: false, date: now(), editDate: null, kind: 'text', text: 'Wer bringt was mit?', subject: 'Grillfest am Samstag', file: null, fileName: null },
+      live: true,
+    });
+    await until(async () => (await sql`select 1 from messaging_messages where external_id = '<g1@example.org>'`.execute(db)).rows.length > 0, 'the mail');
+    // Bernd is one of the person's contacts: named so.
+    const bernd = ((await contacts('POST', '', { name: 'Bernd', handles: [{ kind: 'email', value: 'bernd.b@example.org' }] })).json() as { id: string }).id;
+    const id = (await sql<{ id: string }>`select id from messaging_messages where external_id = '<g1@example.org>'`.execute(db)).rows[0]!.id;
+    expect(((await as(anna, 'GET', `/api/v1/messaging/messages/${id}?lang=de`)).json() as { reply: unknown }).reply).toEqual({ to: ['Anna Fröhlich'], all: ['Anna Fröhlich', 'Bernd', 'carla@example.org'] });
+
+    const ask = async (call: Record<string, unknown>) => {
+      script = () => ({ say: [], calls: [{ tool: 'messages.send', chat: 'Grillfest am Samstag', text: 'Ich bringe Salat mit.', ...call }], help: false });
+      return (await turn(anna, 'Antworte: Ich bringe Salat mit.')).find((e) => e.t === 'action') as unknown as { id: string; contentHash: string; prompt: string } | undefined;
+    };
+    // To its sender alone, from the address it came to: named, since the account has two.
+    const one = (await ask({}))!;
+    expect(one.prompt).toBe('E-Mail von praxis@beispiel.de an Anna Fröhlich, Betreff „Re: Grillfest am Samstag“: „Ich bringe Salat mit.“. Senden?');
+    let n = mail.got.length;
+    await as(anna, 'POST', `/api/v1/assistant/actions/${one.id}/confirm`, { contentHash: one.contentHash, via: 'voice' });
+    const sent = await mail.next('send', n);
+    expect(sent).toMatchObject({ t: 'send', chatId: '<thread-2@example.org>', from: senders[1] });
+    expect(sent).not.toHaveProperty('all');
+    // "Antworte allen": everyone in it.
+    const all = (await ask({ all: true }))!;
+    expect(all.prompt).toBe('E-Mail von praxis@beispiel.de an Anna Fröhlich, Bernd und carla@example.org, Betreff „Re: Grillfest am Samstag“: „Ich bringe Salat mit.“. Senden?');
+    n = mail.got.length;
+    await as(anna, 'POST', `/api/v1/assistant/actions/${all.id}/confirm`, { contentHash: all.contentHash, via: 'voice' });
+    expect(await mail.next('send', n)).toMatchObject({ t: 'send', all: true, from: senders[1] });
+    // From a sender the person names; one that fits both is asked about with their addresses.
+    expect((await ask({ from: 'anna.beispiel@example.org' }))!.prompt).toMatch(/^E-Mail von anna\.beispiel@example\.org an Anna Fröhlich,/);
+    expect((await ask({ from: 'Praxis' }))!.prompt).toMatch(/^E-Mail von praxis@beispiel\.de an Anna Fröhlich,/);
+    seen.length = 0;
+    let round = 0;
+    script = () =>
+      ++round === 1
+        ? { say: [], calls: [{ tool: 'messages.send', chat: 'Grillfest am Samstag', text: 'Ich bringe Salat mit.', from: 'Beispiel' }], help: false }
+        : { say: [{ kind: 'reply', text: 'Von welcher Adresse?', ref: null }], calls: [], help: false };
+    await turn(anna, 'Antworte von Beispiel: Ich bringe Salat mit.');
+    expect(seen.at(-1)!.messages.at(-1)!.content).toContain('sender_unknown: anna.beispiel@example.org, praxis@beispiel.de');
+    // The messages screen's "Allen antworten": a dictated reply to everyone.
+    const dictated = await assistant.app.inject({
+      method: 'POST',
+      url: `/api/v1/assistant/turns?id=${crypto.randomUUID()}&context=reply&lang=de&conversation=${(await sql<{ id: string }>`select conversation_id as id from messaging_messages where external_id = '<g1@example.org>'`.execute(db)).rows[0]!.id}&all=1`,
+      payload: { text: 'Ich komme gern.' },
+      headers: { authorization: `Bearer ${anna.token}`, 'content-type': 'application/json' },
+    });
+    const action = dictated.body
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { t: string; prompt?: string })
+      .find((e) => e.t === 'action');
+    expect(action?.prompt).toBe('E-Mail von praxis@beispiel.de an Anna Fröhlich, Bernd und carla@example.org, Betreff „Re: Grillfest am Samstag“: „Ich komme gern.“. Senden?');
+    // The model learns the account's senders.
+    round = 0;
+    script = () => (++round === 1 ? { say: [], calls: [{ tool: 'messages.connections' }], help: false } : { say: [{ kind: 'reply', text: 'Ok.', ref: null }], calls: [], help: false });
+    seen.length = 0;
+    await turn(anna, 'Von welchen Adressen kann ich schreiben?');
+    expect(seen.at(-1)!.messages.at(-1)!.content).toContain('"senders":["anna.beispiel@example.org","praxis@beispiel.de"]');
+    await contacts('DELETE', `/${bernd}`);
+  });
+
+  it('someone writing in another app\'s notifications is suggested for a contact whose name fits (the owner, 2026-10-27, To confirm 19); yes keeps them with it as a handle of its own: named by it, and no longer warned about', async () => {
+    const contacts = (method: 'POST' | 'DELETE', path: string, body?: unknown) =>
+      core.app.inject({ method, url: `/api/v1/people/${anna.userId}/contacts${path}`, payload: body as Record<string, unknown>, headers: { authorization: `Bearer ${anna.token}` } });
+    const erika = 'p0123456789abcdef01234567';
+    await forward(
+      anna,
+      [
+        { t: 'chat.upsert', chat: { externalId: 'c0123456789abcdef01234567', title: 'Erika Muster', kind: 'private', userId: erika, muted: false, unread: 1, readInboxMaxId: null, readOutboxMaxId: null } },
+        { t: 'user.upsert', user: { externalId: erika, name: 'Erika Muster', isContact: false, isBot: false } },
+        { t: 'msg.upsert', msg: { chatId: 'c0123456789abcdef01234567', externalId: 'e1f2a3b4', fromId: erika, outgoing: false, date: now(), editDate: null, kind: 'text', text: 'Hast du heute Zeit?', file: null, fileName: null }, live: true },
+      ],
+      previewId,
+    );
+    const ask = async (chat: string) => {
+      script = () => ({ say: [], calls: [{ tool: 'messages.send', chat, text: 'Ja, ab drei.' }], help: false });
+      return ((await turn(anna, `Antworte ${chat}: Ja, ab drei.`)).find((e) => e.t === 'action') as unknown as { prompt: string }).prompt;
+    };
+    // Before: a name in a notification is no one's contact.
+    expect(await ask('Erika Muster')).toBe('Achtung: Erika Muster ist nicht in deinen Kontakten. Antwort an Erika Muster über Signal: „Ja, ab drei.“. Senden?');
+    const contact = ((await contacts('POST', '', { name: 'Erika', handles: [] })).json() as { id: string }).id;
+    type Suggestion = { connectionId: string; externalId: string; name: string; where: string; contactId: string; contactName: string };
+    const s = ((await as(anna, 'GET', '/api/v1/messaging/contact-suggestions?lang=de')).json() as { suggestions: Suggestion[] }).suggestions.find((x) => x.externalId === erika)!;
+    expect([s.name, s.where, s.contactName]).toEqual(['Erika Muster', 'auf Signal', 'Erika']);
+    const accepted = (await as(anna, 'POST', '/api/v1/messaging/contact-suggestions/accept', { connectionId: s.connectionId, externalId: s.externalId, contactId: s.contactId })).json() as {
+      contact: { handles: { kind: string; value: string; label: string | null; display: string }[] };
+    };
+    expect(accepted.contact.handles).toEqual([{ kind: 'preview', value: `org.thoughtcrime.securesms:${erika}`, label: 'Signal', display: '' }]);
+    // After: named by the contact, and no warning.
+    expect(await ask('Erika')).toBe('Antwort an Erika über Signal: „Ja, ab drei.“. Senden?');
+    await contacts('DELETE', `/${contact}`);
   });
 
   it('K9, limits where UCAP acts on accounts elsewhere: five WhatsApp pairing codes a connection an hour; ten email tries a person an hour, and ten accounts', async () => {

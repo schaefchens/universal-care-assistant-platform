@@ -208,9 +208,17 @@ describe('messaging', () => {
       ['Kommst du morgen zum Kaffee?', true],
       ['Wer bringt den Kuchen?', true],
     ]);
-    // One service: announced without it ("Neue Nachricht von Anna Beispiel.").
-    expect(q.items[0]!.say).toEqual({ frame: expect.stringMatching(/^Anna Beispiel schrieb heute um \d{1,2}:\d{2} auf Telegram:$/), text: 'Kommst du morgen zum Kaffee?', announce: 'Neue Nachricht von Anna Beispiel.' });
+    // One service: announced without it ("Neue Nachricht von Anna Beispiel."), by who alone or with what it says, as
+    // the device is set (the owner, 2026-10-27).
+    expect(q.items[0]!.say).toEqual({
+      frame: expect.stringMatching(/^Anna Beispiel schrieb heute um \d{1,2}:\d{2} auf Telegram:$/),
+      text: 'Kommst du morgen zum Kaffee?',
+      announce: 'Neue Nachricht von Anna Beispiel.',
+      news: 'Neue Nachricht von Anna Beispiel: „Kommst du morgen zum Kaffee?“',
+    });
     expect(q.items[1]!.say.frame).toMatch(/^Bernd Beispiel schrieb heute um \d{1,2}:\d{2} in „Familie“ auf Telegram:$/);
+    // In a group, where it was written.
+    expect((q.items[1]!.say as { news?: string }).news).toBe('Neue Nachricht von Bernd Beispiel in „Familie“: „Wer bringt den Kuchen?“');
     // Channels are not counted as unread.
     const conv = (await as(anna, 'GET', '/api/v1/messaging/conversations')).json() as { conversations: { name: string; unread: number; channel: boolean }[] };
     expect(conv.conversations.find((c) => c.channel)?.unread).toBe(0);

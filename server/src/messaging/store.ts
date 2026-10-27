@@ -42,10 +42,11 @@ export function createMessageStore(d: { db: Db; clock: Clock }) {
     async upsertChat(connectionId: string, c: WireChat): Promise<string> {
       return d.db.transaction().execute(async (trx) => {
         const r = await sql<{ id: string }>`
-          insert into messaging_conversations (id, connection_id, external_id, kind, title, subject, peer_external_id, muted, unread, read_inbox_max, read_outbox_max, updated_at)
-          values (${uuidv7(d.clock())}, ${connectionId}, ${c.externalId}, ${c.kind}, ${c.title}, ${c.subject ?? null}, ${c.userId}, ${c.muted}, ${c.unread}, ${c.readInboxMaxId}, ${c.readOutboxMaxId}, ${now()})
+          insert into messaging_conversations (id, connection_id, external_id, kind, title, subject, peer_external_id, muted, unread, read_inbox_max, read_outbox_max, mail, updated_at)
+          values (${uuidv7(d.clock())}, ${connectionId}, ${c.externalId}, ${c.kind}, ${c.title}, ${c.subject ?? null}, ${c.userId}, ${c.muted}, ${c.unread}, ${c.readInboxMaxId}, ${c.readOutboxMaxId},
+                  ${c.mail ? JSON.stringify(c.mail) : null}::jsonb, ${now()})
           on conflict (connection_id, external_id) do update set kind = excluded.kind, title = excluded.title, subject = coalesce(excluded.subject, messaging_conversations.subject), peer_external_id = excluded.peer_external_id,
-            muted = excluded.muted, unread = excluded.unread,
+            muted = excluded.muted, unread = excluded.unread, mail = excluded.mail,
             read_inbox_max = greatest(messaging_conversations.read_inbox_max, excluded.read_inbox_max),
             read_outbox_max = greatest(messaging_conversations.read_outbox_max, excluded.read_outbox_max), updated_at = excluded.updated_at
           returning id`.execute(trx);

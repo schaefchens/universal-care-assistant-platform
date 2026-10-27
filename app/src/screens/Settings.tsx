@@ -12,6 +12,7 @@ import type { Prefs } from '../state/store.ts';
 import { useUi } from '../ui.tsx';
 import { has } from '../native/plugins.ts';
 import { LiveSettings } from './LiveSettings.tsx';
+import { MessagesSetting } from './MessagesSetting.tsx';
 
 function Choice<T extends string>(p: { label: string; value: T; options: readonly T[]; text: (v: T) => string; onChange: (v: T) => void }) {
   return (
@@ -153,6 +154,7 @@ export function Settings(p: {
         <Choice label={tr('settings.addressForm')} value={p.prefs.addressForm} options={['du', 'Sie'] as const} text={(v) => tr(`settings.addressForm.${v}`)} onChange={(addressForm) => p.onPrefs({ ...p.prefs, addressForm })} />
         <Range label={tr('settings.speechRate')} value={p.prefs.speechRate} min={0.5} max={2} step={0.1} format={(v) => `${v.toFixed(1)}×`} onChange={(speechRate) => p.onPrefs({ ...p.prefs, speechRate })} />
       </Section>
+      <MessagesSetting config={p.config} onConfig={p.onConfig} />
       <LiveSettings config={p.config} onConfig={p.onConfig} assistant={{ name: p.me?.assistantName ?? null, keyword: p.me?.keyword ?? null, save: p.onAssistant, spotsKeyword: has('VoiceCapture') }} />
       {p.onAiAdmin && (
         <Section title={tr('admin.title')}>

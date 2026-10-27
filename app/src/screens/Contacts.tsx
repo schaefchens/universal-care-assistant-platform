@@ -45,8 +45,8 @@ function Editor(p: { initial: Contact | null; onSave: (f: ContactFields) => Prom
     const own = (p.initial?.handles ?? []).filter((h) => h.kind === 'email').map((h) => h.value);
     return own.length ? own : [''];
   });
-  /** Telegram's and WhatsApp's come from the services: kept as they are. */
-  const kept = (p.initial?.handles ?? []).filter((h) => h.kind === 'telegram' || h.kind === 'whatsapp');
+  /** Telegram's and WhatsApp's come from the services, a preview's from the person's yes: kept as they are. */
+  const kept = (p.initial?.handles ?? []).filter((h) => h.kind === 'telegram' || h.kind === 'whatsapp' || h.kind === 'preview');
   const [error, setError] = useState('');
   const errorRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
@@ -110,7 +110,10 @@ function Editor(p: { initial: Contact | null; onSave: (f: ContactFields) => Prom
   );
 }
 
-/** One handle as it is said and shown: "Telefon (Praxis): +49 30 1234567"; "Telegram" alone (its id is nothing to say). */
+/**
+ * One handle as it is said and shown: "Telefon (Praxis): +49 30 1234567"; "Telegram" alone (its id is nothing to say),
+ * "Vorschau (Signal)" with its app.
+ */
 function handleText(tr: Tr, h: ContactHandle): string {
   const kind = tr(`contacts.kind.${h.kind}`);
   const named = h.label ? `${kind} (${h.label})` : kind;

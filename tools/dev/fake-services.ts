@@ -12,7 +12,8 @@
  *
  * - Telegram: any phone number; the code is 22222; a number ending in 1 also asks for the password "geheim".
  * - WhatsApp: any phone number; the pairing code UCAP2026 is "typed on the phone" after 5 s (or at /pair).
- * - Email: any address and password; the password "falsch" is refused.
+ * - Email: any address and password; the password "falsch" is refused. Each thread says whom a reply goes to (its
+ *   newest mail's sender) and everyone a reply to all goes to; the family's thread has three people.
  *
  * A sent message is pending, then sent after 1.5 s, and Anna answers a little later on the same service; a new message
  * to a contact (K6) starts a chat of its own: a mail to an address, on WhatsApp and Telegram to a number (or a Telegram
@@ -27,6 +28,7 @@
  *   /delete {service?, chat, id}                                           a message deleted for everyone
  *   /pair {}                                                               WhatsApp: the code typed on the phone now
  *   /hold {on}                                                             sends stay pending until on is false again (tests)
+ *   /sent {service?}                                                       the last sends' chat, `all` and `from` (tests; no text)
  *   /clock {at}                                                            the services' time from now on (tests that move the server's)
  * They act for the account of that service that connected last, or the one named by `connection` (its connection id).
  */
@@ -34,7 +36,7 @@ import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
-import { type FromConnectors, SERVER_SERVICES, type ServerService, type ToConnectors, type WireMessage } from '@ucap/shared';
+import { type FromConnectors, type MailIdentity, type MailPerson, SERVER_SERVICES, type ServerService, type ToConnectors, type WireMessage } from '@ucap/shared';
 
 if (process.env.NODE_ENV === 'production') {
   console.error('fake-services: development only');
@@ -68,7 +70,14 @@ interface ChatDef {
   userId: string | null;
   /** Shown, never announced: a muted group, or by email a list or newsletter (K3). */
   muted?: boolean;
+  /** An email thread's: whom a reply goes to, and everyone a reply to all goes to (the person's address aside). */
+  mail?: { reply: MailPerson[]; all: MailPerson[] };
 }
+/** An email thread with one other person: a reply goes to them, and so does a reply to all. */
+function alone(address: string, name: string): ChatDef['mail'] {
+  return { reply: [{ address, name }], all: [{ address, name }] };
+}
+
 /** The same people on each service, as each service names them. Maria is no contact anywhere. */
 const PEOPLE: Record<ServerService, { anna: string; bernd: string; maria: string; maria_name: string }> = {
   telegram: { anna: 'user:42', bernd: 'user:43', maria: 'user:66', maria_name: 'Maria (Tochter)' },
@@ -89,10 +98,24 @@ const CHATS: Record<ServerService, Record<ChatKey, ChatDef>> = {
     newsletter: { externalId: '120363000000000002@g.us', title: 'Gartenverein', kind: 'group', userId: null, muted: true },
   },
   email: {
-    anna: { externalId: 'thread:anna', title: 'Anna Beispiel', subject: 'Besuch am Sonntag', kind: 'private', userId: PEOPLE.email.anna },
-    familie: { externalId: 'thread:familie', title: 'Familientreffen', subject: 'Familientreffen im Mai', kind: 'group', userId: null },
-    maria: { externalId: 'thread:maria', title: 'Maria', subject: 'Neue Nummer', kind: 'private', userId: PEOPLE.email.maria },
-    newsletter: { externalId: 'thread:newsletter', title: 'Gartenfreunde', subject: 'Newsletter Oktober', kind: 'group', userId: null, muted: true },
+    anna: { externalId: 'thread:anna', title: 'Anna Beispiel', subject: 'Besuch am Sonntag', kind: 'private', userId: PEOPLE.email.anna, mail: alone('anna@example.org', 'Anna Beispiel') },
+    familie: {
+      externalId: 'thread:familie',
+      title: 'Familientreffen',
+      subject: 'Familientreffen im Mai',
+      kind: 'group',
+      userId: null,
+      mail: {
+        reply: [{ address: 'bernd@example.org', name: 'Bernd Beispiel' }],
+        all: [
+          { address: 'bernd@example.org', name: 'Bernd Beispiel' },
+          { address: 'anna@example.org', name: 'Anna Beispiel' },
+          { address: 'hans@example.org', name: 'Hans' },
+        ],
+      },
+    },
+    maria: { externalId: 'thread:maria', title: 'Maria', subject: 'Neue Nummer', kind: 'private', userId: PEOPLE.email.maria, mail: alone('maria.tochter@example.net', 'Maria') },
+    newsletter: { externalId: 'thread:newsletter', title: 'Gartenfreunde', subject: 'Newsletter Oktober', kind: 'group', userId: null, muted: true, mail: alone('news@gartenfreunde.example', 'Gartenfreunde') },
   },
 };
 /** A little history on each, read already. */
@@ -131,6 +154,8 @@ interface Account {
 const accounts = new Map<string, Account>();
 /** Sends the services have not confirmed yet, while held (/hold). */
 let holding = false;
+/** What each send asked for, by service: its chat, an email's `all` and `from` (/sent; never its text). */
+const sends: { service: ServerService; chatId: string; all: boolean; from: MailIdentity | null }[] = [];
 const held: (() => void)[] = [];
 /** The control endpoints act for the account of a service that connected last (or the one named by `connection`). */
 const lastReady = new Map<ServerService, string>();
@@ -162,7 +187,22 @@ function ready(a: Account) {
   emit({ t: 'user.upsert', id: a.id, user: { externalId: p.bernd, name: 'Bernd Beispiel', isContact: true, isBot: false } });
   emit({ t: 'user.upsert', id: a.id, user: { externalId: p.maria, name: p.maria_name, isContact: false, isBot: false } });
   for (const c of Object.values(CHATS[a.service]))
-    emit({ t: 'chat.upsert', id: a.id, chat: { externalId: c.externalId, title: c.title, ...(c.subject ? { subject: c.subject } : {}), kind: c.kind, userId: c.userId, muted: c.muted === true, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } });
+    emit({
+      t: 'chat.upsert',
+      id: a.id,
+      chat: {
+        externalId: c.externalId,
+        title: c.title,
+        ...(c.subject ? { subject: c.subject } : {}),
+        kind: c.kind,
+        userId: c.userId,
+        muted: c.muted === true,
+        unread: 0,
+        readInboxMaxId: null,
+        readOutboxMaxId: null,
+        ...(c.mail ? { mail: { ...c.mail, to: a.address } } : {}),
+      },
+    });
   for (const h of HISTORY[a.service]) emit({ t: 'msg.upsert', id: a.id, msg: message(a, h.chat, { text: h.text, outgoing: h.outgoing === true, date: now() - h.ago }) });
   for (const c of Object.values(CHATS[a.service])) emit({ t: 'chat.read', id: a.id, chatId: c.externalId, inboxMaxId: String(a.nextId), outboxMaxId: String(a.nextId), unread: 0 });
   log(`${a.service} connection ${a.id} ready`);
@@ -184,7 +224,8 @@ function sendNew(a: Account, requestId: string, to: string, text: string, subjec
     const peer = a.service === 'email' ? `mail:${to}` : to.startsWith('user:') ? to : `user:${digits}`;
     emit({ t: 'send.result', id: a.id, requestId, state: 'sent', externalId: String(a.nextId), tempId });
     emit({ t: 'user.upsert', id: a.id, user: { externalId: peer, name: to, isContact: a.service === 'email', isBot: false, ...(digits ? { address: `+${digits}` } : {}) } });
-    emit({ t: 'chat.upsert', id: a.id, chat: { externalId: chatId, title: to, subject, kind: 'private', userId: peer, muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null } });
+    const mail = a.service === 'email' ? { mail: { ...alone(to, '')!, to: a.address } } : {};
+    emit({ t: 'chat.upsert', id: a.id, chat: { externalId: chatId, title: to, subject, kind: 'private', userId: peer, muted: false, unread: 0, readInboxMaxId: null, readOutboxMaxId: null, ...mail } });
     emit({ t: 'msg.upsert', id: a.id, msg: { chatId, externalId: String(a.nextId), fromId: ME[a.service](a).externalId, outgoing: true, date: now(), editDate: null, kind: 'text', text, file: null, fileName: null, subject } });
   }, 1500);
 }
@@ -198,6 +239,9 @@ function pair(a: Account) {
 
 async function handle(cmd: ToConnectors) {
   if (cmd.t === 'start') {
+    // The same email account again, its senders changed: kept running, as the email process keeps it (K3).
+    const running = accounts.get(cmd.id);
+    if (cmd.service === 'email' && running?.ready && running.address === cmd.address) return emit({ t: 'conn.state', id: running.id, state: 'ready', me: ME.email(running) });
     const known = existsSync(stateFile(cmd.id));
     const a: Account = accounts.get(cmd.id) ?? { id: cmd.id, service: cmd.service, phone: '', address: '', ready: false, nextId: 1048576 * 10, temp: -1, files: new Map(), pairing: null };
     accounts.set(cmd.id, a);
@@ -247,6 +291,7 @@ async function handle(cmd: ToConnectors) {
       emit({ t: 'conn.state', id: a.id, state: 'closed' });
       return;
     case 'send': {
+      sends.push({ service: a.service, chatId: cmd.chatId, all: cmd.all === true, from: cmd.from ?? null });
       if (!cmd.chatId && cmd.to) return sendNew(a, cmd.requestId, cmd.to, cmd.text, cmd.subject ?? null);
       const chats = CHATS[a.service];
       const chat = (Object.keys(chats) as ChatKey[]).find((k) => chats[k].externalId === cmd.chatId);
@@ -330,6 +375,7 @@ createServer(async (req, res) => {
     if (!holding) for (const f of held.splice(0)) f();
     return done(200, { holding });
   }
+  if (req.url === '/sent') return done(200, { sends: sends.filter((x) => x.service === service).slice(-10) });
   if (req.url === '/pair') {
     const waiting = [...accounts.values()].find((x) => x.service === 'whatsapp' && x.pairing);
     if (!waiting) return done(409, { error: 'no pairing code shown' });

@@ -12,9 +12,13 @@
  *   thread a muted chat: shown, never announced.
  * - **Names:** what senders call themselves, or their address; known when the person wrote to them in the last year
  *   (UCAP's own contacts come with K6). A sender whose domain failed DMARC is named as not confirmed.
- * - **Sending** a reply to everyone in the thread's newest mail (its Reply-To, where it asks for one): "sent" at the
- *   server's 250 (RFC 5321: accepted, nothing more); the same bytes appended to the Sent folder (Gmail files its own
- *   copy). A mail server's report that a mail came back is matched to it by Message-ID.
+ * - **The person's senders** (the owner, 2026-10-27: "we need to configure identities like email apps have"): a name
+ *   and an address each, the default first. Mail from any of them is the person's own; a reply goes out as the one
+ *   the newest mail came to, a new mail as the default.
+ * - **Sending** a reply to the sender of the thread's newest mail (its Reply-To, where it asks for one), or to everyone
+ *   in it when the person asks ("Allen antworten"; the owner, 2026-10-27: "should have default only sender with option
+ *   to reply all"): "sent" at the server's 250 (RFC 5321: accepted, nothing more); the same bytes appended to the Sent
+ *   folder (Gmail files its own copy). A mail server's report that a mail came back is matched to it by Message-ID.
  * - **Read states both ways:** \Seen on the server once the person heard a mail (Appendix E); read here when it was
  *   read in another mail program (QRESYNC gives a change's UID). A mail moved or deleted elsewhere stays here.
  *
@@ -23,7 +27,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { readFile, rm, writeFile } from 'node:fs/promises';
-import type { FromConnectors, MailServer, WireChat, WireMessage } from '@ucap/shared';
+import type { FromConnectors, MailIdentity, MailPerson, MailServer, WireChat, WireMessage } from '@ucap/shared';
 import { type Address, attachmentsOf, idOf, type Mail, parseMail, type Structure, topicOf } from './mail.ts';
 
 type Lang = 'de' | 'en';
@@ -80,6 +84,8 @@ export interface EmailOptions {
   id: string;
   lang: Lang;
   address: string;
+  /** The person's senders on this account, the default first; without, the account's address alone. */
+  identities?: MailIdentity[];
   /** The SMTP server's name: Gmail files sent mail itself. */
   smtp: MailServer;
   /** The connection's small state on the volume: UIDs and Message-IDs only. */
@@ -112,10 +118,10 @@ interface Thread {
   topic: string;
   /** Everyone in it but the person, by address: its name and kind. */
   people: Map<string, string>;
-  /** Who a reply goes to: the newest mail's sender (or its Reply-To) and everyone it went to, but the person. */
-  replyAll: string[];
   /** Its newest mail's id and time: a reply answers it. */
   last: { id: string; at: number } | null;
+  /** Who wrote the newest mail to whom: whom a reply goes to. */
+  head: { from: Address | null; replyTo: Address[]; to: Address[]; cc: Address[]; outgoing: boolean } | null;
   /** The ids of its mails, oldest first: a reply's References. */
   ids: string[];
   list: boolean;
@@ -164,6 +170,9 @@ const addressesOf = (list: EnvelopeAddress[] | undefined): Address[] => (list ??
 export class EmailConnection {
   private readonly o: EmailOptions;
   private readonly self: string;
+  /** The person's senders, the default first, and every address of theirs (the account's too). */
+  private identities: MailIdentity[] = [];
+  private mine = new Set<string>();
   private state: State = { v: 1, worked: false, boxes: {}, sent: [] };
   private imap: ImapLike | null = null;
   private selected: string | null = null;
@@ -205,6 +214,23 @@ export class EmailConnection {
     this.o = o;
     this.self = lower(o.address);
     this.backoff = o.reconnectMs ?? 5_000;
+    this.takeIdentities(o.identities);
+  }
+
+  private takeIdentities(list: MailIdentity[] | undefined) {
+    this.identities = (list ?? [])
+      .filter((x) => ADDRESS.test(x.address.trim()))
+      .map((x) => ({ name: x.name.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 100), address: lower(x.address) }));
+    this.mine = new Set([this.self, ...this.identities.map((x) => x.address)]);
+  }
+
+  /** The person changed their senders: replies and who is in each thread are told anew. */
+  setIdentities(list: MailIdentity[] | undefined) {
+    this.takeIdentities(list);
+    for (const t of this.threads.values()) {
+      for (const a of this.mine) t.people.delete(a);
+      if (this.told.has(`thread:${t.root}`)) this.tellChat(t);
+    }
   }
 
   private now() {
@@ -534,15 +560,13 @@ export class EmailConnection {
       this.inbox.set(id, uid);
       this.byUid.set(uid, { root, at: m.date });
     }
-    const t: Thread = this.threads.get(root) ?? { root, topic: '', people: new Map(), replyAll: [], last: null, ids: [], list: false, unconfirmed: false };
-    for (const a of [m.from, ...m.replyTo, ...m.to, ...m.cc]) if (a && a.address !== this.self && !t.people.get(a.address)) t.people.set(a.address, a.name);
+    const t: Thread = this.threads.get(root) ?? { root, topic: '', people: new Map(), last: null, head: null, ids: [], list: false, unconfirmed: false };
+    for (const a of [m.from, ...m.replyTo, ...m.to, ...m.cc]) if (a && !this.mine.has(a.address) && !t.people.get(a.address)) t.people.set(a.address, a.name);
     if (!t.ids.includes(id)) t.ids.push(id);
-    const outgoing = m.from?.address === this.self || box === this.sentPath;
+    const outgoing = this.mine.has(m.from?.address ?? '') || box === this.sentPath;
     if (!t.last || m.date >= t.last.at) {
       t.last = { id, at: m.date };
-      const to = [...m.to, ...m.cc].map((a) => a.address);
-      const sender = m.replyTo.length ? m.replyTo.map((a) => a.address) : m.from ? [m.from.address] : [];
-      t.replyAll = [...new Set(outgoing ? to : [...sender, ...to])].filter((a) => a !== this.self);
+      t.head = { from: m.from, replyTo: m.replyTo, to: m.to, cc: m.cc, outgoing };
       if (!outgoing) t.unconfirmed = m.dmarcFail;
     }
     if (!t.topic && m.subject) t.topic = topicOf(m.subject);
@@ -562,7 +586,7 @@ export class EmailConnection {
     }
     const t = this.learn(m, box, uid);
     const id = m.messageId ?? `uid:${box}:${uid}`;
-    const outgoing = box === this.sentPath || m.from?.address === this.self;
+    const outgoing = box === this.sentPath || this.mine.has(m.from?.address ?? '');
     if (box === 'INBOX' && read) this.sawRead(t.root, m.date);
     this.tellChat(t);
     const fromId = !outgoing && m.from ? this.tellUser(m.from, m.dmarcFail) : userId(this.self);
@@ -607,6 +631,33 @@ export class EmailConnection {
     return id;
   }
 
+  /**
+   * Whom a reply goes to: the newest mail's sender (or its Reply-To), and with everyone it went to for "Allen
+   * antworten"; after the person's own mail, whom that went to. Never the person. `to`: the address of theirs the
+   * newest mail came to (or went out from).
+   */
+  private replies(t: Thread): { reply: MailPerson[]; all: MailPerson[]; to: string | null } {
+    const h = t.head;
+    if (!h) return { reply: [], all: [], to: null };
+    const others = (list: Address[]) => {
+      const out = new Map<string, MailPerson>();
+      for (const a of list) if (!this.mine.has(a.address) && !out.has(a.address)) out.set(a.address, { address: a.address, name: a.name || t.people.get(a.address) || '' });
+      return [...out.values()];
+    };
+    if (h.outgoing) return { reply: others(h.to.length ? h.to : h.cc), all: others([...h.to, ...h.cc]), to: h.from && this.mine.has(h.from.address) ? h.from.address : null };
+    const sender = h.replyTo.length ? h.replyTo : h.from ? [h.from] : [];
+    const reply = others(sender);
+    const all = others([...sender, ...h.to, ...h.cc]);
+    // A mail from the person to themselves, or one whose sender is theirs: everyone else it went to.
+    return { reply: reply.length ? reply : all, all, to: [...h.to, ...h.cc].find((a) => this.mine.has(a.address))?.address ?? null };
+  }
+
+  /** Who a mail goes out as: the sender the person confirmed, else the one the thread's mail came to, else the default. */
+  private sender(asked: MailIdentity | undefined, to: string | null): MailIdentity {
+    if (asked && ADDRESS.test(asked.address.trim())) return { name: asked.name.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 100), address: lower(asked.address) };
+    return this.identities.find((x) => x.address === to) ?? this.identities[0] ?? { name: '', address: this.self };
+  }
+
   private tellChat(t: Thread) {
     const people = [...t.people.entries()];
     const one = people.length <= 1;
@@ -624,6 +675,7 @@ export class EmailConnection {
       unread: 0,
       readInboxMaxId: null,
       readOutboxMaxId: null,
+      mail: this.replies(t),
     };
     const said = JSON.stringify(chat);
     if (this.told.get(chat.externalId) === said) return;
@@ -634,23 +686,27 @@ export class EmailConnection {
   // —— Sending ——————————————————————————————————————————————————————————————————————————————————————————————————————
 
   /**
-   * A reply in its thread, or a new mail to an address (`to`, K6: one of the person's contacts; its thread is made by
-   * the mail itself); "sent" at the server's 250, then its copy in the Sent folder.
+   * A reply in its thread, to its sender or (`all`) to everyone in it, or a new mail to an address (`to`, K6: one of the
+   * person's contacts; its thread is made by the mail itself), as the sender the person confirmed (`from`); "sent" at
+   * the server's 250, then its copy in the Sent folder.
    */
-  async send(requestId: string, chatId: string, text: string, subject?: string, address?: string) {
+  async send(requestId: string, chatId: string, text: string, subject?: string, address?: string, o: { all?: boolean; from?: MailIdentity } = {}) {
     const id = this.o.id;
     const fresh = !chatId && address !== undefined;
     if (fresh && !(ADDRESS.test(address) && subject)) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: 'no_recipient' });
     // Started just now: the threads are read first (they say who a reply goes to).
     if (!fresh) await Promise.race([this.synced, new Promise((r) => this.later(this.o.syncWaitMs ?? 30_000, () => r(null)))]);
     const t = fresh ? null : this.threads.get(chatId.replace(/^thread:/, ''));
-    if (!fresh && (!t || !t.replyAll.length)) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: t || this.open ? 'no_recipient' : 'offline' });
-    const messageId = `${randomUUID()}@${this.self.split('@')[1] ?? 'ucap.invalid'}`;
-    const to = t ? t.replyAll : [address!.toLowerCase()];
+    const r = t ? this.replies(t) : null;
+    const people = r ? (o.all ? r.all : r.reply) : [];
+    if (!fresh && !people.length) return this.emit({ t: 'send.result', id, requestId, state: 'failed', error: t || this.open ? 'no_recipient' : 'offline' });
+    const from = this.sender(o.from, r?.to ?? null);
+    const messageId = `${randomUUID()}@${from.address.split('@')[1] ?? 'ucap.invalid'}`;
+    const to = t ? people.map((a) => a.address) : [address!.toLowerCase()];
     let raw: Buffer;
     try {
       raw = await this.o.compose({
-        from: this.self,
+        from: from.name ? { name: from.name, address: from.address } : from.address,
         to: to.join(', '),
         subject: subject || (t?.topic ? `Re: ${t.topic}` : ''),
         text,
@@ -665,7 +721,7 @@ export class EmailConnection {
     let smtp: SmtpLike | null = null;
     try {
       smtp = await this.o.makeSmtp();
-      const info = await smtp.sendMail({ envelope: { from: this.self, to }, raw });
+      const info = await smtp.sendMail({ envelope: { from: from.address, to }, raw });
       if (!/^250\b/.test(info.response ?? '') || !(info.accepted ?? []).length) throw Object.assign(new Error('not accepted'), { responseCode: Number(/^(\d{3})/.exec(info.response ?? '')?.[1]) || 0 });
     } catch (e) {
       const x = e as { responseCode?: number; code?: string };

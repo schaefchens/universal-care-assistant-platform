@@ -9,8 +9,8 @@ import android.telephony.SmsMessage;
 /**
  * An SMS arrived (SMS_DELIVER: only the SMS app gets it, and only it writes the store; spike C), in the SMS process. A
  * long SMS comes joined, its parts in one broadcast. Written to Android's store, unread; UCAP's notification says who
- * wrote; then it is reported to the server, which announces it on the person's devices. Blocked numbers never get
- * here: Android drops their SMS before the SMS app sees them.
+ * wrote and what (as the device is set); then it is reported to the server, which announces it on the person's
+ * devices. Blocked numbers never get here: Android drops their SMS before the SMS app sees them.
  */
 public class SmsDeliverReceiver extends BroadcastReceiver {
     @Override
@@ -29,7 +29,7 @@ public class SmsDeliverReceiver extends BroadcastReceiver {
                 long id = SmsStore.insertInbox(ctx, from, body.toString(), sent, sub);
                 if (id > 0) {
                     SmsStore.Row r = SmsStore.one(ctx, id);
-                    if (r != null) SmsNotify.newSms(ctx, r.thread, SmsStore.person(ctx, from, SmsStore.country(ctx)).name);
+                    if (r != null) SmsNotify.newSms(ctx, r.thread, SmsStore.person(ctx, from, SmsStore.country(ctx)).name, body.toString());
                 }
                 if (SmsSync.run(ctx)) SmsJob.retry(ctx);
             } catch (Exception e) {

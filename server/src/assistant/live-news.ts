@@ -30,7 +30,7 @@ import type { Llm } from '../ai/llm/service.ts';
 import type { AgendaService } from '../domain/agenda/service.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
-import { fold, type Item, type Messaging, serviceName, via } from '../messaging/service.ts';
+import { fold, type Item, MEDIA_NEWS, type Messaging, serviceName, via } from '../messaging/service.ts';
 import type { Service } from '../messaging/services.ts';
 
 /** A message this long or shorter, alone from its sender, is read word for word. */
@@ -48,8 +48,6 @@ export interface NewsSegment {
   /** The message whose original this is: read once heard to its end (CONCEPT §3, as M1's messages screen). */
   source?: { message: string };
 }
-
-const MEDIA: Record<string, string> = { photo: 'photo', document: 'document', video: 'video', video_note: 'videoNote', audio: 'audio', sticker: 'sticker' };
 
 export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: Messaging; agenda: AgendaService; log: (m: string) => void; summaryBudgetMs?: number }) {
   async function person(userId: string) {
@@ -164,7 +162,7 @@ export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: M
         }
         for (const m of others) {
           if (m.kind === 'voice') out.push({ kind: 'system', text: `${pre}${tr('live.news.voice', { name: from, where, via: on(m, from), seconds: m.durationS ?? 0 })}` });
-          else out.push({ kind: 'system', text: `${pre}${tr(`live.news.media.${MEDIA[m.kind] ?? 'other'}`, { name: from, where, via: on(m, from) })}` });
+          else out.push({ kind: 'system', text: `${pre}${tr(`live.news.media.${MEDIA_NEWS[m.kind] ?? 'other'}`, { name: from, where, via: on(m, from) })}` });
         }
       }
       const more = chats.slice(MAX_CONVERSATIONS).reduce((n, m) => n + m.length, 0);

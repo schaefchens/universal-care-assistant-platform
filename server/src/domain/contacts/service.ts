@@ -1,7 +1,8 @@
 /**
  * The person's own contacts (docs/plan-m3.md, K6; CONCEPT §3: "Contacts and supported calling functions should also be
- * accessible"): a name of the person's own, phone numbers in E.164, email addresses, and the handles on Telegram and
- * WhatsApp. In core, next to notes and reminders.
+ * accessible"): a name of the person's own, phone numbers in E.164, email addresses, the handles on Telegram and
+ * WhatsApp, and someone who writes in another app's notifications, once the person said it is them (`preview`: the
+ * app's package and the sender's id there; docs/decisions.md, M3, To confirm 19). In core, next to notes and reminders.
  * - The person keeps them; a helper with contacts.manage does too ("Kontakte verwalten", granted and withdrawn by the
  *   person), never anything of messages. A helper's change is audited (ids and versions only: the audit log holds no
  *   text a person wrote), told on the person's devices and named in their history.
@@ -19,8 +20,8 @@ import { AppError } from '../../lib/errors.ts';
 import { emit } from '../../lib/outbox.ts';
 import type { PeopleService } from '../people/service.ts';
 
-export type HandleKind = 'phone' | 'email' | 'telegram' | 'whatsapp';
-export const HANDLE_KINDS: readonly HandleKind[] = ['phone', 'email', 'telegram', 'whatsapp'];
+export type HandleKind = 'phone' | 'email' | 'telegram' | 'whatsapp' | 'preview';
+export const HANDLE_KINDS: readonly HandleKind[] = ['phone', 'email', 'telegram', 'whatsapp', 'preview'];
 
 export interface HandleInput {
   kind: HandleKind;
@@ -56,10 +57,13 @@ interface ContactRow {
   deleted_at: Date | null;
 }
 
-/** A handle as people write it: "+49 30 1234567"; a short number and an address as they are; a Telegram id is nothing to say. */
+/**
+ * A handle as people write it: "+49 30 1234567"; a short number and an address as they are; a Telegram id, or an app's
+ * id for a sender in its notifications (its label names the app), is nothing to say.
+ */
 export function displayOf(h: Handle): string {
   if ((h.kind === 'phone' || h.kind === 'whatsapp') && h.value.startsWith('+')) return parsePhoneNumberFromString(h.value)?.formatInternational() ?? h.value;
-  return h.kind === 'telegram' ? '' : h.value;
+  return h.kind === 'telegram' || h.kind === 'preview' ? '' : h.value;
 }
 
 /**
@@ -120,6 +124,11 @@ export function normalHandle(h: HandleInput, region: CountryCode): Handle {
     const v = raw.toLowerCase();
     if (v.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) throw new AppError('bad_request', { params: { reason: 'email', value: raw.slice(0, 60) } });
     return { kind: 'email', value: v, label };
+  }
+  if (h.kind === 'preview') {
+    // An app's package and its sender's id, as the phone's previews name them ("org.thoughtcrime.securesms:p1a2b3…").
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+:p[0-9a-f]{24}$/.test(raw)) throw new AppError('bad_request', { params: { reason: 'preview', value: raw.slice(0, 40) } });
+    return { kind: 'preview', value: raw, label };
   }
   if (!/^\d{1,20}$/.test(raw)) throw new AppError('bad_request', { params: { reason: 'telegram', value: raw.slice(0, 40) } });
   return { kind: 'telegram', value: raw, label };

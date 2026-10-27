@@ -100,6 +100,9 @@ With "Bedienung der Geräte einstellen": Helfer → the person → **"Gerät ein
 - the home screen's areas: their label, their place (another area swaps with it), their colour, and the description
   that is read out; "Anhören" lets you hear it. The help area always stays and is always called "Hilfe"; it can be
   moved;
+- how the device tells of a new message: who wrote and what it says (the default), or who wrote alone ("Neue
+  Nachrichten", "Sagen, was darin steht"): for a device in a room where others listen, for example. UCAP's notification
+  of a new SMS on that phone follows it;
 - a preview in the person's colours, and **what the device will say** when the change takes effect.
 
 The device applies your change only when nobody is using it (30 seconds without a touch, nothing being said, no open

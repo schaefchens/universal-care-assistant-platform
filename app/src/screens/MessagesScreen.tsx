@@ -1,6 +1,7 @@
 /**
- * The person's messages (docs/plan.md, S10), in large areas: the next one, the current one again, a reply, the rest
- * marked read (in UCAP only, asked first), back home, and help, which every screen has (Appendix H). Unread messages come first, oldest first, then the newest of each
+ * The person's messages (docs/plan.md, S10), in large areas: the next one, the current one again, a reply (in an email
+ * thread with several people also one to all of them), the rest marked read (in UCAP only, asked first), back home,
+ * and help, which every screen has (Appendix H). Unread messages come first, oldest first, then the newest of each
  * other conversation. Each is introduced by UCAP (who, when, where, on which service: CONCEPT §3), then its original
  * follows in the voice for reading; a voice message's original is its recording. Only an original heard to its end
  * is marked read on Telegram. A reply is dictated and asked about as said (C1), never sent without the person's yes.
@@ -34,6 +35,8 @@ export interface MessageItem {
   transcript: string | null;
   transcriptState: string;
   unread: boolean;
+  /** An email thread's: whom a reply goes to, and everyone a reply to all goes to, by name. */
+  reply?: { to: string[]; all: string[] } | null;
   /** `quote`: an email's quoted part, named by its first line ("Darunter zitiert: …"). */
   say: { frame: string; text: string; quote?: string };
 }
@@ -197,15 +200,20 @@ export function MessagesScreen(p: {
     say(tr('messages.rest.kept'), 'system');
   };
 
-  async function reply() {
+  /** `all`: to everyone in an email thread ("Allen antworten"); otherwise to its sender (the owner, 2026-10-27). */
+  async function reply(all = false) {
     if (!current || current.kind === 'service') return say(tr('messages.reply.none'), 'system');
     const conn = conns.find((x) => x.id === current.connectionId);
     if (conn?.state !== 'ready') return say(tr('messages.reply.notReady', { service: conn?.name ?? tr(`messaging.service.${current.service}`) }), 'system');
     reading.current++;
     p.stop();
-    const ok = await ui.sayAndWait(tr('messages.reply.hint', { name: current.conversation }), 'system');
-    if (ok) voice?.talk({ context: 'reply', conversation: current.conversationId });
+    const names = (list: string[]) => new Intl.ListFormat(ui.lang === 'de' ? 'de-DE' : 'en-GB', { type: 'conjunction' }).format(list);
+    const hint = all && current.reply ? tr('messages.reply.hintAll', { names: names(current.reply.all) }) : tr('messages.reply.hint', { name: current.reply?.to.length ? names(current.reply.to) : current.conversation });
+    const ok = await ui.sayAndWait(hint, 'system');
+    if (ok) voice?.talk({ context: 'reply', conversation: current.conversationId, ...(all ? { all: true } : {}) });
   }
+  // An email thread with more people than its sender: a reply to all of them too.
+  const toAll = !!current?.reply && current.reply.all.length > current.reply.to.length;
 
   useScreenVoice(
     {
@@ -239,6 +247,7 @@ export function MessagesScreen(p: {
             { id: 'next', label: tr('messages.area.next'), role: 'messages' as const },
             { id: 'repeat', label: tr('messages.area.repeat'), role: 'neutral' as const },
             { id: 'reply', label: tr('messages.area.reply'), role: 'assistant' as const },
+            ...(toAll ? [{ id: 'replyAll', label: tr('messages.area.replyAll'), role: 'assistant' as const }] : []),
             // While some are new: the rest marked read at once, without hearing them.
             ...(unread > 0 ? [{ id: 'rest', label: tr('messages.area.rest'), role: 'neutral' as const }] : []),
             { id: 'back', label: tr('messages.area.back'), role: 'nav' as const },
@@ -283,6 +292,7 @@ export function MessagesScreen(p: {
               if (current) void readItem(current);
               else say(tr('messages.empty'), 'system');
             } else if (id === 'reply') void reply();
+            else if (id === 'replyAll') void reply(true);
             else if (id === 'rest') void askRest();
             else if (id === 'rest.yes') void markRest();
             else if (id === 'rest.no') keepRest();

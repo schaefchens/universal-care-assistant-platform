@@ -8,7 +8,7 @@
  * another device, goes back to onboarding and says why.
  */
 import { App as CapApp } from '@capacitor/app';
-import { type DeviceConfig, isLang, liveOf, liveSkips } from '@ucap/shared';
+import { type DeviceConfig, isLang, liveOf, liveSkips, messagesOf } from '@ucap/shared';
 import type { Intent } from '@ucap/speech-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChoiceGrid } from './areas/ChoiceGrid.tsx';
@@ -668,6 +668,13 @@ export function App() {
     return () => void opened.then((h) => h.remove());
   }, [session]);
 
+  // Its notification of a new SMS says what the device is set to: what it says, or who wrote alone (the owner,
+  // 2026-10-27). Told as the configuration comes; the SMS process keeps it while the app is closed.
+  const smsText = messagesOf(config).text;
+  useEffect(() => {
+    if (has('Sms')) void Sms.notifyText({ on: smsText }).catch(() => {});
+  }, [smsText]);
+
   // Previews of other apps (K5): as the app starts, the previews process takes what waits for this phone (a push may
   // have been missed) and arms its jobs again (an update of the app cancels them).
   useEffect(() => {
@@ -980,10 +987,13 @@ export function App() {
   }
 
   /**
-   * Messaging events (S10): the screens fetch again; a new message is announced by who sent it (never what it says,
-   * and never from a muted chat); what became of a message sent from this device is said here (C3–C6).
+   * Messaging events (S10): the screens fetch again; a new message is announced by who sent it and what it says, or by
+   * who alone, as the device is set (the owner, 2026-10-27), never from a muted chat; what became of a message sent
+   * from this device is said here (C3–C6).
    */
   const announcedAt = useRef(new Map<string, number>());
+  /** Announcements one after the other, in the order the messages came. */
+  const announcing = useRef<Promise<void>>(Promise.resolve());
   async function messagingNews(type: string, data: Record<string, unknown>) {
     if (!session) return;
     const u = uiRef.current;
@@ -998,15 +1008,20 @@ export function App() {
         u.earcons.play('message');
         return news.arrived();
       }
-      // One announcement per conversation in a burst.
+      // A burst in one conversation: who wrote is said once; what they wrote, each time, the earcon once.
       const conv = String(data.conversationId ?? '');
-      if (Date.now() - (announcedAt.current.get(conv) ?? 0) < 20_000) return;
+      const withText = messagesOf(configRef.current).text;
+      const burst = Date.now() - (announcedAt.current.get(conv) ?? 0) < 20_000;
+      if (burst && !withText) return;
       announcedAt.current.set(conv, Date.now());
-      const m = await session.call<{ from: string; conversation: string; say?: { announce?: string } }>(`/api/v1/messaging/messages/${String(data.messageId)}?lang=${u.lang}`).catch(() => null);
-      if (!m) return;
-      u.earcons.play('message');
-      // With the service once there is more than one ("… auf WhatsApp."), as the server words it.
-      u.say(m.say?.announce ?? u.tr('messages.announce', { name: m.from || m.conversation }), 'notice');
+      const got = session.call<{ from: string; conversation: string; say?: { announce?: string; news?: string } }>(`/api/v1/messaging/messages/${String(data.messageId)}?lang=${u.lang}`).catch(() => null);
+      announcing.current = announcing.current.then(async () => {
+        const m = await got;
+        if (!m) return;
+        if (!burst) u.earcons.play('message');
+        // With the service once there is more than one ("… auf WhatsApp."), as the server words it.
+        u.say((withText ? m.say?.news : undefined) ?? m.say?.announce ?? u.tr('messages.announce', { name: m.from || m.conversation }), 'notice');
+      });
     } else if (type === 'messaging.device.send' && data.deviceId === session.ref.deviceId) {
       // A reply waits for this phone's SMS app or its previews (the native push does the same with the app closed).
       if (data.service === 'notifications') {

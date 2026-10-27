@@ -4,7 +4,8 @@
  */
 import type { Session } from '../identity/account.ts';
 
-export type HandleKind = 'phone' | 'email' | 'telegram' | 'whatsapp';
+/** `preview`: someone in another app's notifications, the app's name as its label (docs/decisions.md, M3, 19). */
+export type HandleKind = 'phone' | 'email' | 'telegram' | 'whatsapp' | 'preview';
 
 export interface ContactHandle {
   kind: HandleKind;

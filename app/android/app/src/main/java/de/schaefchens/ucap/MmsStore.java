@@ -245,6 +245,12 @@ final class MmsStore {
         }
     }
 
+    /** One MMS with its text and whether it has a picture (its notification says them). */
+    static Row one(Context ctx, long id) {
+        List<Row> rows = after(ctx, id - 1, 1);
+        return rows.isEmpty() || rows.get(0).id != id ? null : rows.get(0);
+    }
+
     static long maxId(Context ctx) {
         try (Cursor c = ctx.getContentResolver().query(Telephony.Mms.CONTENT_URI, new String[] {Telephony.Mms._ID}, null, null, Telephony.Mms._ID + " DESC")) {
             return c != null && c.moveToFirst() ? c.getLong(0) : 0;

@@ -38,6 +38,8 @@ export async function postTurn(
     context: CommandContext;
     lang: 'de' | 'en';
     conversation?: string;
+    /** A reply to everyone in an email thread ("Allen antworten"; the owner, 2026-10-27). */
+    all?: boolean;
     /** LIVE mode (docs/plan-m2.md): heard after the name or a touch, or in the open conversation. */
     live?: 'keyword' | 'named' | 'touch' | 'open';
     /** A change made by voice on this device a moment ago: "Rückgängig" is the device's to undo (L5). */
@@ -47,7 +49,7 @@ export async function postTurn(
   onEvent: (e: TurnEvent) => void,
 ): Promise<void> {
   const id = uuidv7(Date.now());
-  const url = `${session.ref.serverUrl}/api/v1/assistant/turns?id=${id}&context=${o.context}&lang=${o.lang}${o.conversation ? `&conversation=${o.conversation}` : ''}${o.live ? `&mode=live&via=${o.live}` : ''}${o.undoHere ? '&undo=device' : ''}${canCall() ? '&calls=1' : ''}`;
+  const url = `${session.ref.serverUrl}/api/v1/assistant/turns?id=${id}&context=${o.context}&lang=${o.lang}${o.conversation ? `&conversation=${o.conversation}${o.all ? '&all=1' : ''}` : ''}${o.live ? `&mode=live&via=${o.live}` : ''}${o.undoHere ? '&undo=device' : ''}${canCall() ? '&calls=1' : ''}`;
   const send = async () =>
     fetch(url, {
       method: 'POST',

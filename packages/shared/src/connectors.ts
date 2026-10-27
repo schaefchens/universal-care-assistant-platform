@@ -23,6 +23,22 @@ export interface MailServer {
   tls: 'tls' | 'starttls';
 }
 
+/**
+ * One of the person's senders on an email account (the owner, 2026-10-27: "the user might have different aliases and
+ * therefore its importan to reply with the correct email and name. we need to configure identities like email apps
+ * have"): the name and address a mail goes out with. An account's first is its default.
+ */
+export interface MailIdentity {
+  name: string;
+  address: string;
+}
+
+/** Someone in an email thread: their address, and the name their mail gave them. */
+export interface MailPerson {
+  address: string;
+  name: string;
+}
+
 /** Where a login code went, and its length: said to the person ("Der Code kam per Telegram"). */
 export interface CodeInfo {
   via: 'telegram' | 'sms' | 'call' | 'other';
@@ -75,6 +91,13 @@ export interface WireChat {
   /** The last message read by the person (incoming) and by the other side (outgoing), as the service has it. */
   readInboxMaxId: string | null;
   readOutboxMaxId: string | null;
+  /**
+   * An email thread's replies (the owner, 2026-10-27: "should have default only sender with option to reply all"):
+   * whom a reply goes to (the newest mail's sender, or its Reply-To; after the person's own mail, whom that went to),
+   * everyone a reply to all goes to, and which of the person's addresses the newest mail came to (a reply goes out from
+   * it, as in a mail program).
+   */
+  mail?: { reply: MailPerson[]; all: MailPerson[]; to: string | null } | null;
 }
 
 export interface WireUser {
@@ -94,8 +117,11 @@ export type ToConnectors =
   | { t: 'start'; id: string; service: 'telegram'; apiId: number; apiHash: string; dbKey: string; testDc: boolean; dir: string; lang: string }
   /** WhatsApp (K2): its key store, sealed with `storeKey`, lives in `dir` on the process's own volume. */
   | { t: 'start'; id: string; service: 'whatsapp'; storeKey: string; dir: string; lang: string }
-  /** Email (K3): one account, its password and servers. */
-  | { t: 'start'; id: string; service: 'email'; address: string; password: string; imap: MailServer; smtp: MailServer; lang: string }
+  /**
+   * Email (K3): one account, its password and servers, and the person's senders on it, the default first. Sent again
+   * when they change: a running account takes them without connecting anew.
+   */
+  | { t: 'start'; id: string; service: 'email'; address: string; password: string; imap: MailServer; smtp: MailServer; lang: string; identities?: MailIdentity[] }
   | { t: 'stop'; id: string }
   | { t: 'login'; id: string; step: 'phone' | 'code' | 'password' | 'qr' | 'resend'; value?: string }
   /** The person disconnected: log out where it is logged in, then delete everything of it (TDLib's database too). */
@@ -103,9 +129,10 @@ export type ToConnectors =
   /**
    * `subject`: an email's, as the person confirmed it. `to`: a new message's address (K6: one of the person's
    * contacts), where there is no conversation yet, and `chatId` is then '': an email address, a number in E.164
-   * (WhatsApp, Telegram), or a Telegram user's id ("user:123").
+   * (WhatsApp, Telegram), or a Telegram user's id ("user:123"). An email's `all`: to everyone in the thread, not its
+   * sender alone; `from`: the sender it goes out as, as the person confirmed it.
    */
-  | { t: 'send'; id: string; requestId: string; chatId: string; text: string; subject?: string; to?: string }
+  | { t: 'send'; id: string; requestId: string; chatId: string; text: string; subject?: string; to?: string; all?: boolean; from?: MailIdentity }
   | { t: 'download'; id: string; requestId: string; fileId: number; dest: string }
   | { t: 'history'; id: string; chatId: string; limit: number }
   | { t: 'mark_read'; id: string; chatId: string; externalIds: string[] };

@@ -44,7 +44,7 @@ export interface VoiceHost {
    * LIVE mode, when it listens: a talk press opens its gate instead of push-to-talk's microphone (one capture at a
    * time; docs/plan-m2.md).
    */
-  live?(): { touch(next?: { context?: 'dictation' | 'reply'; conversation?: string }): void } | null;
+  live?(): { touch(next?: { context?: 'dictation' | 'reply'; conversation?: string; all?: boolean }): void } | null;
   /** A change of speech or the screen was made by voice here a moment ago: "Rückgängig" undoes that, here. */
   undoHere?(): boolean;
 }
@@ -81,12 +81,13 @@ export class VoiceController {
   /** For the next turn only: the words of a new note (the notes screen's "Neue Notiz"), a reply to a conversation. */
   private nextContext: CommandContext | null = null;
   private nextConversation: string | null = null;
+  private nextAll = false;
 
-  /** The talk button or area: start, end the utterance, or abandon an answer and listen again. */
-  talk(o: { context?: CommandContext; conversation?: string } = {}): void {
+  /** The talk button or area: start, end the utterance, or abandon an answer and listen again. `all`: a reply to everyone. */
+  talk(o: { context?: CommandContext; conversation?: string; all?: boolean } = {}): void {
     const live = this.h.live?.();
     if (live) {
-      live.touch(o.context === 'dictation' || o.context === 'reply' ? { context: o.context, conversation: o.conversation } : undefined);
+      live.touch(o.context === 'dictation' || o.context === 'reply' ? { context: o.context, conversation: o.conversation, all: o.all } : undefined);
       return;
     }
     if (this.starting) return;
@@ -97,6 +98,7 @@ export class VoiceController {
     }
     this.nextContext = o.context ?? null;
     this.nextConversation = o.conversation ?? null;
+    this.nextAll = o.all === true;
     void this.listen();
   }
 
@@ -106,7 +108,7 @@ export class VoiceController {
    * room) says nothing, nor do silence and the name alone; voice input being down is said once in five minutes.
    * Resolves with whether it was meant.
    */
-  async liveTurn(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'named' | 'touch' | 'open', next?: { context?: 'dictation' | 'reply'; conversation?: string }): Promise<boolean> {
+  async liveTurn(wav: Uint8Array<ArrayBuffer>, via: 'keyword' | 'named' | 'touch' | 'open', next?: { context?: 'dictation' | 'reply'; conversation?: string; all?: boolean }): Promise<boolean> {
     const session = this.h.session();
     if (!session || ceremony.active) return false;
     if (this.down && Date.now() - this.down < 30_000) return false;
@@ -117,7 +119,8 @@ export class VoiceController {
       // A note's words or a reply only when a touch asked for them; otherwise the screen's own context.
       const screen = currentVoice().context;
       const context = via === 'touch' && next?.context ? next.context : screen === 'dictation' || screen === 'reply' ? 'global' : screen;
-      await postTurn(session, { wav, context, lang: ui.lang, live: via, conversation: context === 'reply' ? next?.conversation : undefined, undoHere: this.h.undoHere?.(), signal: turn.signal }, (e) => {
+      const reply = context === 'reply' ? { conversation: next?.conversation, all: next?.all } : {};
+      await postTurn(session, { wav, context, lang: ui.lang, live: via, ...reply, undoHere: this.h.undoHere?.(), signal: turn.signal }, (e) => {
         if (e.t === 'done') meant = e.addressed !== false;
         if (e.t === 'heard') return;
         if (e.t === 'error' && e.code === 'stt_unavailable') {
@@ -262,9 +265,11 @@ export class VoiceController {
     try {
       const context = this.nextContext ?? currentVoice().context;
       const conversation = this.nextConversation ?? undefined;
+      const all = this.nextAll;
       this.nextContext = null;
       this.nextConversation = null;
-      await postTurn(session, { wav: rec.wav, context, lang: ui.lang, conversation, undoHere: this.h.undoHere?.(), signal: turn.signal }, (e) => this.event(e));
+      this.nextAll = false;
+      await postTurn(session, { wav: rec.wav, context, lang: ui.lang, conversation, all, undoHere: this.h.undoHere?.(), signal: turn.signal }, (e) => this.event(e));
     } catch {
       if (turn.signal.aborted) return;
       this.unavailable();

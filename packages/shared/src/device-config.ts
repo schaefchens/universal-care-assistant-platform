@@ -153,6 +153,16 @@ export const DEFAULT_LIVE: LiveConfig = { enabled: false, quietS: 180, quietTime
 /** The services whose new messages LIVE leaves to the person: not said by themselves (K8). */
 export const liveSkips = (l: LiveConfig): LiveService[] => LIVE_SERVICES.filter((s) => l.say.services?.[s] === false);
 
+/**
+ * How the device tells of a new message (the owner, 2026-10-27: "should say what, in general for all messages. might
+ * add a option for this"): `text`, who wrote and what (an email's subject; a voice message or a photo by what it is;
+ * never a one-time code), in its announcement and in UCAP's SMS notification on the phone; off, who wrote alone.
+ */
+export const MessagesConfig = Type.Object({ text: Type.Boolean() });
+export type MessagesConfig = Type.Static<typeof MessagesConfig>;
+
+export const DEFAULT_MESSAGES: MessagesConfig = { text: true };
+
 export const DeviceConfig = Type.Object({
   v: Type.Literal(1),
   home: Type.String(),
@@ -160,11 +170,15 @@ export const DeviceConfig = Type.Object({
   touch: TouchConfig,
   visual: VisualConfig,
   live: Type.Optional(LiveConfig),
+  messages: Type.Optional(MessagesConfig),
 });
 export type DeviceConfig = Type.Static<typeof DeviceConfig>;
 
 /** A configuration's LIVE part; versions from before M2 have none, and it is off. */
 export const liveOf = (c: DeviceConfig): LiveConfig => c.live ?? DEFAULT_LIVE;
+
+/** How new messages are told; versions from before have none, and they are told with what they say. */
+export const messagesOf = (c: DeviceConfig): MessagesConfig => c.messages ?? DEFAULT_MESSAGES;
 
 function activityScreen(id: string, titleKey: string): ScreenDef {
   return {

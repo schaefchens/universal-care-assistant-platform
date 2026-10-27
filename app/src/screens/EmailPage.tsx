@@ -5,15 +5,17 @@
  * and Microsoft 365 need a sign-in at Microsoft (OAuth2) that UCAP cannot do yet, and the page says so. The first
  * connection checks the account, sending included; what went wrong is said in plain words, with the provider's hint
  * (an app password, IMAP switched on). The password goes to the server once, sealed there, and is never shown again.
- * Several accounts can be connected, each on its own. Helpers get no access to mail through this (CONCEPT §3).
- * Disconnecting asks first and deletes UCAP's copies; the mailbox keeps its own.
+ * Several accounts can be connected, each on its own, with the person's name in their mail and further senders
+ * (EmailSenders). Helpers get no access to mail through this (CONCEPT §3). Disconnecting asks first and deletes UCAP's
+ * copies; the mailbox keeps its own.
  */
 import { MAIL_PROVIDERS, type MailProvider, type MailServer, oauthOnly, providerFor } from '@ucap/shared';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Button, Form, Input, Label, Radio, RadioGroup, TextField } from 'react-aria-components';
+import { Button, Form, Input, Label, Radio, RadioGroup, Text, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
 import { ApiError } from '../net/api.ts';
 import { useUi } from '../ui.tsx';
+import { EmailSenders, type Sender } from './EmailSenders.tsx';
 
 interface Connection {
   id: string;
@@ -22,6 +24,7 @@ interface Connection {
   state: string;
   detail: { error?: string };
   running: boolean;
+  identities?: Sender[];
 }
 
 const KNOWN_ERRORS = ['auth_failed', 'smtp_auth_failed', 'unreachable', 'smtp_unreachable', 'mail_server'];
@@ -44,6 +47,8 @@ export function EmailPage(p: { session: Session; refresh: number; connectionId: 
   const [editing, setEditing] = useState(p.connectionId === null);
   const [address, setAddress] = useState('');
   const [password, setPassword] = useState('');
+  /** The person's name in their mail: the account's first sender. */
+  const [name, setName] = useState('');
   /** '' while the address names its provider; a provider's id, or OTHER for servers typed by hand. */
   const [chosen, setChosen] = useState('');
   const [typed, setTyped] = useState<Typed>(TYPED);
@@ -122,7 +127,8 @@ export function EmailPage(p: { session: Session; refresh: number; connectionId: 
     sending.current = true;
     setStatus('');
     try {
-      const r = await p.session.call<{ connection: Connection }>('/api/v1/messaging/connections', { method: 'POST', body: { service: 'email', address: address.trim(), password, ...servers } });
+      const body = { service: 'email', address: address.trim(), password, ...servers, ...(c ? {} : { name: name.trim() }) };
+      const r = await p.session.call<{ connection: Connection }>('/api/v1/messaging/connections', { method: 'POST', body });
       setPassword('');
       setEditing(false);
       told.current = '';
@@ -252,6 +258,13 @@ export function EmailPage(p: { session: Session; refresh: number; connectionId: 
           )}
           {!microsoft && (
             <>
+              {c === null && (
+                <TextField value={name} onChange={setName} className="field" autoComplete="name" maxLength={100}>
+                  <Label>{tr('email.name')}</Label>
+                  <Input />
+                  <Text slot="description">{tr('email.senders.name.hint')}</Text>
+                </TextField>
+              )}
               <TextField value={password} onChange={setPassword} className="field" autoComplete="current-password">
                 <Label>{tr(provider?.appPassword ? 'email.password.app' : 'email.password')}</Label>
                 <Input type="password" spellCheck={false} autoCorrect="off" autoCapitalize="off" />
@@ -264,6 +277,8 @@ export function EmailPage(p: { session: Session; refresh: number; connectionId: 
           )}
         </Form>
       )}
+
+      {c && !editing && <EmailSenders session={p.session} connectionId={c.id} senders={c.identities ?? [{ name: '', address: c.account }]} onChanged={(identities) => setC({ ...c, identities })} />}
 
       {c && !editing && ['closed', 'error', 'logged_out'].includes(c.state) && (
         <Button className="button primary" onPress={again}>

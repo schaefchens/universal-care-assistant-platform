@@ -19,7 +19,23 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type AddressForm, type DeviceEvent, type DeviceSend, type FromConnectors, type Lang, type MailServer, quoteHeader, type ServerService, t, type ToConnectors, uuidv7, type WireFile } from '@ucap/shared';
+import {
+  type AddressForm,
+  type DeviceEvent,
+  type DeviceSend,
+  type FromConnectors,
+  type Lang,
+  type MailIdentity,
+  type MailPerson,
+  type MailServer,
+  quoteHeader,
+  type ServerService,
+  t,
+  type ToConnectors,
+  uuidv7,
+  type WireChat,
+  type WireFile,
+} from '@ucap/shared';
 import { judgeTranscript } from '@ucap/speech-text';
 import { sql } from 'kysely';
 import { parsePhoneNumberFromString } from 'libphonenumber-js/max';
@@ -65,6 +81,12 @@ const WHATSAPP_POLICY = 'whatsapp_policy';
 const PAIRING_LIMIT = { windowS: 3600, max: 5 };
 const EMAIL_TRIES = { windowS: 3600, max: 10 };
 const MAX_EMAIL_ACCOUNTS = 10;
+/** An email account's senders at most (the owner, 2026-10-27: "identities like email apps have"). */
+const MAX_IDENTITIES = 10;
+/** One address, as a sender: nothing that could add another or a header. */
+const MAIL_ADDRESS = /^[^\s@<>,;:"()[\]\\]+@[^\s@<>,;:"()[\]\\]+\.[^\s@<>,;:"()[\]\\]+$/;
+/** A sender's name as it goes into a mail's From: one line, at most 100 characters. */
+const cleanName = (name: string) => name.replace(/\s+/g, ' ').trim().slice(0, 100);
 /** The states in which a server-side connection runs, or should: started again when its process comes back. */
 const LIVE_STATES = ['starting', 'wait_phone', 'wait_code', 'wait_password', 'wait_qr', 'wait_pairing', 'ready'];
 
@@ -97,6 +119,8 @@ export interface ConnectionView {
   historySince: string | null;
   /** What runs it is there: the service's connectors process, or the phone (not signed out). */
   running: boolean;
+  /** An email account's senders, the default first (the owner, 2026-10-27: "identities like email apps have"). */
+  identities?: MailIdentity[];
 }
 
 export interface Item {
@@ -131,6 +155,8 @@ export interface Item {
   code: boolean;
   /** Who sent it is in the person's contacts, or known to the service (the stranger warning's rule, Appendix E). */
   known: boolean;
+  /** An email thread's: whom a reply goes to, and everyone a reply to all goes to, by name (the owner, 2026-10-27). */
+  reply: { to: string[]; all: string[] } | null;
 }
 
 interface ConnRow {
@@ -149,8 +175,10 @@ interface ConnRow {
   created_at: Date;
   /** The phone that runs it was signed out (it never reports again). */
   device_revoked: boolean | null;
+  /** An email account's senders, the default first. */
+  identities: MailIdentity[] | null;
 }
-const COLS = sql`id, user_id, service, account, device_id, label, state, detail, me_name, secret_sealed, test_dc, capabilities, created_at,
+const COLS = sql`id, user_id, service, account, device_id, label, state, detail, me_name, secret_sealed, test_dc, capabilities, created_at, identities,
   (select v.revoked_at is not null from devices v where v.id = messaging_connections.device_id) as device_revoked`;
 
 /** What a person asks to connect (on their own device). */
@@ -158,7 +186,8 @@ export type ConnectInput =
   | { service: 'telegram' }
   /** The person heard WhatsApp's risk and agreed (docs/plan-m3.md, K2). */
   | { service: 'whatsapp'; acceptedRisk: true }
-  | { service: 'email'; address: string; password: string; imap: MailServer; smtp: MailServer }
+  /** `name`: the person's name in their mail, for the account's first sender. */
+  | { service: 'email'; address: string; password: string; imap: MailServer; smtp: MailServer; name?: string }
   /** UCAP became the SMS app of the phone that asks (K4). */
   | { service: 'sms' }
   /** Previews of one app's notifications on the phone that asks (K5). */
@@ -273,8 +302,21 @@ export function createMessaging(d: {
       capabilities,
       historySince: capabilities.history === 'since' ? new Date(c.created_at.getTime() - HISTORY_DAYS * 86_400_000).toISOString() : null,
       running: running(c),
+      ...(c.service === 'email' ? { identities: identitiesOf(c) } : {}),
     };
   };
+
+  /** Names for people in an email thread: the person's contact's, else the one their mail gave, else the address. */
+  async function mailNamer(userId: string, addresses: string[]): Promise<(p: MailPerson) => string> {
+    const r = addresses.length
+      ? await sql<{ value: string; name: string }>`
+          select distinct on (h.value) h.value, c.name from contact_handles h join contacts c on c.id = h.contact_id
+          where h.person_id = ${userId} and h.kind = 'email' and c.deleted_at is null and h.value = any(${addresses}::text[])
+          order by h.value, c.created_at, c.id`.execute(d.db)
+      : { rows: [] };
+    const names = new Map(r.rows.map((x) => [x.value, x.name]));
+    return (p) => names.get(p.address) ?? (p.name || p.address);
+  }
 
   async function notify(userId: string, kind: string, payload: Record<string, unknown>) {
     await emit(d.db, { kind, recipients: [userId], payload });
@@ -302,7 +344,7 @@ export function createMessaging(d: {
       return h.send('whatsapp', { t: 'start', id: c.id, service: 'whatsapp', storeKey: secret, dir: c.id, lang });
     }
     const e = JSON.parse(secret) as { password: string; imap: MailServer; smtp: MailServer };
-    return h.send('email', { t: 'start', id: c.id, service: 'email', address: c.account, password: e.password, imap: e.imap, smtp: e.smtp, lang });
+    return h.send('email', { t: 'start', id: c.id, service: 'email', address: c.account, password: e.password, imap: e.imap, smtp: e.smtp, lang, identities: identitiesOf(c) });
   }
 
   async function setState(c: ConnRow, state: string, detail: ConnectionView['detail'], me?: { externalId: string; name: string }) {
@@ -330,8 +372,21 @@ export function createMessaging(d: {
   // —— Sending ——————————————————————————————————————————————————————————————————————————————————————————————————————
 
   async function attempt(outboundId: string): Promise<SendOutcome> {
-    const r = await sql<{ connection_id: string; chat: string | null; to_address: string | null; text: string; subject: string | null; state: string; conn_state: string; service: Service; user_id: string; device_id: string | null }>`
-      select o.connection_id, v.external_id as chat, o.to_address, o.text, o.subject, o.state, k.state as conn_state, k.service, k.user_id, k.device_id
+    const r = await sql<{
+      connection_id: string;
+      chat: string | null;
+      to_address: string | null;
+      text: string;
+      subject: string | null;
+      reply_all: boolean;
+      sender: MailIdentity | null;
+      state: string;
+      conn_state: string;
+      service: Service;
+      user_id: string;
+      device_id: string | null;
+    }>`
+      select o.connection_id, v.external_id as chat, o.to_address, o.text, o.subject, o.reply_all, o.sender, o.state, k.state as conn_state, k.service, k.user_id, k.device_id
       from messaging_outbound o left join messaging_conversations v on v.id = o.conversation_id join messaging_connections k on k.id = o.connection_id
       where o.id = ${outboundId}`.execute(d.db);
     const o = r.rows[0];
@@ -353,7 +408,9 @@ export function createMessaging(d: {
     if (!taken.rows.length) return 'queued';
     // A new message (K6) has no conversation yet: it goes to its address.
     const where = o.chat !== null ? { chatId: o.chat } : { chatId: '', to: o.to_address ?? '' };
-    if (h.send(o.service, { t: 'send', id: o.connection_id, requestId: outboundId, ...where, text: o.text, ...(o.subject ? { subject: o.subject } : {}) })) return 'attempting';
+    // An email: to everyone in the thread or its sender alone, as the sender the person confirmed (the owner, 2026-10-27).
+    const mail = { ...(o.reply_all ? { all: true } : {}), ...(o.sender ? { from: o.sender } : {}) };
+    if (h.send(o.service, { t: 'send', id: o.connection_id, requestId: outboundId, ...where, text: o.text, ...(o.subject ? { subject: o.subject } : {}), ...mail })) return 'attempting';
     // Not handed over (the socket closed just now): still waiting, nothing went out.
     await sql`update messaging_outbound set state = 'queued', attempted_at = null, updated_at = ${now()} where id = ${outboundId} and state = 'attempting'`.execute(d.db);
     return 'queued';
@@ -601,10 +658,11 @@ export function createMessaging(d: {
       label: string | null;
       one_time_code: boolean;
       known: boolean;
+      mail: WireChat['mail'];
     }>`
       select m.id, m.conversation_id, v.connection_id, ${TITLE} as title, v.kind as ckind, m.sender_external_id, coalesce(p.contact_name, p.name) as sender_name, m.direction, m.sent_at,
         m.kind, m.text, m.file_name, m.subject, m.quoted, m.delivered_at, a.duration_s, a.file_id, a.transcript, a.transcript_state, m.read_at, m.heard_at, k.service, k.label,
-        m.one_time_code, (p.contact_id is not null or coalesce(p.is_contact, false)) as known
+        m.one_time_code, (p.contact_id is not null or coalesce(p.is_contact, false)) as known, v.mail
       from messaging_messages m
       join messaging_conversations v on v.id = m.conversation_id
       join messaging_connections k on k.id = v.connection_id
@@ -612,6 +670,7 @@ export function createMessaging(d: {
       left join messaging_attachments a on a.message_id = m.id
       where k.user_id = ${userId} and ${where}
       order by ${order} limit ${limit}`.execute(d.db);
+    const name = await mailNamer(userId, [...new Set(r.rows.flatMap((x) => (x.mail ? [...x.mail.reply, ...x.mail.all].map((p) => p.address) : [])))]);
     return r.rows.map((x) => ({
       id: x.id,
       conversationId: x.conversation_id,
@@ -636,6 +695,7 @@ export function createMessaging(d: {
       delivered: x.direction === 'out' && x.delivered_at !== null,
       code: x.one_time_code,
       known: x.known,
+      reply: x.mail ? { to: (x.mail.reply.length ? x.mail.reply : x.mail.all).map(name), all: x.mail.all.map(name) } : null,
     }));
   }
 
@@ -693,6 +753,63 @@ export function createMessaging(d: {
     async offered(): Promise<Record<Service, boolean>> {
       return { telegram: (await telegramApi()) !== null, whatsapp: await whatsappAllowed(), email: true, sms: true, notifications: true };
     },
+    /**
+     * An email account's senders (the owner, 2026-10-27: "the user might have different aliases and therefore its
+     * importan to reply with the correct email and name. we need to configure identities like email apps have"): a name
+     * and an address each, the default first; one to ten, each address once. The person's own, on their own account.
+     * Its process takes them without connecting anew; an account in error has them at its next start (a refused login
+     * is never tried again by itself).
+     */
+    async setIdentities(userId: string, connectionId: string, list: MailIdentity[]): Promise<ConnectionView> {
+      const c = await connRow({ id: connectionId });
+      if (!c || c.user_id !== userId || c.service !== 'email') throw new AppError('not_found');
+      const out: MailIdentity[] = [];
+      for (const x of list) {
+        const address = x.address.trim().toLowerCase();
+        if (!MAIL_ADDRESS.test(address) || address.length > 254) throw new AppError('bad_request', { params: { reason: 'address', value: x.address.slice(0, 60) } });
+        if (!out.some((y) => y.address === address)) out.push({ name: cleanName(x.name), address });
+      }
+      if (!out.length || out.length > MAX_IDENTITIES) throw new AppError('bad_request', { params: { reason: 'identities' } });
+      await sql`update messaging_connections set identities = ${JSON.stringify(out)}::jsonb, updated_at = ${now()} where id = ${c.id}`.execute(d.db);
+      const fresh = (await connRow({ id: c.id }))!;
+      if (fresh.state === 'ready' || fresh.state === 'starting') await start(fresh);
+      await notify(userId, 'messaging.connection', { connectionId: c.id, state: fresh.state });
+      return view(fresh, (await langOf(userId)).lang);
+    },
+
+    /**
+     * An email's recipients and sender, for C1 (the owner, 2026-10-27): a reply goes to the sender of the thread's newest
+     * mail, or (`all`) to everyone in it, named as the person knows them; it goes out as the sender the person named,
+     * else the one the newest mail came to, else the account's default. A name that fits none or several of the
+     * person's senders: `senders`, their addresses, to ask which.
+     */
+    async emailReply(
+      userId: string,
+      o: { conversationId: string | null; connectionId: string | null; all: boolean; from: string | null },
+    ): Promise<{ to: string[] | null; sender: MailIdentity; several: boolean } | { senders: string[] } | null> {
+      const r = await sql<{ account: string; identities: MailIdentity[] | null; mail: WireChat['mail'] }>`
+        select k.account, k.identities, v.mail from messaging_connections k
+        left join messaging_conversations v on v.id = ${o.conversationId}::uuid and v.connection_id = k.id
+        where k.user_id = ${userId} and k.service = 'email'
+          and k.id = coalesce(${o.connectionId}::uuid, (select connection_id from messaging_conversations where id = ${o.conversationId}::uuid))`.execute(d.db);
+      const x = r.rows[0];
+      if (!x) return null;
+      const senders = identitiesOf(x);
+      let sender: MailIdentity | undefined;
+      const said = o.from?.trim() ?? '';
+      if (said) {
+        const n = fold(said);
+        const fits = (s: MailIdentity) => s.address === said.toLowerCase() || (n.length > 1 && (` ${fold(s.address)} `.includes(` ${n} `) || (s.name !== '' && ` ${fold(s.name)} `.includes(` ${n} `))));
+        const fit = senders.filter(fits);
+        if (fit.length !== 1) return { senders: senders.map((s) => s.address) };
+        sender = fit[0];
+      }
+      sender ??= senders.find((s) => s.address === x.mail?.to) ?? senders[0]!;
+      const people = x.mail ? (o.all ? x.mail.all : x.mail.reply.length ? x.mail.reply : x.mail.all) : null;
+      const name = await mailNamer(userId, (people ?? []).map((p) => p.address));
+      return { to: people?.length ? people.map(name) : null, sender, several: senders.length > 1 };
+    },
+
     async connection(userId: string, connectionId: string): Promise<ConnectionView | null> {
       const c = await connRow({ id: connectionId });
       return c && c.user_id === userId ? view(c, (await langOf(userId)).lang) : null;
@@ -724,6 +841,9 @@ export function createMessaging(d: {
         await checkLimit(d.db, d.clock, tries);
         await countFailure(d.db, d.clock, tries);
         made = await create(userId, 'email', { account: address, secret: JSON.stringify({ password: input.password, imap: input.imap, smtp: input.smtp }), state: 'starting' });
+        // Its first sender: the address, with the name the person gave for their mail (none: the address alone).
+        if (made.created)
+          await sql`update messaging_connections set identities = ${JSON.stringify([{ name: cleanName(input.name ?? ''), address }])}::jsonb where id = ${made.c.id}`.execute(d.db);
         // Connecting again (a new password, other servers): the new ones count.
         if (!made.created)
           await sql`update messaging_connections set secret_sealed = ${d.sealer.seal(JSON.stringify({ password: input.password, imap: input.imap, smtp: input.smtp }), keyContext(made.c.id))} where id = ${made.c.id}`.execute(d.db);
@@ -1051,27 +1171,54 @@ export function createMessaging(d: {
     frame,
     /**
      * How the messages screen says an item: UCAP's frame, then the original (a caption introduced as one). A voice
-     * message's original is its recording, played after the frame.
+     * message's original is its recording, played after the frame. How a new one is announced: by who wrote
+     * (`announce`), or by who and what (`news`, for a device set so; the owner, 2026-10-27: "should say what, in general
+     * for all messages"), worded as LIVE says it: a short text word for word, a longer one by how it begins, an email by
+     * its subject, a voice message or a photo by what it is, a one-time code never (K8).
      */
-    async spoken(userId: string, list: Item[], lang?: Lang): Promise<(Item & { say: { frame: string; text: string; announce: string; quote?: string } })[]> {
+    async spoken(userId: string, list: Item[], lang?: Lang): Promise<(Item & { say: { frame: string; text: string; announce: string; news: string; quote?: string } })[]> {
       const p = await langOf(userId);
       const L = lang ?? p.lang;
+      const tr = (key: string, params: Record<string, string | number> = {}) => t(L, key, params, p.form);
       // "Neue Nachricht von Anna auf WhatsApp.": the service named once the person has more than one.
       const several = (await servicesOf(userId)).length > 1;
       return list.map((i) => {
         const f = frame(L, p.form, p.timezone, i);
-        const text = i.kind === 'voice' || !i.text ? '' : CAPTIONED.has(i.kind) ? `${t(L, 'messages.frame.caption', {}, p.form)} ${i.text}` : i.text;
+        const text = i.kind === 'voice' || !i.text ? '' : CAPTIONED.has(i.kind) ? `${tr('messages.frame.caption')} ${i.text}` : i.text;
         const name = i.from || i.conversation;
+        const app = serviceName(i.service, i.label, L);
         // A preview says it is one (K5: "everywhere „Vorschau“"), with the app it came from.
         const announce =
           i.service === 'notifications'
-            ? t(L, 'messages.announce.preview', { name, service: serviceName(i.service, i.label, L) }, p.form)
+            ? tr('messages.announce.preview', { name, service: app })
             : several
-              ? t(L, 'messages.announce.via', { name, via: via(L, i.service, i.label) }, p.form)
-              : t(L, 'messages.announce', { name }, p.form);
+              ? tr('messages.announce.via', { name, via: via(L, i.service, i.label) })
+              : tr('messages.announce', { name });
+        const where = i.group && i.service !== 'email' ? tr('messages.frame.in', { conversation: i.conversation }) : '';
+        // The service as LIVE names it: not again after a sender named so ("Telegram hat einen Code geschickt.").
+        const on = several && i.service !== 'notifications' && fold(name) !== fold(app) ? ` ${via(L, i.service, i.label)}` : '';
+        const pre = i.service === 'notifications' ? `${tr('messages.frame.preview', { service: app })} ` : '';
+        const media = MEDIA_NEWS[i.kind] ?? (i.kind === 'other' ? 'other' : null);
+        const said = (b: { text: string; whole: boolean }) =>
+          i.service === 'notifications'
+            ? tr(b.whole ? 'messages.announce.preview.text' : 'messages.announce.preview.begins', { service: app, name, where, text: b.text })
+            : tr(b.whole ? 'messages.announce.text' : 'messages.announce.begins', { name, where, via: on, text: b.text });
+        // Each begins as news ("Neue …"), as the announcement by who alone does.
+        const code = i.service === 'notifications' ? tr('messages.announce.preview.code', { service: app, name, where }) : tr('messages.announce.code', { name, where, via: on });
+        const news = i.code
+          ? `${code} ${tr('live.news.codeAsk')}`
+          : i.service === 'email'
+            ? tr(i.subject?.trim() ? 'messages.announce.email' : 'messages.announce.email.noSubject', { name, subject: beginning(i.subject ?? '').text })
+            : i.kind === 'text' && i.text.trim()
+              ? said(beginning(i.text))
+              : i.kind === 'voice'
+                ? `${pre}${tr('messages.announce.voice', { name, where, via: on, seconds: i.durationS ?? 0 })}`
+                : media
+                  ? `${pre}${tr(`messages.announce.media.${media}`, { name, where, via: on })}${CAPTIONED.has(i.kind) && i.text.trim() ? ` ${tr('messages.announce.caption', { text: beginning(i.text).text })}` : ''}`
+                  : announce;
         // An email's quoted part is named by its first line, after the new text: "Darunter zitiert: Am Montag schrieb Anna."
-        const quote = i.quoted && quoteHeader(i.quoted) ? t(L, 'messages.frame.quoted', { header: quoteHeader(i.quoted) }, p.form) : null;
-        return { ...i, say: { frame: f, text, announce, ...(quote ? { quote } : {}) } };
+        const quote = i.quoted && quoteHeader(i.quoted) ? tr('messages.frame.quoted', { header: quoteHeader(i.quoted) }) : null;
+        return { ...i, say: { frame: f, text, announce, news, ...(quote ? { quote } : {}) } };
       });
     },
 
@@ -1219,19 +1366,24 @@ export function createMessaging(d: {
       to?: { connectionId: string; address: string; recipient: string; contactId?: string | null } | null;
       text: string;
       subject?: string | null;
+      /** An email's (the owner, 2026-10-27): to everyone in the thread, its recipients as C1 named them, its sender. */
+      all?: boolean;
+      recipient?: string | null;
+      sender?: MailIdentity | null;
     }): Promise<SendOutcome> {
       const id = uuidv7(d.clock());
+      const mail = { all: o.all === true, sender: o.sender ? JSON.stringify(o.sender) : null };
       const r = o.conversationId
         ? await sql<{ id: string }>`
-            insert into messaging_outbound (id, connection_id, conversation_id, user_id, action_id, device_id, text, subject, state, created_at, updated_at)
-            select ${id}, v.connection_id, v.id, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, 'queued', ${now()}, ${now()}
+            insert into messaging_outbound (id, connection_id, conversation_id, recipient, user_id, action_id, device_id, text, subject, reply_all, sender, state, created_at, updated_at)
+            select ${id}, v.connection_id, v.id, ${o.recipient ?? null}, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, ${mail.all}, ${mail.sender}::jsonb, 'queued', ${now()}, ${now()}
             from messaging_conversations v join messaging_connections k on k.id = v.connection_id where v.id = ${o.conversationId} and k.user_id = ${o.userId}
             on conflict (action_id) do nothing returning id`.execute(d.db)
         : o.to
           ? // Only to a number or address the person keeps with a contact.
             await sql<{ id: string }>`
-            insert into messaging_outbound (id, connection_id, conversation_id, to_address, recipient, contact_id, user_id, action_id, device_id, text, subject, state, created_at, updated_at)
-            select ${id}, k.id, null, ${o.to.address}, ${o.to.recipient}, m.contact_id, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, 'queued', ${now()}, ${now()}
+            insert into messaging_outbound (id, connection_id, conversation_id, to_address, recipient, contact_id, user_id, action_id, device_id, text, subject, sender, state, created_at, updated_at)
+            select ${id}, k.id, null, ${o.to.address}, ${o.to.recipient}, m.contact_id, ${o.userId}, ${o.actionId}, ${o.deviceId}, ${o.text}, ${o.subject ?? null}, ${mail.sender}::jsonb, 'queued', ${now()}, ${now()}
             from messaging_connections k
             join lateral (
               select h.contact_id from contact_handles h join contacts c on c.id = h.contact_id
@@ -1308,16 +1460,17 @@ export function createMessaging(d: {
     /**
      * Suggestions for the person (K6; plan-m3.md: "other matches are suggested to the person … never merged by name
      * alone"): someone they write with privately who is no contact by number, address or id, whose name fits one ("Anna
-     * Beispiel" on Telegram, "Anna" among the contacts). Drawn from conversations, so the person's own only: a helper
-     * who keeps their contacts never sees them.
+     * Beispiel" on Telegram, "Anna" among the contacts). Someone in another app's notifications too ("Anna auf Signal";
+     * the owner, 2026-10-27, To confirm 19): a notification has nothing else to know them by. Drawn from conversations,
+     * so the person's own only: a helper who keeps their contacts never sees them.
      */
     async contactSuggestions(userId: string, lang?: Lang) {
       const L = lang ?? (await langOf(userId)).lang;
-      const people = await sql<{ connection_id: string; external_id: string; name: string; service: Service; label: string | null; address: string | null }>`
-        select distinct p.connection_id, p.external_id, p.name, k.service, k.label, p.address
+      const people = await sql<{ connection_id: string; external_id: string; name: string; service: Service; account: string; label: string | null; address: string | null }>`
+        select distinct p.connection_id, p.external_id, p.name, k.service, k.account, k.label, p.address
         from messaging_conversations v join messaging_connections k on k.id = v.connection_id
         join messaging_people p on p.connection_id = k.id and p.external_id = v.peer_external_id
-        where k.user_id = ${userId} and v.kind = 'private' and p.contact_id is null and not p.is_bot and k.service <> 'notifications'
+        where k.user_id = ${userId} and v.kind = 'private' and p.contact_id is null and not p.is_bot
           and v.peer_external_id is distinct from k.me_external_id`.execute(d.db);
       const contacts = await sql<{ id: string; name: string }>`select id, name from contacts where person_id = ${userId} and deleted_at is null`.execute(d.db);
       const no = await sql<{ connection_id: string; external_id: string; contact_id: string }>`
@@ -1333,10 +1486,13 @@ export function createMessaging(d: {
       return { suggestions: out.slice(0, 20) };
     },
 
-    /** "Ja, dieselbe Person": the way to reach them becomes the contact's (their Telegram id, address or number). */
+    /**
+     * "Ja, dieselbe Person": the way to reach them becomes the contact's (their Telegram id, address or number; for a
+     * sender in an app's notifications, the app and their id there).
+     */
     async acceptSuggestion(userId: string, o: { connectionId: string; externalId: string; contactId: string }) {
-      const r = await sql<{ connection_id: string; external_id: string; service: Service; address: string | null }>`
-        select p.connection_id, p.external_id, k.service, p.address from messaging_participants p join messaging_connections k on k.id = p.connection_id
+      const r = await sql<{ connection_id: string; external_id: string; service: Service; account: string; label: string | null; address: string | null }>`
+        select p.connection_id, p.external_id, k.service, k.account, k.label, p.address from messaging_participants p join messaging_connections k on k.id = p.connection_id
         where p.connection_id = ${o.connectionId} and p.external_id = ${o.externalId} and k.user_id = ${userId}`.execute(d.db);
       const h = r.rows[0] && handleOf(r.rows[0]);
       if (!h || !d.contacts) throw new AppError('not_found');
@@ -1364,14 +1520,16 @@ export function createMessaging(d: {
       const p = await langOf(userId);
       const L = lang ?? p.lang;
       const service = serviceName(o.service, o.label, L);
-      const reason = o.state === 'bounced' ? `messages.bounce.${bounceKey(o.error)}` : `messages.reason.${reasonKey(o.error, o.service)}`;
-      const params = { recipient: o.title, service, reason: t(L, reason, { service }, p.form) };
+      // A mail that came back: that it could not be delivered, and why where the report says (the owner, 2026-10-27).
+      const bounce = o.state === 'bounced' ? bounceKey(o.error) : null;
+      const reason = o.state === 'bounced' ? (bounce ? `messages.bounce.${bounce}` : null) : `messages.reason.${reasonKey(o.error, o.service)}`;
+      const params = { recipient: o.title, service, reason: reason ? t(L, reason, { service }, p.form) : '' };
       const last = o.told.at(-1);
       const key = o.state === 'sent' ? 'C3' : o.state === 'failed' ? 'C4' : o.state === 'uncertain' ? 'C6' : o.state === 'bounced' ? 'C13' : last === 'C5' ? 'C5' : null;
       // "Slow" says what the service has not done yet: confirmed it, accepted it (a mail server), sent it (the phone), shown it (another app).
       const sent = CAPABILITIES[o.service].sent;
       // Not sent, and nowhere to keep a draft (neither a conversation nor a contact): C4 without the draft.
-      const variant = key === 'C5' && sent !== 'service' ? `C5.${sent}` : key === 'C4' && o.nowhere ? 'C4.noDraft' : key;
+      const variant = key === 'C5' && sent !== 'service' ? `C5.${sent}` : key === 'C4' && o.nowhere ? 'C4.noDraft' : key === 'C13' && !bounce ? 'C13.other' : key;
       return { state: o.state, told: o.told, say: variant ? t(L, `messages.${variant}`, params, p.form) : null };
     },
 
@@ -1459,9 +1617,13 @@ export function fold(s: string): string {
 }
 
 /** How a service is named in a frame: "auf Telegram", "per E-Mail", "per SMS", "auf Signal". */
-/** How a participant can be kept with a contact: a Telegram user's id, else their address (a number, an email address). */
-function handleOf(p: { service: Service; external_id: string; address: string | null }): HandleInput | null {
+/**
+ * How a participant can be kept with a contact: a Telegram user's id; a sender in an app's notifications by the app and
+ * their id there, named by the app; else their address (a number, an email address).
+ */
+function handleOf(p: { service: Service; external_id: string; account?: string; label?: string | null; address: string | null }): HandleInput | null {
   if (p.service === 'telegram') return /^user:\d{1,20}$/.test(p.external_id) ? { kind: 'telegram', value: p.external_id.slice(5) } : null;
+  if (p.service === 'notifications') return p.account && /^p[0-9a-f]{24}$/.test(p.external_id) ? { kind: 'preview', value: `${p.account}:${p.external_id}`, label: p.label } : null;
   if (!p.address) return null;
   return p.address.includes('@') ? { kind: 'email', value: p.address } : { kind: 'phone', value: p.address };
 }
@@ -1511,6 +1673,24 @@ export function via(lang: Lang, service: Service, label: string | null): string 
 /** Media whose frame ends with a full stop: their text is a caption, introduced as one. */
 export const CAPTIONED = new Set(['photo', 'document', 'video', 'video_note']);
 
+/** What LIVE and an announcement call a message that is no text: "Anna hat ein Foto geschickt." */
+export const MEDIA_NEWS: Record<string, string> = { photo: 'photo', document: 'document', video: 'video', video_note: 'videoNote', audio: 'audio', sticker: 'sticker' };
+
+/** A message's words in an announcement: this long at most, else how it begins, cut at a word. */
+const NEWS_TEXT = 160;
+const NEWS_BEGINNING = 120;
+
+/** How a message begins, for an announcement: all of it when short and one paragraph, else its first part. */
+export function beginning(text: string): { text: string; whole: boolean } {
+  const all = text.trim();
+  if (all.length <= NEWS_TEXT && !all.includes('\n')) return { text: all, whole: true };
+  const first = all.split('\n').map((x) => x.trim()).find(Boolean) ?? '';
+  if (first.length <= NEWS_TEXT) return { text: first, whole: false };
+  const cut = first.slice(0, NEWS_BEGINNING);
+  const at = cut.lastIndexOf(' ');
+  return { text: (at >= NEWS_BEGINNING / 2 ? cut.slice(0, at) : cut).replace(/[\s,;:\u2013-]+$/u, ''), whole: false };
+}
+
 function frameKind(kind: string): string {
   return ['voice', 'photo', 'document', 'video_note', 'video', 'audio', 'sticker', 'service'].includes(kind) ? kind : 'text';
 }
@@ -1521,6 +1701,8 @@ function reasonKey(error: string | null, service: Service): string {
     if (error === 'offline') return 'mail.offline';
     if (error === 'auth') return 'mail.auth';
     if (error === 'no_recipient') return 'mail.noRecipient';
+    // 553: a sender the server does not let this account use (an alias not set up at the provider).
+    if (error === 'smtp_553') return 'mail.sender';
     if (/^smtp_5\d\d$/.test(error ?? '')) return 'mail.refused';
     return 'mail.service';
   }
@@ -1554,12 +1736,17 @@ function reasonKey(error: string | null, service: Service): string {
  * Why a sent email came back, from its report's status (RFC 3463): the address (5.1.x), a full mailbox (x.2.2), a
  * refusal (5.7.x), or not said.
  */
-function bounceKey(error: string | null): string {
+/** An email account's senders, the default first: those the person set, else its address alone. */
+export function identitiesOf(c: { account: string; identities: MailIdentity[] | null }): MailIdentity[] {
+  return c.identities?.length ? c.identities : [{ name: '', address: c.account }];
+}
+
+function bounceKey(error: string | null): string | null {
   const s = /^bounce_\d\.(\d{1,3})\.(\d{1,3})$/.exec(error ?? '');
   if (s?.[1] === '1') return 'address';
   if (s?.[1] === '2' && s[2] === '2') return 'full';
   if (s?.[1] === '7') return 'refused';
-  return 'other';
+  return null;
 }
 
 /** "heute um 14:02", "gestern um 18:00", "am Montag, 12. Oktober, um 9:15", where the person is. */

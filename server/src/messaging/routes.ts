@@ -41,6 +41,8 @@ const ConnectBody = Type.Object(
     acceptedRisk: Type.Optional(Type.Literal(true)),
     address: Type.Optional(Type.String({ maxLength: 254, pattern: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$' })),
     password: Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })),
+    /** Email: the person's name in their mail (the account's first sender), or none. */
+    name: Type.Optional(Type.String({ maxLength: 100 })),
     imap: Type.Optional(MailServerBody),
     smtp: Type.Optional(MailServerBody),
     app: Type.Optional(
@@ -49,7 +51,7 @@ const ConnectBody = Type.Object(
   },
   { additionalProperties: false },
 );
-type ConnectBody = { service: ConnectInput['service']; acceptedRisk?: true; address?: string; password?: string; imap?: MailServer; smtp?: MailServer; app?: { package: string; name: string } };
+type ConnectBody = { service: ConnectInput['service']; acceptedRisk?: true; address?: string; password?: string; name?: string; imap?: MailServer; smtp?: MailServer; app?: { package: string; name: string } };
 
 /** What a service needs to connect, or a refusal naming what is missing. */
 function connectInput(b: ConnectBody): ConnectInput {
@@ -61,7 +63,7 @@ function connectInput(b: ConnectBody): ConnectInput {
     case 'email':
       if (!b.address || !b.password || !b.imap || !b.smtp) throw missing('mail_account');
       if (!publicHost(b.imap.host) || !publicHost(b.smtp.host)) throw missing('mail_server');
-      return { service: 'email', address: b.address, password: b.password, imap: b.imap, smtp: b.smtp };
+      return { service: 'email', address: b.address, password: b.password, imap: b.imap, smtp: b.smtp, ...(b.name !== undefined ? { name: b.name } : {}) };
     case 'notifications':
       if (!b.app) throw missing('app');
       return { service: 'notifications', app: b.app };
@@ -124,6 +126,28 @@ export function registerMessagingRoutes(
     },
   );
   app.delete('/api/v1/messaging/connections/:id', { preHandler: requireAuth, schema: { params: Id } }, async (req) => m.disconnect(auth(req).userId, (req.params as { id: string }).id));
+  // An email account's senders, the default first (the owner, 2026-10-27: "identities like email apps have").
+  app.put(
+    '/api/v1/messaging/connections/:id/identities',
+    {
+      preHandler: requireAuth,
+      schema: {
+        params: Id,
+        body: Type.Object(
+          {
+            identities: Type.Array(Type.Object({ name: Type.String({ maxLength: 100 }), address: Type.String({ minLength: 3, maxLength: 254 }) }, { additionalProperties: false }), {
+              minItems: 1,
+              maxItems: 10,
+            }),
+          },
+          { additionalProperties: false },
+        ),
+      },
+    },
+    async (req) => ({
+      connection: await m.setIdentities(auth(req).userId, (req.params as { id: string }).id, (req.body as { identities: { name: string; address: string }[] }).identities),
+    }),
+  );
 
   // —— A phone's own connections (SMS, previews): signed by the phone, so its native code reports with the app closed ——
   // Events go as loose objects and are checked one by one (device.ts).

@@ -107,10 +107,15 @@ on the admin page.
   own; GMX and WEB.DE take the account's password once IMAP is switched on in their settings. The page says so, and the
   first connection checks the account, sending included, and says what went wrong.
 - **Not yet:** Outlook.com, Hotmail and Microsoft 365, which need a sign-in at Microsoft (OAuth2).
+- **Senders:** each account has the person's name and address as its first sender, and may have more (aliases), set
+  on its page under "Absender", as in a mail program. A reply goes out as the address the mail came to. An alias must
+  be set up at the provider first: a mail server that does not allow it refuses the mail, and the person is told so.
+- **Replies** go to the sender of the newest mail; "Allen antworten" (by voice or on the messages screen) to everyone
+  in it.
 - **What UCAP does with a mailbox:** reads the inbox (in IDLE, a new mail within about a second) and the Sent folder
   (every ten minutes), 30 days back from connecting; marks a mail read once the person heard it; puts a copy of each
   reply in the Sent folder (Gmail files its own). It never deletes or moves mail. "Gesendet" means the mail server
-  accepted it; a mail that comes back is told to the person.
+  accepted it; a mail that comes back is told to the person as not delivered, with the reason the report gives.
 - **Only servers on the internet:** a server name that leads to this machine's network or the LAN is refused.
 - **Restarts** are by hand after an update (`docker compose restart email`); imapflow and nodemailer are pinned.
 - **The test mailboxes:** `UCAP_EMAIL_TEST=1 npx vitest run --project connectors test/email-live.test.ts` runs the

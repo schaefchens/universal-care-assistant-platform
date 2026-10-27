@@ -9,8 +9,9 @@ import java.util.List;
 /**
  * What the app's process asks of the SMS process (explicit broadcasts within UCAP, never exported): connect to the
  * server's connection, disconnect, take what waits for this phone (a push woke it, or the app heard of it), mark SMS
- * read that the person heard, and take away UCAP's notifications for SMS marked read in UCAP only. The SMS process keeps its own state (SmsDb), so nothing is shared across processes but
- * these commands.
+ * read that the person heard, take away UCAP's notifications for SMS marked read in UCAP only, and whether those
+ * notifications say what a message says. The SMS process keeps its own state (SmsDb), so nothing is shared across
+ * processes but these commands.
  */
 public class SmsCommands extends BroadcastReceiver {
     static void send(Context ctx, String cmd, Intent extras) {
@@ -91,6 +92,10 @@ public class SmsCommands extends BroadcastReceiver {
                 }
                 return;
             }
+            case "text":
+                // The device's setting (the owner, 2026-10-27): a new SMS's notification says what it says, or who alone.
+                SmsNotify.setText(ctx, i.getBooleanExtra("on", true));
+                return;
             default:
                 break;
         }

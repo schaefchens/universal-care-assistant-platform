@@ -96,6 +96,8 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         context: CommandContext;
         lang: 'de' | 'en';
         conversation?: string;
+        /** A reply to everyone in an email thread ("Allen antworten"; the owner, 2026-10-27). */
+        all?: boolean;
         audio?: Uint8Array<ArrayBuffer>;
         text?: string;
         /**
@@ -217,7 +219,7 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
           const tool = toolByName.get('messages.send');
           if (tool?.kind === 'act') {
             try {
-              const prepared = await tool.prepare(ctx, { chat: `chat:${o.conversation}`, text }, false);
+              const prepared = await tool.prepare(ctx, { chat: `chat:${o.conversation}`, text, ...(o.all ? { all: true } : {}) }, false);
               const w = await d.actions.prepare(ctx, o.id, tool, prepared.args, prepared.confirm!, false);
               emit({ t: 'action', id: w.id, contentHash: w.contentHash, prompt: w.prompt, expiresAt: w.expiresAt });
             } catch (e) {

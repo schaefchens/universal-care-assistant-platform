@@ -3,10 +3,10 @@
 Where each exit check of [plan-m3.md](plan-m3.md)'s steps and each step of its acceptance script is checked: by an
 automated test, in the browser walk, by a run on the Android emulator or by hand (recorded in
 [decisions.md](decisions.md), M3, Measured, under the step), or not yet, and what it waits for. M1's checks are in
-[acceptance.md](acceptance.md). State of 2026-10-26.
+[acceptance.md](acceptance.md). State of 2026-10-27.
 
 ```sh
-npm run typecheck && npm test        # 579 tests; opt-in: the Telegram test-DC suite, the email live suite (below)
+npm run typecheck && npm test        # 587 tests; opt-in: the Telegram test-DC suite, the email live suite (below)
 npm run test:e2e                     # M1's and M3's acceptance scripts in browsers, axe on each M3 screen they open
 tools/android/unit-test.sh           # the app's JVM tests: SMS events, MMS PDUs, previews (GRADLE_OFFLINE=1 offline)
 node tools/android/axe.ts            # accessibility audit of the screen the emulator shows
@@ -19,7 +19,7 @@ npm run evals                        # the assistant against the dialogue model,
 *emulator* = run on the Android emulator, with the step it is recorded under; *by hand* = with the owner's own
 account; *open* = not yet, with the reason.
 
-**The browser walk** (`npm run test:e2e`, about eleven minutes, 29 steps): as in M1, a stack of its own with the
+**The browser walk** (`npm run test:e2e`, about twelve minutes, 30 steps): as in M1, a stack of its own with the
 servers' clock moved where the script waits. Telegram, WhatsApp and email are played by `tools/dev/fake-services.ts`.
 Clara's phone is simulated (`e2e/phone.ts`): UCAP its SMS app and Signal's previews, every report signed by its key.
 The language model is scripted, so the walk checks what UCAP does with its answers, not the answers.
@@ -123,6 +123,17 @@ owner's own account by hand only, and nothing automated ever reaches it.
 | The rest marked read, in UCAP only, by voice and on the messages screen (decided item 13) | `messaging-services.test.ts`; step 8c; the phone's own SMS notifications cleared, its store unread, on the emulator | test, e2e, emulator |
 | Play's disclosures | `docs/play.md`; the texts on the SMS, previews and contacts pages, shown on the emulator (K5, K9) | written; the Play Console with M9 |
 
+## The owner's answers of 2026-10-27 (decisions.md, M3, To confirm 6, 8, 9, 11, 19)
+
+| Check | Where | State |
+|---|---|---|
+| A reply to an email goes to its sender; "Allen antworten" (by voice, and an area on the messages screen) to everyone, the person's addresses never; C1 names them as the person knows them | `connectors/test/email-connection.test.ts`, `messaging-services.test.ts` (the area's dictated reply too); step 8d: the area and its hint, the reply to all by voice, sent from the right address | test, e2e |
+| Senders per email account: added, changed, made the default and removed on the account's page; a reply goes out as the one the mail came to, a new mail as the default, or one the person names; C1 names it when there are several; mail from any of them is the person's own | `email-connection.test.ts`, `messaging-services.test.ts`; step 8d (axe on the page) | test, e2e |
+| A mail that came back: "konnte nicht zugestellt werden und kam zurück", with its reason where the report gives one | `messaging-services.test.ts` | test |
+| New messages announced with what they say (a short text word for word, a longer one by how it begins, an email by its subject, a photo with its caption, a preview as one, a code never); who alone where the device is set so | `messaging.test.ts`, `messaging-services.test.ts`, `packages/shared/test/config.test.ts`; steps 7–7e, 8c, 8d and 12 (axe on the settings) | test, e2e |
+| UCAP's SMS notification with the text, an MMS's text or photo; a code never; who alone where set so | `OneTimeCodeTest.java` against the server's cases; on the emulator (decisions.md, M3, Measured, 2026-10-27) | test, emulator |
+| Someone in an app's notifications suggested for a contact whose name fits; "Ja" keeps them with it, named by it, no warning before a reply | `messaging-services.test.ts`; step 8d | test, e2e |
+
 ## The acceptance script (plan-m3.md)
 
 | Step | What | State |
@@ -134,7 +145,7 @@ owner's own account by hand only, and nothing automated ever reaches it.
 | 5 | "Lies meine neuen Nachrichten" across services; "Was hat Michael heute geschickt?" | steps 7b and 7i (Bernd: the stand-in's people); K8 on the emulator |
 | 6 | §2's sentence in turns, C1 naming WhatsApp, the appointment from the voice message | step 7h; K7 on the emulator |
 | 7 | An email reply with its subject; a mail to a wrong address comes back | step 7c; the reply in its thread with the two test mailboxes (`email-live.test.ts`); the bounce matched and told (C13) in `email-connection.test.ts` and `messaging-services.test.ts` |
-| 8 | A Signal preview read; a reply confirmed once Signal shows it | step 8c (simulated); K5 on the emulator with a stand-in messenger. Signal itself: open |
+| 8 | A Signal preview read; a reply confirmed once Signal shows it | steps 8c and 8d (simulated); K5 on the emulator with a stand-in messenger. Signal itself: open |
 | 9 | Anna as one contact across services; Maria adds "Physiotherapie"; the call asked, then dialled | steps 7d and 7e; K6 on the emulator |
 | 10 | Maria enters a doctor's appointment; its reminder; "Was muss ich heute noch erledigen?" | steps 7f, 8b and L2; K7 on the emulator |
 | 11 | A note with its source; "Lies die Nachricht dazu" | step 7g |

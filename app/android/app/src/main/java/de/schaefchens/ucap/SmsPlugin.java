@@ -158,6 +158,13 @@ public class SmsPlugin extends Plugin {
         call.resolve();
     }
 
+    /** The device's setting: whether UCAP's notification of a new SMS says what it says, or who wrote alone. */
+    @PluginMethod
+    public void notifyText(PluginCall call) {
+        SmsCommands.send(getContext(), "text", new Intent().putExtra("on", call.getBoolean("on", true)));
+        call.resolve();
+    }
+
     /** SMS the person heard (on any of their devices): read in the store, as in any SMS app. */
     @PluginMethod
     public void markRead(PluginCall call) {

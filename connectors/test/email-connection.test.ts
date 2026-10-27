@@ -1,13 +1,14 @@
 /**
  * One person's email account, driven by a fake IMAP and SMTP server (docs/plan-m3.md, K3; measured in
  * docs/spikes/m3.md, B): 30 days in threads at the first start, new mail over IDLE, read states both ways, replies
- * "sent" at the server's 250 with their copy in the Sent folder, reports of mail that came back, what the first start
- * says about a wrong account, and a dropped connection resumed by a new client.
+ * "sent" at the server's 250 with their copy in the Sent folder, to the sender or to everyone, as one of the person's
+ * senders (the owner, 2026-10-27), reports of mail that came back, what the first start says about a wrong account,
+ * and a dropped connection resumed by a new client.
  */
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { FromConnectors } from '@ucap/shared';
+import type { FromConnectors, MailIdentity } from '@ucap/shared';
 import { simpleParser } from 'mailparser';
 import { createTransport } from 'nodemailer';
 import { describe, expect, it } from 'vitest';
@@ -201,7 +202,7 @@ async function until<T>(f: () => T | undefined | null | false, ms = 2000): Promi
   }
 }
 
-function setup(server = new FakeServer(), dir = mkdtempSync(join(tmpdir(), 'ucap-email-'))) {
+function setup(server = new FakeServer(), dir = mkdtempSync(join(tmpdir(), 'ucap-email-')), identities?: MailIdentity[]) {
   const events: FromConnectors[] = [];
   const logs: string[] = [];
   let imaps = 0;
@@ -209,6 +210,7 @@ function setup(server = new FakeServer(), dir = mkdtempSync(join(tmpdir(), 'ucap
     id: 'c1',
     lang: 'de',
     address: ME,
+    identities,
     smtp: { host: 'mail.example.org', port: 587, tls: 'starttls' },
     statePath: join(dir, 'c1.json'),
     makeImap: async () => {
@@ -295,20 +297,33 @@ describe('an email account, connected', () => {
     await t.conn.stop();
   });
 
-  it("a reply goes to everyone in the thread's newest mail (its Reply-To), answers it, and is sent at the server's 250", async () => {
+  it("a reply goes to the sender of the thread's newest mail (its Reply-To), to everyone in it when asked (the owner, 2026-10-27: \"default only sender with option to reply all\"); it answers that mail and is sent at the server's 250", async () => {
     const t = setup();
     t.server.deliver('INBOX', await compose({ from: ANNA, replyTo: 'anna.privat@example.net', to: ME, cc: 'Maria <maria@example.org>', subject: 'AW: Grillen', messageId: '<g1@example.org>', text: 'Wer bringt was mit?', date: new Date(NOW - DAY) }), { at: NOW - DAY });
     await t.conn.start();
     await until(() => t.msgs().length >= 1);
-    // Several people: a group named by its topic.
-    expect(t.of('chat.upsert').at(-1)!.chat).toMatchObject({ externalId: 'thread:g1@example.org', title: 'Grillen', kind: 'group', subject: 'Grillen' });
+    // Several people: a group named by its topic, with whom a reply goes to, and everyone a reply to all goes to.
+    expect(t.of('chat.upsert').at(-1)!.chat).toMatchObject({
+      externalId: 'thread:g1@example.org',
+      title: 'Grillen',
+      kind: 'group',
+      subject: 'Grillen',
+      mail: {
+        reply: [{ address: 'anna.privat@example.net', name: '' }],
+        all: [
+          { address: 'anna.privat@example.net', name: '' },
+          { address: 'maria@example.org', name: 'Maria' },
+        ],
+        to: ME,
+      },
+    });
     await t.conn.send('r1', 'thread:g1@example.org', 'Ich bringe Salat mit.', 'Re: Grillen');
     const results = t.of('send.result').filter((e) => e.requestId === 'r1');
     expect(results.map((e) => e.state)).toEqual(['pending_service', 'sent']);
     const messageId = results[1]!.externalId!;
     expect(messageId).toMatch(/^[0-9a-f-]{36}@example\.org$/);
     expect(t.server.sent).toHaveLength(1);
-    expect(t.server.sent[0]!.envelope).toEqual({ from: ME, to: ['anna.privat@example.net', 'maria@example.org'] });
+    expect(t.server.sent[0]!.envelope).toEqual({ from: ME, to: ['anna.privat@example.net'] });
     const p = await simpleParser(t.server.sent[0]!.raw);
     expect(p.subject).toBe('Re: Grillen');
     expect(p.inReplyTo).toBe('<g1@example.org>');
@@ -319,6 +334,62 @@ describe('an email account, connected', () => {
     await until(() => t.server.box('INBOX.Sent').mail.length === 1);
     expect([...t.server.box('INBOX.Sent').mail[0]!.flags]).toEqual(['\\Seen']);
     expect(t.server.box('INBOX.Sent').mail[0]!.raw.equals(t.server.sent[0]!.raw)).toBe(true);
+    // Now the person's own mail is the newest: a reply goes again to whom it went; to all, with whom it was copied to.
+    await t.conn.send('r2', 'thread:g1@example.org', 'Und Brot.', 'Re: Grillen', undefined, { all: true });
+    expect(t.server.sent.at(-1)!.envelope).toEqual({ from: ME, to: ['anna.privat@example.net'] });
+    t.server.deliver('INBOX', await compose({ from: ANNA, to: ME, cc: 'Maria <maria@example.org>, Bernd <bernd@example.org>', subject: 'AW: Grillen', messageId: '<g2@example.org>', references: ['<g1@example.org>'], text: 'Super!', date: new Date(NOW) }), { at: NOW });
+    await until(() => t.msgs().find((e) => e.msg.externalId === 'g2@example.org'));
+    await t.conn.send('r3', 'thread:g1@example.org', 'Bis Samstag.', 'Re: Grillen', undefined, { all: true });
+    expect(t.server.sent.at(-1)!.envelope).toEqual({ from: ME, to: ['anna@example.org', 'maria@example.org', 'bernd@example.org'] });
+    await t.conn.stop();
+  });
+
+  it('the person\'s senders (the owner, 2026-10-27: "identities like email apps have"): a reply goes out as the one the mail came to, with its name; a new mail as the default; mail from any of them is the person\'s own, and never a recipient', async () => {
+    const ALIAS = 'kontakt@clara.example';
+    const t = setup(new FakeServer(), undefined, [
+      { name: 'Clara Beispiel', address: ME },
+      { name: 'Clara (Verein)', address: ALIAS },
+    ]);
+    t.server.deliver('INBOX', await compose({ from: ANNA, to: ALIAS, cc: ME, subject: 'Vereinsfest', messageId: '<v1@example.org>', text: 'Hilfst du mit?', date: new Date(NOW - DAY) }), { at: NOW - DAY });
+    // Sent from the alias in another mail program, to someone in the inbox too: the person's own.
+    t.server.deliver('INBOX', await compose({ from: `Clara (Verein) <${ALIAS}>`, to: 'Bernd <bernd@example.org>', subject: 'Kassenbericht', messageId: '<k1@clara.example>', text: 'Anbei.', date: new Date(NOW - DAY) }), { at: NOW - DAY });
+    await t.conn.start();
+    await until(() => t.msgs().length >= 2);
+    expect(t.msgs().find((e) => e.msg.externalId === 'k1@clara.example')!.msg).toMatchObject({ outgoing: true });
+    // Neither of the person's addresses is someone to reply to.
+    expect(t.of('chat.upsert').find((e) => e.chat.externalId === 'thread:v1@example.org')!.chat.mail).toEqual({
+      reply: [{ address: 'anna@example.org', name: 'Anna Beispiel' }],
+      all: [{ address: 'anna@example.org', name: 'Anna Beispiel' }],
+      to: ALIAS,
+    });
+    await t.conn.send('r1', 'thread:v1@example.org', 'Gern.', 'Re: Vereinsfest');
+    expect(t.server.sent.at(-1)!.envelope).toEqual({ from: ALIAS, to: ['anna@example.org'] });
+    const p = await simpleParser(t.server.sent.at(-1)!.raw);
+    expect(p.from?.value).toEqual([{ address: ALIAS, name: 'Clara (Verein)' }]);
+    expect(p.messageId).toMatch(/@clara\.example>$/);
+    // A new mail: the default; or the sender the person confirmed.
+    await t.conn.send('r2', '', 'Hallo', 'Frage', 'praxis@example.org');
+    expect((await simpleParser(t.server.sent.at(-1)!.raw)).from?.value).toEqual([{ address: ME, name: 'Clara Beispiel' }]);
+    await t.conn.send('r3', '', 'Hallo', 'Frage', 'praxis@example.org', { from: { name: 'Clara (Verein)', address: ALIAS } });
+    expect(t.server.sent.at(-1)!.envelope.from).toBe(ALIAS);
+    await t.conn.stop();
+  });
+
+  it('senders changed while running: who each thread is replied to, and from which address, is told anew', async () => {
+    const ALIAS = 'kontakt@clara.example';
+    const t = setup();
+    t.server.deliver('INBOX', await compose({ from: ANNA, to: ALIAS, subject: 'Vereinsfest', messageId: '<v1@example.org>', text: 'Hilfst du mit?', date: new Date(NOW - DAY) }), { at: NOW - DAY });
+    await t.conn.start();
+    await until(() => t.msgs().length >= 1);
+    const mailOf = () => t.of('chat.upsert').filter((e) => e.chat.externalId === 'thread:v1@example.org').at(-1)!.chat.mail;
+    // Not known as the person's yet: someone else in the thread.
+    expect(mailOf()).toMatchObject({ all: [{ address: 'anna@example.org' }, { address: ALIAS }], to: null });
+    t.conn.setIdentities([
+      { name: '', address: ME },
+      { name: 'Clara (Verein)', address: ALIAS },
+    ]);
+    expect(mailOf()).toEqual({ reply: [{ address: 'anna@example.org', name: 'Anna Beispiel' }], all: [{ address: 'anna@example.org', name: 'Anna Beispiel' }], to: ALIAS });
+    expect(t.of('chat.upsert').filter((e) => e.chat.externalId === 'thread:v1@example.org').at(-1)!.chat.kind).toBe('private');
     await t.conn.stop();
   });
 

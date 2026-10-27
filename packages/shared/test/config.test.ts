@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { checkConfig, depths, protectConfig, warningKey } from '../src/config-rules.ts';
 import { describeChange } from '../src/config-diff.ts';
 import { Value } from 'typebox/value';
-import { DEFAULT_DEVICE_CONFIG, DeviceConfig, liveOf, liveSkips } from '../src/device-config.ts';
+import { DEFAULT_DEVICE_CONFIG, DeviceConfig, liveOf, liveSkips, messagesOf } from '../src/device-config.ts';
 
 const base = (): DeviceConfig => structuredClone(DEFAULT_DEVICE_CONFIG);
 const home = (c: DeviceConfig) => c.screens[c.home]!;
@@ -162,6 +162,18 @@ describe('a change as the person hears it', () => {
     const other = structuredClone(on);
     (other.live!.say as Record<string, unknown>).services = { signal: false };
     expect(Value.Check(DeviceConfig, other)).toBe(false);
+  });
+
+  it('how new messages are told (the owner, 2026-10-27): with what they say, unless set to who wrote alone; a version without it says what', () => {
+    expect(messagesOf(DEFAULT_DEVICE_CONFIG)).toEqual({ text: true });
+    const who = structuredClone(DEFAULT_DEVICE_CONFIG);
+    who.messages = { text: false };
+    expect(Value.Check(DeviceConfig, who)).toBe(true);
+    expect(say(DEFAULT_DEVICE_CONFIG, who)).toEqual(['Maria hat eingestellt, dass ich bei neuen Nachrichten nur sage, wer geschrieben hat.']);
+    expect(say(who, DEFAULT_DEVICE_CONFIG)).toEqual(['Maria hat eingestellt, dass ich bei neuen Nachrichten auch sage, was darin steht.']);
+    const told = structuredClone(DEFAULT_DEVICE_CONFIG);
+    told.messages = { text: true };
+    expect(say(DEFAULT_DEVICE_CONFIG, told)).toEqual([]);
   });
 
   it('nothing changed says nothing; a description or a sound says the screen changed', () => {

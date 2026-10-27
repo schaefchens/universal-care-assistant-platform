@@ -184,7 +184,8 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   stand-in too (a message stamped with the real time looks hours old and is not announced). Enter on the twelfth
   recovery word submits the words. Speech in a server voice is in the debug record as the device voice's is.
   There every utterance ends by its stall cut, which counts as cut short: LIVE waits behind each one (allow a minute
-  or more), and of news in several parts says only the first (M2: the rest of what was cut is not said). Read the
+  or more), of news in several parts says only the first (M2: the rest of what was cut is not said), and a screen
+  that listens after its hint (the messages screen's reply areas) does not listen: drive those by voice. Read the
   whole answer from the server's response (`page.waitForResponse`).
 - TalkBack gestures on the emulator: `adb emu event mouse <x> <y> 0 1|0` (screen pixels) is a real finger to TalkBack;
   a double tap needs both taps on one console connection (`tools/android/finger.ts`): separate `adb emu` calls are too
@@ -218,6 +219,9 @@ Taken on this Mac: 3000, 5000, 7000, 8080, 8090, 8091, 8737 (herde), 8787, 8797 
   [--repeat]` hands the notification and the fetched MMS to the debug build's `DebugMmsReceiver`. The emulator's own
   number is its SIM's, +1 555-123-4567. Android's MMS store keeps a subject's and an address's bytes as ISO-8859-1
   characters beside their charset (AOSP's PduPersister): write and read them that way (`MmsStore.decoded`).
+- **Another project's emulator may run beside ours** (seen: `hosana_demo`): adb and `install.sh` then refuse ("more
+  than one device"). Never touch it: find ours by `adb -s <serial> emu avd name` (`medium_phone`) and set
+  `ANDROID_SERIAL` for every adb command, the install script and the CDP tools.
 - **The emulator drives:** leave a screen with the back key (`adb shell input keyevent KEYCODE_BACK`), never with a
   double tap on its areas: the second tap's echo lands on the next screen (it once pressed "Hilfe"). A page laid out
   wider than the screen (a long word) is drawn smaller, and taps by measured coordinates land off: check `innerWidth`.

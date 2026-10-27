@@ -17,6 +17,7 @@ import { customAreaColours, platformPrefs, themeVariables } from '../theme/apply
 import { resolveTheme } from '../theme/themes.ts';
 import { useUi } from '../ui.tsx';
 import { LiveSettings } from './LiveSettings.tsx';
+import { MessagesSetting } from './MessagesSetting.tsx';
 
 /**
  * What a home area can open (K6 brings the contacts, K7 the appointments and tasks): its task, the colour of its kind,
@@ -261,6 +262,7 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
           </section>
 
           {/* LIVE mode: helpers with device.configure switch it on and off directly (the owner's decision, docs/plan-m2.md). */}
+          <MessagesSetting config={draft} onConfig={(c) => setDraft(c)} />
           <LiveSettings config={draft} onConfig={(c) => setDraft(c)} />
           <section className="settings-section">
             <h2>{tr('config.editor.touch')}</h2>

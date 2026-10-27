@@ -904,6 +904,7 @@ The plan: [plan-m3.md](plan-m3.md).
    Telegram alone; plan-m3.md has LIVE name the service "when the person has more than one" (K8). With one service it
    stays as it was. The other choice: the announcement without the service, which is then said when the message is
    read.
+   - **Confirmed by the owner, 2026-10-27.**
 3. **On WhatsApp, people are named from the address book, else by their number, else "Unbekannt"; never by the name
    they gave themselves.**
    - plan-m3.md, K2: "Names come from the person's saved contacts, never push names". plan.md, Appendix E, names a
@@ -934,10 +935,21 @@ The plan: [plan-m3.md](plan-m3.md).
      never wrote to is a stranger ("Achtung: … ist nicht in deinen Kontakten." before C1). A sender whose domain failed
      DMARC at the person's provider is named "… (Absender nicht bestätigt)" and never counts as known.
    - The other choice: everyone a stranger by email until K6.
+   - **Confirmed by the owner, 2026-10-27.**
 6. **A reply goes to everyone in the thread's newest mail**: its sender (or the address its Reply-To asks for) and
    everyone it went to, but the person ("Allen antworten"). plan-m3.md says what a reply carries (In-Reply-To,
    References, the subject), not to whom. A thread with several people is one conversation, as a group is on Telegram
    and WhatsApp, and C1 names it. The other choice: the sender alone, as a mail program's "Antworten".
+   - **The owner chose the other choice, with all as an option, 2026-10-27:** "should have default only sender with
+     option to reply all". Built:
+     - A reply goes to the sender of the thread's newest mail (or the address its Reply-To asks for); after the
+       person's own mail, again to whom that went, as a mail program does.
+     - "Allen antworten" adds everyone it went to, the person's own addresses never: by voice ("Antworte allen", the
+       tool's `all`) and on the messages screen, an area of its own beside "Antworten" in a thread with more people
+       than its sender ("Sag jetzt deine Antwort an alle: Bernd, Anna und Hans.").
+     - C1 names whom it goes to, as the person knows them (their contact's name, else the name their mail gave, else the
+       address): "E-Mail an Bernd, Anna und Hans, Betreff „Re: …“: …". The email connector tells each thread's reply
+       targets (`WireChat.mail`, kept with the conversation, migration 0030).
 7. **A new email to someone without a thread waits for K6.** plan-m3.md, K3: "a new mail gets a subject (proposed by
    the model, read back in C1)". A new mail needs an address, which by voice is hard to say and to check; with K6 it
    comes from a contact. Until then UCAP replies in the threads there are, and email's capabilities say so ("antwortet
@@ -947,6 +959,21 @@ The plan: [plan-m3.md](plan-m3.md).
      "antwortet in den Unterhaltungen, die es gibt, und schreibt an deine Kontakte".
 8. **A mail UCAP sends carries the person's address alone as its sender**, no name: UCAP has no setting for how a
    person signs their mail, and their display name in UCAP is what helpers see. The other choice: the display name.
+   - **The owner, 2026-10-27:** "the user might have different aliases and therefore its importan to reply with the
+     correct email and name. we need to configure identities like email apps have". Built:
+     - **Senders per account** (Einstellungen → Nachrichtendienste → the account → "Absender"): a name and an address
+       each, up to ten, the first the default; added, changed, made the default and removed there. Connecting asks for
+       "Dein Name in deinen E-Mails" (empty: the address alone, as before). Accounts connected before keep their
+       address without a name (migration 0030).
+     - **Which one:** a reply goes out as the sender the newest mail came to (one of the person's addresses in its To
+       or Cc), else as the one the person's own newest mail in it went out as, else the default; a new mail as the
+       default. The person may name another ("von meiner Vereinsadresse", the tool's `from`); a name that fits none or
+       several is asked about with the addresses (`sender_unknown`).
+     - **Said:** C1 names the sender when the account has more than one: "E-Mail von verein@… an Bernd, Betreff …".
+     - **Own:** mail from any of them is the person's own; none of them is ever a recipient of "Allen antworten".
+     - The provider must allow the address: UCAP cannot check it before a mail goes out; a server that refuses it
+       (553) is said as "der Mailserver lässt diese Absenderadresse nicht zu".
+     - The person's own setting, on their own device, as connecting is; a helper sees none of it.
 9. **A mail that comes back is told once, on the device it was confirmed on**, as a new template: C13, "Die E-Mail an
    {recipient} kam zurück: {reason}." The reason comes from the report's status: the address unknown (5.1.x), the
    mailbox full (x.2.2), refused (5.7.x), or "sie konnte nicht zugestellt werden". plan-m3.md: "a bounce is matched
@@ -954,6 +981,10 @@ The plan: [plan-m3.md](plan-m3.md).
    - A report that a mail is only delayed is no news. A report about a mail UCAP did not send, or sent more than 30
      days before, is shown as a mail.
    - A bounced mail is not kept as a draft: it was sent, and its words are in the thread.
+   - **Confirmed by the owner, 2026-10-27, with one change:** "yes, should also say that it couldnt be delivered".
+     Built: "Die E-Mail an {recipient} konnte nicht zugestellt werden und kam zurück: {reason}.", and without a reason
+     UCAP knows "Die E-Mail an {recipient} konnte nicht zugestellt werden und kam zurück." (the reason "sie konnte nicht
+     zugestellt werden" is gone).
 10. **An SMS from UCAP is a reply in a thread there is, until K6.** plan-m3.md, K4: "an SMS confirmed on any of the
     person's devices is sent by the phone" (and the capabilities said "any number"). A new SMS to a number needs the
     number, which by voice is hard to say and check; with K6 it comes from a contact. Another app's "write an SMS"
@@ -964,6 +995,24 @@ The plan: [plan-m3.md](plan-m3.md).
 11. **UCAP's notification for a new SMS says who wrote, never what**: "Neue SMS von Anna Beispiel", private on the lock
     screen, gone once the SMS was heard. UCAP announces messages the same way. The other choice: the text in the
     notification, as most SMS apps show it.
+    - **The owner chose the other choice, for every message, 2026-10-27:** "should say what, in general for all
+      messages. might add a option for this." Built:
+      - **The announcement** says who and what, worded as LIVE says it: a short text word for word ("Neue Nachricht von
+        Anna auf WhatsApp: „Kommst du morgen?“"), a longer one by how it begins ("…, sie beginnt: „…“"; up to 160
+        characters, a first paragraph, or the first 120 cut at a word), an email by its subject ("Neue E-Mail von Anna,
+        Betreff „…“."), a voice message by its length ("Neue Sprachnachricht von Anna auf WhatsApp, 12 Sekunden."), a
+        photo (with its caption) or a file by what it is, a preview as one. Each begins as news, as the announcement
+        by who alone does. A one-time code never (decided item 17): "Neue Nachricht von Amazon per SMS mit einem Code.
+        Codes lese ich nur vor, wenn du darum bittest." In a burst, each message is said (the earcon once), where who
+        alone was said once.
+      - **UCAP's SMS notification** on the phone shows the text the same way: an MMS's text, a photo named; a code
+        never ("Mit einem Code. …"), since TalkBack reads a notification out as it comes. The phone's own copy of the
+        detector (`OneTimeCode.java`) is checked against the server's cases (`server/test/fixtures/one-time-codes.json`).
+        Private on a lock screen that hides what notifications say, as before.
+      - **The option:** Einstellungen → "Neue Nachrichten" → "Sagen, was darin steht", on by default; off, who wrote
+        alone, as before. Part of the device's configuration, so the phone's SMS notifications follow it, and a helper
+        with device.configure sets it too (the device editor has it, the change is announced); see To confirm 24.
+      - LIVE mode keeps its own settings (what it says by itself, per service).
 
 12. **A new message goes by SMS or email; on WhatsApp and Telegram UCAP replies in the conversations there are.**
     plan-m3.md, Principles: "whom it can send to: anyone, or only into conversations that wrote"; K6: "recipients
@@ -1033,6 +1082,12 @@ The plan: [plan-m3.md](plan-m3.md).
       them is named as such before anything is sent to them.
     - The other choice: K6's suggestions for preview names too ("Anna auf Signal: dieselbe Person wie dein Kontakt
       „Anna“?"), kept with the contact as a handle of its own, after which the warning is not said.
+    - **The owner chose the other choice, 2026-10-27:** "yes other". Built: someone writing in an app's notifications
+      is suggested for a contact whose name fits, as K6 suggests others ("„Lena“ auf Signal: dieselbe Person wie dein
+      Kontakt „Lena“?"); "Ja" keeps them with the contact as a handle of its own (`preview`: the app's package and the
+      sender's id there, its label the app's name; migration 0031), shown as "Vorschau (Signal)". From then on they are
+      named by the contact, and a reply through the app's notification is asked about without the warning. Never merged
+      by name alone; "Nein" is never asked again.
 
 20. **Deleted notes, contacts, appointments and tasks are kept with their versions, without end** (K9's retention).
     - plan-m3.md, K6 and K7: "versions for undo"; plan.md keeps M1's notes the same way, and nothing purges them.
@@ -1060,6 +1115,13 @@ The plan: [plan-m3.md](plan-m3.md).
       list afterwards of what interests him. "read the last 10 messages"". Built: after the last, "Das war der letzte
       Termin." and "Das war die letzte Aufgabe.", and it stays there. "Lies die letzten 10 Nachrichten" takes how many
       (`messages.read`'s count, up to 30; ten before).
+23. **An announcement with what a message says leaves it new** (To confirm 11): it is marked read, on its service too,
+    only when it is heard on the messages screen or read out, as a phone's notification leaves a message unread.
+    LIVE's word for word still counts as heard (M2). The other choice: an announcement said to its end counts as heard,
+    and the sender sees it read.
+24. **"Sagen, was darin steht" is a setting of each device** (To confirm 11), on by default, in its configuration: a
+    phone in the pocket and a tablet in a shared room can differ, and a helper with device.configure sets it as LIVE's
+    settings. The other choice: one setting of the person, on all their devices.
 
 ### Decided (within the plan)
 
@@ -1897,3 +1959,31 @@ The plan: [plan-m3.md](plan-m3.md).
     them. The walk has the appointments' (step 8b); `app/test/agenda-screen.test.ts` the tasks'.
   - Afterwards the SMS role went back to Google Messages, UCAP was opened again, and LIVE came back ("waiting"). The
     two test SMS stay in the emulator's store, as K4's did.
+- **After the owner's answers of 2026-10-27 (To confirm 2, 5, 6, 8, 9, 11, 19):**
+  - The browser walk: 30 of 30, with a new step 8d. A second sender added on the email account's page ("Absender
+    hinzugefügt: Clara (Verein) <verein@clara.example>.", axe). Bernd's mail to the family announced by its subject
+    ("Neue E-Mail von Bernd, Betreff „Re: Familientreffen im Mai“."). On the messages screen "Allen antworten" beside
+    "Antworten", its hint naming everyone as Clara knows them ("Sag jetzt deine Antwort an alle: Bernd, Anna und
+    Hans."). "Antworte allen" read back as "E-Mail von clara.test@gmx.de an Bernd, Anna und Hans, Betreff …" and sent to
+    all from the address the mail came to; "von meiner Vereinsadresse" to Bernd alone, from the alias. Lena from Signal
+    suggested for the contact "Lena", and after "Ja" replied to without the warning. With "Sagen, was darin steht" off,
+    "Neue Nachricht von Anna auf Telegram." alone. Steps 7 to 7e, 8c and 12 now hear what each message says.
+  - **Found and fixed in the walk:** a voice message was announced with LIVE's sentence ("Anna hat auf WhatsApp eine
+    Sprachnachricht geschickt, 2 Sekunden."), unlike every other announcement; each now begins as news ("Neue
+    Sprachnachricht von Anna auf WhatsApp, 2 Sekunden.").
+  - **Found and fixed in review:** the messaging stand-in connected anew when the senders changed (the server sends
+    `start` again), replaying its history as new mail; it keeps the account running now, as the email process does.
+  - The walk cannot dictate after the area's hint: in its browser every utterance ends by its stall cut, which counts
+    as cut short, so the app does not listen. The dictated reply to all is in `messaging-services.test.ts`.
+  - On the emulator, the new build: the settings show "Neue Nachrichten" with the switch on; axe on them, and on the
+    email account's page with its senders: no violations. A sender added to Wanda's test mailbox ("Absender
+    hinzugefügt: UCAP Test-Alias <test-alias@example.org>.") reached the running email process without a new connection
+    (still ready), and was removed again.
+  - With the SMS role for the check, test SMS from 555-0199: the notification said "Neue SMS von 555-0199" with the
+    text; for a code, "Mit einem Code. Codes liest UCAP nur vor, wenn du darum bittest."; with the switch off, the name
+    alone; on again, the text. LIVE said the four without a code to their end, and each notification went (heard). The
+    code SMS was marked read in UCAP by hand, so it is no news of Wanda's.
+  - Not tried on the emulator: the announcement with what a message says (Wanda is in LIVE mode, which says messages
+    its own way; the walk has it), and replying (nothing is sent from Wanda's account; the walk and the tests send).
+  - Afterwards the SMS role went back to Google Messages, UCAP was opened again, LIVE came back ("waiting"), and the
+    storage setting was removed. The test SMS stay in the emulator's store.

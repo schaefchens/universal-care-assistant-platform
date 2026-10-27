@@ -62,10 +62,14 @@ final class Texts {
         put("reminder.category.appointment", "Termin", "Appointment");
         put("reminder.category.other", "Sonstiges", "Other");
         put("sms.channel", "SMS", "Text messages");
-        put("sms.channel.desc", "Neue SMS, solange UCAP deine SMS-App ist. Sie nennt, wer geschrieben hat; gelesen wird in UCAP.", "New text messages while UCAP is your SMS app. It says who wrote; you read them in UCAP.");
-        DE.put("sms.channel.desc@Sie", "Neue SMS, solange UCAP Ihre SMS-App ist. Sie nennt, wer geschrieben hat; gelesen wird in UCAP.");
+        put("sms.channel.desc", "Neue SMS, solange UCAP deine SMS-App ist: wer geschrieben hat, und was, wenn UCAP so eingestellt ist (Einstellungen, Neue Nachrichten).", "New text messages while UCAP is your SMS app: who wrote, and what when UCAP is set to (Settings, New messages).");
+        DE.put("sms.channel.desc@Sie", "Neue SMS, solange UCAP Ihre SMS-App ist: wer geschrieben hat, und was, wenn UCAP so eingestellt ist (Einstellungen, Neue Nachrichten).");
+        put("sms.code", "Mit einem Code. Codes liest UCAP nur vor, wenn du darum bittest.", "With a code. UCAP reads codes out only when you ask.");
+        DE.put("sms.code@Sie", "Mit einem Code. Codes liest UCAP nur vor, wenn Sie darum bitten.");
         put("sms.new", "Neue SMS von %s", "New text message from %s");
         put("mms.new", "Neue MMS von %s", "New MMS from %s");
+        put("mms.photo", "Ein Foto.", "A photo.");
+        put("mms.photo.text", "Ein Foto. Mit dem Text: %s", "A photo. With the text: %s");
         put("mms.pending", "Eine MMS von %s ist angekommen, konnte aber noch nicht geladen werden. UCAP versucht es weiter.", "An MMS from %s has arrived but could not be loaded yet. UCAP keeps trying.");
         put("mms.expired", "Eine MMS von %s konnte nicht mehr geladen werden: Sie ist abgelaufen.", "An MMS from %s could not be loaded any more: it has expired.");
     }

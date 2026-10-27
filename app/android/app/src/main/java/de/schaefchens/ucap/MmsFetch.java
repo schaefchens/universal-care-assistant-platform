@@ -112,7 +112,8 @@ final class MmsFetch {
                             if (m.told) db.queue(new JSONArray().put(SmsEvents.deleted(String.valueOf(senderThread(ctx, m)), noticeId(tx))));
                             long thread = MmsStore.threadOf(ctx, id);
                             String name = m.sender == null ? "" : SmsStore.person(ctx, m.sender, SmsStore.country(ctx)).name;
-                            if (thread > 0) SmsNotify.newMessage(ctx, thread, name, "mms.new");
+                            MmsStore.Row row = MmsStore.one(ctx, id);
+                            if (thread > 0) SmsNotify.newMessage(ctx, thread, name, "mms.new", row == null ? null : SmsNotify.mmsBody(ctx, row.text, row.picture));
                             return;
                         }
                     }
