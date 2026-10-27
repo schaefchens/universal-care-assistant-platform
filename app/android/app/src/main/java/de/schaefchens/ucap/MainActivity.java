@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(A11yPlugin.class);
         registerPlugin(InfoPlugin.class);
         registerPlugin(DeviceKeyPlugin.class);
+        registerPlugin(UnlockKeyPlugin.class);
         registerPlugin(AlertsPlugin.class);
         registerPlugin(KeysPlugin.class);
         registerPlugin(RemindersPlugin.class);

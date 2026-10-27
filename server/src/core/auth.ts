@@ -2,6 +2,10 @@
  * The bearer-token check for core's routes: `Authorization: Bearer ucap_at_…`, a session of at most 15 minutes,
  * whose device is not revoked. Admin routes also need the account's admin flag. (Care commands, push receipts and
  * notification actions are signed by the device instead, from S4.)
+ *
+ * The app lock (docs/plan-m4.md, G4): a locked device's session has only `care`, `ui` and `status`. A route it may use
+ * says so with `config: OPEN` (help, reminders' questions and answers, its own configuration, the lock itself); every
+ * other route answers 403 `locked` until the person unlocks. A route nobody marked stays closed: the default is locked.
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Authenticated, IdentityService } from '../domain/identity/service.ts';
@@ -11,6 +15,10 @@ import type { AnyApp } from '../lib/http.ts';
 declare module 'fastify' {
   interface FastifyRequest {
     auth: Authenticated | null;
+  }
+  interface FastifyContextConfig {
+    /** `open`: a locked device may use this route (docs/plan-m4.md, G4). */
+    lock?: 'open';
   }
 }
 
@@ -23,15 +31,26 @@ export function registerAuth(app: AnyApp, identity: IdentityService) {
   });
 }
 
-export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
-  if (!req.auth) throw new AppError('unauthorised');
-}
+/** A route a locked device may use (docs/plan-m4.md, G4). */
+export const OPEN = { lock: 'open' } as const;
+
+export const requireAuth = Object.assign(
+  async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
+    if (!req.auth) throw new AppError('unauthorised');
+    if (req.routeOptions.config?.lock !== 'open' && !req.auth.scopes.includes('personal')) throw new AppError('locked', { status: 403 });
+  },
+  // Marked for the route matrix (lib/http.ts: `ucapRoutes`).
+  { session: true },
+);
 
 export function requireAdmin(identity: IdentityService) {
-  return async (req: FastifyRequest, reply: FastifyReply) => {
-    await requireAuth(req, reply);
-    if (!(await identity.isAdmin(req.auth!.userId))) throw new AppError('forbidden');
-  };
+  return Object.assign(
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      await requireAuth(req, reply);
+      if (!(await identity.isAdmin(req.auth!.userId))) throw new AppError('forbidden');
+    },
+    { session: true },
+  );
 }
 
 export const auth = (req: FastifyRequest): Authenticated => {

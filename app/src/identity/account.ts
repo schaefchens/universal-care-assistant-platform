@@ -246,6 +246,13 @@ export class Session {
   private token: string | null;
   private expiresAt: number;
   private renewing: Promise<string> | null = null;
+  /**
+   * The app lock (docs/plan-m4.md, G4): this session was unlocked by the person's code, so a renewal names it and stays
+   * unlocked. A device without the lock is never "unlocked" here: its sessions have everything anyway.
+   */
+  private unlocked = false;
+  /** Told when the server answers that this device is locked (403 `locked`). */
+  onLocked: (() => void) | null = null;
 
   constructor(ref: DeviceRef, token: string | null = null, expiresIn = 0) {
     this.ref = ref;
@@ -259,12 +266,17 @@ export class Session {
     return this.renewing;
   }
 
+  setUnlocked(on: boolean): void {
+    this.unlocked = on;
+  }
+
   private async renew(): Promise<string> {
     const base = this.ref.serverUrl;
     const ch = await api<{ challengeId: string; nonce: string }>(base, '/api/v1/identity/challenge', { body: { purpose: 'session', deviceId: this.ref.deviceId } });
     const proof = await deviceKey.sign('session', { srv: this.ref.serverId, org: new URL(base).origin, nonce: ch.nonce, did: this.ref.deviceId });
+    const previous = this.unlocked && this.token ? { previous: this.token } : {};
     const r = await api<{ token: string; expiresIn: number }>(base, '/api/v1/sessions', {
-      body: { org: new URL(base).origin, deviceId: this.ref.deviceId, challengeId: ch.challengeId, nonce: ch.nonce, proof },
+      body: { org: new URL(base).origin, deviceId: this.ref.deviceId, challengeId: ch.challengeId, nonce: ch.nonce, proof, ...previous },
     });
     this.token = r.token;
     this.expiresAt = Date.now() + r.expiresIn * 1000;
@@ -281,6 +293,11 @@ export class Session {
     try {
       return await api<T>(this.ref.serverUrl, path, { ...o, token: await this.accessToken() });
     } catch (e) {
+      if (e instanceof ApiError && e.code === 'locked') {
+        this.unlocked = false;
+        this.onLocked?.();
+        throw e;
+      }
       // A token the server no longer knows (restart, clock): one fresh proof, then give up.
       if (e instanceof ApiError && e.status === 401 && !deviceRevoked(e)) {
         this.token = null;

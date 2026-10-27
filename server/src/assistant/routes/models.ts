@@ -9,7 +9,7 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import Type from 'typebox';
-import { requireAuth } from '../../core/auth.ts';
+import { OPEN, requireAuth } from '../../core/auth.ts';
 import { AppError } from '../../lib/errors.ts';
 import type { AnyApp } from '../../lib/http.ts';
 
@@ -54,7 +54,8 @@ export function registerModelRoutes(app: AnyApp, o: { modelsDir: string; log: (m
     return s.size;
   }
 
-  app.get('/api/v1/assistant/keyword-models', { preHandler: requireAuth }, async () => {
+  // Open to a locked device (docs/plan-m4.md, G4): LIVE's keyword spotter is the same for everyone.
+  app.get('/api/v1/assistant/keyword-models', { preHandler: requireAuth, config: OPEN }, async () => {
     const models = [];
     for (const m of all) {
       const bytes = await available(m);
@@ -63,7 +64,7 @@ export function registerModelRoutes(app: AnyApp, o: { modelsDir: string; log: (m
     return { models };
   });
 
-  app.get('/api/v1/assistant/keyword-models/:id', { preHandler: requireAuth, schema: { params: Type.Object({ id: Type.String({ maxLength: 40 }) }) } }, async (req, reply) => {
+  app.get('/api/v1/assistant/keyword-models/:id', { preHandler: requireAuth, config: OPEN, schema: { params: Type.Object({ id: Type.String({ maxLength: 40 }) }) } }, async (req, reply) => {
     const m = all.find((x) => x.id === (req.params as { id: string }).id);
     const bytes = m ? await available(m) : null;
     if (!m || bytes === null) throw new AppError('not_found', { params: { what: 'model' } });

@@ -21,6 +21,7 @@ import { AppError } from '../../lib/errors.ts';
 import { emit } from '../../lib/outbox.ts';
 import { checkLimit, countFailure } from '../../lib/rate-limit.ts';
 import { isP256Jwk, jwkThumbprint, mac, type P256Jwk, verifyDevice } from './crypto.ts';
+import { LOCKED_SCOPES, UNLOCKED_SCOPES } from './lock.ts';
 
 export const SESSION_TTL_S = 900;
 export const CHALLENGE_TTL_S = 120;
@@ -43,8 +44,11 @@ export function linkWords(salt: Uint8Array, jkt: string): number[] {
   const n = (h[0]! << 16) | (h[1]! << 8) | h[2]!;
   return [(n >> 18) & 63, (n >> 12) & 63, (n >> 6) & 63, n & 63];
 }
-/** M1: every scope. The optional app lock (M4) will keep `personal` and `elevated` behind a local unlock. */
-export const DEFAULT_SCOPES = ['care', 'ui', 'status', 'personal', 'elevated'];
+/**
+ * Every scope: a device without the app lock, or one that is unlocked. A locked device signs in with `care`, `ui` and
+ * `status` only, until the person's code (docs/plan-m4.md, G4; domain/identity/lock.ts).
+ */
+export const DEFAULT_SCOPES = UNLOCKED_SCOPES;
 
 export interface IdentityDeps {
   db: Db;
@@ -55,7 +59,7 @@ export interface IdentityDeps {
   publicOrigins: string[];
 }
 
-export type ChallengePurpose = 'device.proof' | 'device.recover' | 'session' | 'identity.rotate' | 'identity.reissue';
+export type ChallengePurpose = 'device.proof' | 'device.recover' | 'session' | 'identity.rotate' | 'identity.reissue' | 'session.unlock';
 
 export interface DeviceInput {
   jwk: unknown;
@@ -116,11 +120,12 @@ export function createIdentityService(d: IdentityDeps) {
     return Number(r.rows[0]?.seq ?? 0);
   }
 
-  async function newSession(trx: Trx, userId: string, deviceId: string) {
+  /** A session; with `scopes` the locked ones of a device whose app lock is on (G4), else everything. */
+  async function newSession(trx: Trx, userId: string, deviceId: string, scopes: string[] = DEFAULT_SCOPES) {
     const token = `ucap_at_${randomBytes(32).toString('base64url')}`;
     await sql`
       insert into sessions (id, token_mac, user_id, device_id, scopes, created_at, expires_at)
-      values (${uuidv7(d.clock())}, ${mac(d.pepper, 'session', token)}, ${userId}, ${deviceId}, ${DEFAULT_SCOPES}, ${now()},
+      values (${uuidv7(d.clock())}, ${mac(d.pepper, 'session', token)}, ${userId}, ${deviceId}, ${scopes}, ${now()},
               ${new Date(d.clock() + SESSION_TTL_S * 1000)})`.execute(trx);
     await sql`update devices set last_seen_at = ${now()} where id = ${deviceId}`.execute(trx);
     return { token, expiresIn: SESSION_TTL_S };
@@ -179,6 +184,16 @@ export function createIdentityService(d: IdentityDeps) {
       accountHook = fn;
     },
     newChallenge: (purpose: ChallengePurpose, bind?: { deviceId?: string; identityKey?: Uint8Array }) => newChallenge(d.db, purpose, bind),
+
+    /** Uses up a challenge bound to this device (Android's unlock key, G4): true when it was valid. */
+    async useChallenge(challengeId: string, nonce: string, purpose: ChallengePurpose, deviceId: string): Promise<boolean> {
+      try {
+        const row = await d.db.transaction().execute((trx) => consumeChallenge(trx, challengeId, nonce, purpose));
+        return row.device_id === deviceId;
+      } catch {
+        return false;
+      }
+    },
 
     /** Recovery starts from the identity's public key: the challenge is bound to it. Unknown keys get one too, so
      *  nobody learns from the answer whether an identity exists here. */
@@ -280,7 +295,12 @@ export function createIdentityService(d: IdentityDeps) {
       await countFailure(d.db, d.clock, limit);
     },
 
-    async createSession(input: { org: string; deviceId: string; challengeId: string; nonce: string; proof: string; ip?: string }) {
+    /**
+     * A session for a device that proves itself with its key. A device with the app lock on (G4) gets the locked scopes,
+     * unless it names the unlocked session it renews (`previous`, still valid or ended within a minute): the person
+     * unlocked it, and keeps it so until the device locks itself.
+     */
+    async createSession(input: { org: string; deviceId: string; challengeId: string; nonce: string; proof: string; ip?: string; previous?: string }) {
       checkOrigin(input.org);
       // Failed proofs are counted per address; a device that proves itself is never held up.
       const limit = { bucket: `session:ip:${input.ip ?? 'unknown'}`, windowS: 3600, max: 50 };
@@ -289,13 +309,22 @@ export function createIdentityService(d: IdentityDeps) {
         return await d.db.transaction().execute(async (trx) => {
           const ch = await consumeChallenge(trx, input.challengeId, input.nonce, 'session');
           if (ch.device_id !== input.deviceId) throw bad();
-          const dev = await sql<{ user_id: string; public_jwk: P256Jwk }>`
-            select dv.user_id, dv.public_jwk from devices dv join users u on u.id = dv.user_id
+          const dev = await sql<{ user_id: string; public_jwk: P256Jwk; locked: boolean }>`
+            select dv.user_id, dv.public_jwk, dv.locked from devices dv join users u on u.id = dv.user_id
             where dv.id = ${input.deviceId} and dv.revoked_at is null and u.deleted_at is null`.execute(trx);
           const row = dev.rows[0];
           if (!row) throw new AppError('unauthorised', { params: { reason: 'device_revoked' } });
           if (!verifyDevice(row.public_jwk, 'session', { srv: d.serverId, org: input.org, nonce: input.nonce, did: input.deviceId }, input.proof)) throw bad();
-          return newSession(trx, row.user_id, input.deviceId);
+          let scopes = DEFAULT_SCOPES;
+          if (row.locked) {
+            const prev = input.previous?.startsWith('ucap_at_')
+              ? await sql<{ scopes: string[] }>`
+                  select scopes from sessions where token_mac = ${mac(d.pepper, 'session', input.previous)} and device_id = ${input.deviceId}
+                    and revoked_at is null and expires_at > ${new Date(d.clock() - 60_000)}`.execute(trx)
+              : { rows: [] };
+            scopes = prev.rows[0]?.scopes.includes('personal') ? UNLOCKED_SCOPES : LOCKED_SCOPES;
+          }
+          return newSession(trx, row.user_id, input.deviceId, scopes);
         });
       } catch (e) {
         if (e instanceof AppError && e.code === 'unauthorised' && e.params?.reason !== 'device_revoked') await countFailure(d.db, d.clock, limit);

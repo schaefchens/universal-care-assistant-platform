@@ -6,7 +6,7 @@ import Type from 'typebox';
 import type { IdentityService } from '../../domain/identity/service.ts';
 import { AppError } from '../../lib/errors.ts';
 import type { AnyApp } from '../../lib/http.ts';
-import { auth, requireAdmin, requireAuth } from '../auth.ts';
+import { auth, OPEN, requireAdmin, requireAuth } from '../auth.ts';
 
 const B64 = Type.String({ pattern: '^[A-Za-z0-9_-]+$', minLength: 16, maxLength: 200 });
 const Uuid = Type.String({ format: 'uuid' });
@@ -32,14 +32,14 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
     {
       schema: {
         body: Type.Object({
-          purpose: Type.Union([Type.Literal('device.proof'), Type.Literal('session'), Type.Literal('device.recover'), Type.Literal('identity.rotate'), Type.Literal('identity.reissue')]),
+          purpose: Type.Union([Type.Literal('device.proof'), Type.Literal('session'), Type.Literal('device.recover'), Type.Literal('identity.rotate'), Type.Literal('identity.reissue'), Type.Literal('session.unlock')]),
           deviceId: Type.Optional(Uuid),
           identityKey: Type.Optional(B64),
         }),
       },
     },
     async (req) => {
-      const b = req.body as { purpose: 'device.proof' | 'session' | 'device.recover' | 'identity.rotate' | 'identity.reissue'; deviceId?: string; identityKey?: string };
+      const b = req.body as { purpose: 'device.proof' | 'session' | 'device.recover' | 'identity.rotate' | 'identity.reissue' | 'session.unlock'; deviceId?: string; identityKey?: string };
       if (b.purpose === 'device.recover') {
         if (!b.identityKey) throw new AppError('bad_request');
         return identity.recoveryChallenge(b.identityKey, req.ip);
@@ -48,6 +48,8 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
         auth(req);
         return identity.newChallenge(b.purpose);
       }
+      // Android's unlock key (G4) proves itself on a challenge bound to this very device.
+      if (b.purpose === 'session.unlock') return identity.newChallenge('session.unlock', { deviceId: auth(req).deviceId });
       // Asked without a session: limited per address (help needs none: care commands are signed by the device).
       await identity.limitChallenges(req.ip);
       if (b.purpose === 'session') return identity.newChallenge('session', { deviceId: b.deviceId });
@@ -88,16 +90,17 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
 
   app.post(
     '/api/v1/sessions',
-    { schema: { body: Type.Object({ org: Type.String({ maxLength: 200 }), deviceId: Uuid, challengeId: Uuid, nonce: B64, proof: B64 }) } },
+    { schema: { body: Type.Object({ org: Type.String({ maxLength: 200 }), deviceId: Uuid, challengeId: Uuid, nonce: B64, proof: B64, previous: Type.Optional(Type.String({ maxLength: 120 })) }) } },
     async (req) => identity.createSession({ ...(req.body as Omit<Parameters<IdentityService['createSession']>[0], 'ip'>), ip: req.ip }),
   );
 
-  app.delete('/api/v1/sessions/current', { preHandler: requireAuth }, async (req, reply) => {
+  app.delete('/api/v1/sessions/current', { preHandler: requireAuth, config: OPEN }, async (req, reply) => {
     await identity.endSession(auth(req).sessionId);
     return reply.code(204).send();
   });
 
-  app.get('/api/v1/me', { preHandler: requireAuth }, async (req) => identity.me(auth(req).userId, auth(req).deviceId));
+  // Who this device is: open while locked (G4), the app starts with it.
+  app.get('/api/v1/me', { preHandler: requireAuth, config: OPEN }, async (req) => identity.me(auth(req).userId, auth(req).deviceId));
 
   app.patch(
     '/api/v1/me',

@@ -40,6 +40,8 @@ export type TurnEvent =
   | { t: 'command'; intent: Intent }
   | { t: 'ask'; kind: 'help_confirm'; reason: 'help_word' | 'help_near' }
   | { t: 'unmatched' }
+  /** The device is locked (docs/plan-m4.md, G4): commands and help work; this needs the person's code first. */
+  | { t: 'locked' }
   | { t: 'error'; code: 'stt_unavailable' | 'audio' }
   | AssistantEvent
   /** `addressed`: the turn was meant for the assistant (always, but for what LIVE mode heard and dropped). */
@@ -111,6 +113,8 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         undoHere?: boolean;
         /** The device can place a phone call (K6). */
         canCall?: boolean;
+        /** The device is locked (G4): commands and the help question only. */
+        locked?: boolean;
         signal: AbortSignal;
       },
       emit: (e: TurnEvent) => void,
@@ -191,7 +195,15 @@ export function createTurns(d: { db: Db; clock: Clock; stt: Stt; assistant?: Ass
         if (meant) tell();
         const m = match(text, o.lang, context, live ? 'live' : 'push');
         if (m.kind !== 'none') tell();
-        if (m.kind === 'command' && m.intent === 'undo' && context !== 'confirm' && !o.undoHere && d.actions && d.contextFor) {
+        if (o.locked && (m.kind === 'none' || (m.kind === 'command' && m.intent === 'undo' && context !== 'confirm' && !o.undoHere))) {
+          // The app lock (docs/plan-m4.md, G4): a locked device keeps its commands and help; what needs the assistant,
+          // the person's notes or messages, waits for the code. What LIVE mode overheard is dropped as ever.
+          if (meant) {
+            outcome = 'command';
+            detail = 'locked';
+            emit({ t: 'locked' });
+          } else outcome = 'ignored';
+        } else if (m.kind === 'command' && m.intent === 'undo' && context !== 'confirm' && !o.undoHere && d.actions && d.contextFor) {
           // "Rückgängig" needs the server: the last thing the assistant did, undone. Where a screen asks a question
           // (a change to keep or undo), it is that screen's answer instead.
           outcome = 'command';

@@ -92,6 +92,18 @@ export interface DeviceKeyPlugin {
   remove(): Promise<void>;
 }
 
+/**
+ * Android's own lock as an extra for the app lock (docs/plan-m4.md, G4): a second key, usable for 30 s after the
+ * person unlocked the phone. `sign` shows Android's prompt when needed; it rejects `cancelled`, `key_gone` (the phone's
+ * lock was removed) or `no_screen_lock`.
+ */
+export interface UnlockKeyPlugin {
+  state(): Promise<{ secure: boolean; exists: boolean }>;
+  create(): Promise<{ jwk: Jwk }>;
+  sign(o: { data: string; title?: string; subtitle?: string }): Promise<{ signature: string }>;
+  remove(): Promise<void>;
+}
+
 /** What decides whether this phone rings for a help request (the helper's readiness checklist). */
 export interface AlertsStatus {
   /** An alarm now would go unheard (notifications off, channel turned down, total silence, alarm volume zero). */
@@ -273,6 +285,7 @@ export const DeviceTts = registerPlugin<DeviceTtsPlugin>('DeviceTts');
 export const A11y = registerPlugin<A11yPlugin>('A11y');
 export const Info = registerPlugin<InfoPlugin>('Info');
 export const DeviceKey = registerPlugin<DeviceKeyPlugin>('DeviceKey');
+export const UnlockKey = registerPlugin<UnlockKeyPlugin>('UnlockKey');
 export const Alerts = registerPlugin<AlertsPlugin>('Alerts');
 export const Keys = registerPlugin<KeysPlugin>('Keys');
 export const Reminders = registerPlugin<RemindersPlugin>('Reminders');

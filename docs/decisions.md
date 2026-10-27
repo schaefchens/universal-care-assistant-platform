@@ -2108,3 +2108,35 @@ The plan: [plan-m4.md](plan-m4.md).
   guess stays hopeless, and the words and the person's yes come after.
 - **The new device signs in as every device does**: once approved, its poll returns its device id and where it starts
   reading events, and it asks for a session with its own key.
+- **G4, the app lock is enforced by the server, in one place**: a locked device's session has `care`, `ui` and
+  `status` only, and `requireAuth` refuses every route with 403 `locked` unless the route says it is open
+  (`config: OPEN`). The open ones are a list in `server/test/lock-routes.test.ts`, checked against every route of both
+  processes: help requests (the person's and a helper's), push, reminders' upcoming alarms and questions (the person's
+  voice for them too), the device's own configuration, who the device is, signing out, voice turns and LIVE's keyword
+  model, and the lock itself. A new route is closed until someone adds it there.
+- **Voice works on a locked device for commands and help**: the turn is open, and keeps the rest back (`locked`):
+  "Hilfe" asks or sends as ever, "Wie spät ist es?", "Stopp", LIVE on and off, a reminder's "Erledigt" work; what needs
+  the assistant, notes or messages is answered "UCAP ist gesperrt. Dafür brauche ich zuerst deinen Code." What LIVE
+  overheard is dropped as before.
+- **Unlocked stays unlocked across the 15-minute renewals**: the device names the unlocked session it renews
+  (`previous`), until it locks itself (`POST /lock/lock`) or forgets its token (a restart locks it).
+- **Wrong codes**: five in a row pass, then 1, 5, 15 minutes, 1 hour, 4 hours for each further one; the right code
+  waits too while one runs. From the sixth on the person's history says that someone typed a wrong code several times
+  at that device, never the code.
+- **Locked, a new message is "Eine neue Nachricht. Entsperre UCAP, um sie zu hören."**, without who or what, also in
+  LIVE mode (plan-m4.md: "New messages are said as „Eine neue Nachricht." without who or what").
+- **The code screen is a grid of six areas**: 1 and 2 in the top corners, 3 and 4 in the middle row, "Zurück" (the last
+  press back, or leaving) bottom left and Hilfe bottom right, as on every screen. Each press is counted aloud ("2 von
+  6."), never named; the screen shows dots. A keyboard types 1 to 4.
+- **Android's own lock as the extra** (`UnlockKeyPlugin`): offered in the lock's settings only on a phone with a
+  screen lock of its own; a P-256 key usable for 30 seconds after the person unlocked the phone, which signs
+  `session.unlock` on a challenge bound to the device. Android 11 and later show its prompt (fingerprint, face or the
+  phone's PIN); Android 7 to 10 the phone's own confirmation screen. When Android deleted the key (the phone's lock was
+  removed), the code screen says so once and the device forgets it on the server (allowed while locked: dropping a way
+  in opens nothing).
+- **Step 6's reminder asked again later in the walk (G4's first and third runs), found:** the walk sets "Trinken" for
+  15:00 and jumps to the next 15:00 at least 31 minutes ahead. Started at 14:20, the reminder was set at 14:54 (the
+  servers' clock) and the jump went to the next day's 15:00: the day's own 15:00 was passed by the jump, kept asking,
+  and came back at step 7 or 9, the walk's answer having gone to the other one. The walk now moves the clock before the
+  reminder is set. Open for G11: the server asks an occurrence however late it is (here a day, as after a server down
+  that long; the device's own alarm rang at its time); one whose prompts all lie in the past might be missed instead.

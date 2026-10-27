@@ -27,6 +27,8 @@ import { registerAuth } from './auth.ts';
 import { createDispatcher, pruneEvents } from './dispatcher.ts';
 import { registerRealtime } from './realtime.ts';
 import { registerIdentityRoutes } from './routes/identity.ts';
+import { registerLockRoutes } from './routes/lock.ts';
+import { createLock } from '../domain/identity/lock.ts';
 import { registerPeopleRoutes } from './routes/people.ts';
 import { registerCareRoutes } from './routes/care.ts';
 import { registerNoteRoutes } from './routes/notes.ts';
@@ -146,6 +148,8 @@ export async function buildCore(o: {
   registerServerInfo(app, { serverId, config: o.config, vapidPublicKey: () => push.publicKey });
   registerFileRoutes(app, { db: o.db, store: files, dir: o.config.filesDir });
   registerIdentityRoutes(app, { identity, closeDevice: (deviceId) => hub.closeDevice(deviceId, CLOSE.revoked) });
+  // The app lock (docs/plan-m4.md, G4).
+  registerLockRoutes(app, { lock: createLock({ db: o.db, clock: o.clock, serverId, publicOrigins: o.config.publicOrigins }), identity });
   registerPeopleRoutes(app, { people });
   registerCareRoutes(app, { db: o.db, clock: o.clock, pepper: o.secrets.pepper, care, people, push, heartbeats, reminders, requireSigned, log });
   registerReminderRoutes(app, { reminders, requireSigned });

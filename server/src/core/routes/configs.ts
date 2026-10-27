@@ -8,7 +8,7 @@ import { DeviceConfig } from '@ucap/shared';
 import Type from 'typebox';
 import type { Configs } from '../../domain/configs/service.ts';
 import type { AnyApp } from '../../lib/http.ts';
-import { auth, requireAuth } from '../auth.ts';
+import { auth, OPEN, requireAuth } from '../auth.ts';
 
 const Id = Type.Object({ id: Type.String({ format: 'uuid' }) });
 const Reason = Type.Union([Type.Literal('touch'), Type.Literal('speech'), Type.Literal('awaiting'), Type.Literal('care')]);
@@ -18,16 +18,18 @@ export function registerConfigRoutes(app: AnyApp, o: { configs: Configs }) {
   const id = (req: { params: unknown }) => (req.params as { id: string }).id;
 
   // —— The device's own ——
-  app.get('/api/v1/devices/current/config', { preHandler: requireAuth }, async (req) => ({ config: await configs.forDevice(auth(req).userId, auth(req).deviceId) }));
+  // The device's own configuration is open to it while locked (docs/plan-m4.md, G4): its screens, help, the lock's way out.
+  app.get('/api/v1/devices/current/config', { preHandler: requireAuth, config: OPEN }, async (req) => ({ config: await configs.forDevice(auth(req).userId, auth(req).deviceId) }));
   app.put(
     '/api/v1/devices/current/config',
-    { preHandler: requireAuth, bodyLimit: 256 * 1024, schema: { body: Type.Object({ body: DeviceConfig }, { additionalProperties: false }) } },
+    { preHandler: requireAuth, config: OPEN, bodyLimit: 256 * 1024, schema: { body: Type.Object({ body: DeviceConfig }, { additionalProperties: false }) } },
     async (req) => ({ config: await configs.createForDevice(auth(req).userId, auth(req).deviceId, (req.body as { body: DeviceConfig }).body) }),
   );
   app.post(
     '/api/v1/devices/current/config-state',
     {
       preHandler: requireAuth,
+      config: OPEN,
       schema: {
         body: Type.Object(
           {

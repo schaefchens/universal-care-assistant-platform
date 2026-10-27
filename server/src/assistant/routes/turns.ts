@@ -8,7 +8,7 @@ import { Readable } from 'node:stream';
 import Type from 'typebox';
 import type { Llm } from '../../ai/llm/service.ts';
 import type { Stt } from '../../ai/stt/service.ts';
-import { auth, requireAuth } from '../../core/auth.ts';
+import { auth, OPEN, requireAuth } from '../../core/auth.ts';
 import { AppError } from '../../lib/errors.ts';
 import type { AnyApp } from '../../lib/http.ts';
 import { MAX_TURN_MS, type TurnEvent, type Turns } from '../turns.ts';
@@ -37,7 +37,9 @@ export function registerTurnRoutes(app: AnyApp, o: { turns: Turns; stt: Stt; llm
   void app.register(async (scope) => {
     scope.addContentTypeParser('audio/wav', { parseAs: 'buffer', bodyLimit: AUDIO_LIMIT }, (_req, body, done) => done(null, body));
 
-    scope.post('/api/v1/assistant/turns', { preHandler: requireAuth, bodyLimit: AUDIO_LIMIT, schema: { querystring: Query } }, async (req, reply) => {
+    // Open to a locked device (docs/plan-m4.md, G4): "Hilfe" by voice never waits for a code; the turn itself keeps the
+    // rest back (`locked`).
+    scope.post('/api/v1/assistant/turns', { preHandler: requireAuth, config: OPEN, bodyLimit: AUDIO_LIMIT, schema: { querystring: Query } }, async (req, reply) => {
       const a = auth(req);
       const q = req.query as { id: string; context: 'global' | 'confirm' | 'reminder' | 'dictation' | 'reply'; lang: 'de' | 'en'; conversation?: string; all?: '1'; mode?: 'push' | 'live'; via?: 'keyword' | 'named' | 'touch' | 'open'; undo?: 'device'; calls?: '1' };
       const body = req.body as Buffer | { text?: unknown } | undefined;
@@ -57,7 +59,7 @@ export function registerTurnRoutes(app: AnyApp, o: { turns: Turns; stt: Stt; llm
         lines.push(`${JSON.stringify(e)}\n`);
         wake?.();
       };
-      void o.turns.run({ userId: a.userId, deviceId: a.deviceId, id: q.id, context: q.context, lang: q.lang, conversation: q.conversation, all: q.all === '1', audio, text, mode: q.mode, via: q.via, undoHere: q.undo === 'device', canCall: q.calls === '1', signal: abort.signal }, emit).finally(() => {
+      void o.turns.run({ userId: a.userId, deviceId: a.deviceId, id: q.id, context: q.context, lang: q.lang, conversation: q.conversation, all: q.all === '1', audio, text, mode: q.mode, via: q.via, undoHere: q.undo === 'device', canCall: q.calls === '1', locked: !a.scopes.includes('personal'), signal: abort.signal }, emit).finally(() => {
         finished = true;
         wake?.();
       });
@@ -77,7 +79,7 @@ export function registerTurnRoutes(app: AnyApp, o: { turns: Turns; stt: Stt; llm
 
   // The app's warm-up when the talk area is first touched: whether voice input can work now (nothing is sent), and
   // the dialogue model loading meanwhile.
-  app.post('/api/v1/assistant/warmup', { preHandler: requireAuth }, async (req) => {
+  app.post('/api/v1/assistant/warmup', { preHandler: requireAuth, config: OPEN }, async (req) => {
     void o.llm?.warm();
     return { voice: await o.stt.ready(auth(req).userId) };
   });

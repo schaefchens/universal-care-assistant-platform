@@ -34,6 +34,14 @@ export function createHttp(config: Pick<Config, 'allowedOrigins' | 'logLevel'>, 
     trustProxy: true, // behind Caddy
   }).withTypeProvider<TypeBoxTypeProvider>();
 
+  // Every route as registered, with its guards: the app lock's route matrix reads them (docs/plan-m4.md, G4).
+  const routes: RouteInfo[] = [];
+  app.addHook('onRoute', (r) => {
+    const guards = [r.preHandler ?? []].flat() as { session?: boolean }[];
+    for (const method of [r.method].flat()) if (method !== 'HEAD') routes.push({ method, url: r.url, session: guards.some((g) => g.session === true), open: (r.config as { lock?: string } | undefined)?.lock === 'open' });
+  });
+  app.decorate('ucapRoutes', routes);
+
   app.addHook('onResponse', async (req, reply) => {
     req.log.info({ method: req.method, route: req.routeOptions.url ?? 'unmatched', status: reply.statusCode, ms: Math.round(reply.elapsedTime) }, 'request');
   });
@@ -67,6 +75,20 @@ export function createHttp(config: Pick<Config, 'allowedOrigins' | 'logLevel'>, 
   });
 
   return app;
+}
+
+/** A route as the lock sees it: whether it needs a session, and whether a locked device may use it. */
+export interface RouteInfo {
+  method: string;
+  url: string;
+  session: boolean;
+  open: boolean;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    ucapRoutes: RouteInfo[];
+  }
 }
 
 export type App = ReturnType<typeof createHttp>;

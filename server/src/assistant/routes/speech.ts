@@ -7,7 +7,7 @@ import Type from 'typebox';
 import type { Providers } from '../../ai/providers.ts';
 import type { Stt } from '../../ai/stt/service.ts';
 import type { Speech } from '../../ai/tts/service.ts';
-import { auth, requireAuth } from '../../core/auth.ts';
+import { auth, OPEN, requireAuth } from '../../core/auth.ts';
 import type { AnyApp } from '../../lib/http.ts';
 
 const Ref = Type.String({ minLength: 1, maxLength: 120 });
@@ -32,10 +32,12 @@ export function registerSpeechRoutes(app: AnyApp, o: { speech: Speech; providers
 
   app.post('/api/v1/speech/samples', { preHandler: requireAuth, schema: { body: Type.Object({ ref: Ref }) } }, async (req) => speech.sample(auth(req).userId, (req.body as { ref: string }).ref));
 
+  // Open to a locked device (docs/plan-m4.md, G4): a reminder's question is said in the person's voice there too.
   app.post(
     '/api/v1/speech/render',
     {
       preHandler: requireAuth,
+      config: OPEN,
       schema: {
         body: Type.Object({
           text: Type.String({ minLength: 1, maxLength: 4000 }),

@@ -74,6 +74,9 @@ import { reminders as reminderApi } from './reminders/api.ts';
 import { syncDeviceAlarms as syncAlarms } from './reminders/sync.ts';
 import { promptOf, titleOf } from './reminders/words.ts';
 import { Settings } from './screens/Settings.tsx';
+import { SetCodeScreen, UnlockScreen } from './screens/UnlockScreen.tsx';
+import { LockSetting } from './screens/LockSetting.tsx';
+import { type LockState, lockApi, unlockWithAndroid } from './lock/client.ts';
 import { Setup } from './screens/Setup.tsx';
 import { wordLanguage } from './screens/words/common.ts';
 import { loadDeviceConfig, loadPrefs, loadServer, type Prefs, saveDeviceConfig, savePrefs, saveServer, type ServerRef } from './state/store.ts';
@@ -106,6 +109,8 @@ type Page =
   | 'serverAdmin'
   /** The person's own screens and areas, shaped on this device (docs/plan-m4.md, G1). */
   | 'screens'
+  /** The app lock's code, chosen on the large areas (G4). */
+  | 'lockCode'
   /**
    * "Soll ich einen Hilferuf senden?" after a help word or a near match, or proposed by the assistant (A17); asked at a
    * reminder, the request is linked to it.
@@ -194,6 +199,11 @@ export function App() {
   const [contactsRev, setContactsRev] = useState(0);
   const [agendaRev, setAgendaRev] = useState(0);
   const [messagingRev, setMessagingRev] = useState(0);
+  /** The app lock (docs/plan-m4.md, G4): on for this device, and whether this session is unlocked. */
+  const [lock, setLock] = useState<LockState | null>(null);
+  const lockRef = useRef(lock);
+  lockRef.current = lock;
+  const [lockRev, setLockRev] = useState(0);
   const [configRev, setConfigRev] = useState(0);
   const [careState, setCareState] = useState<CareState>({ pending: false, request: null });
   const [isHelper, setIsHelper] = useState(false);
@@ -484,6 +494,9 @@ export function App() {
     fetch: async (asked) => {
       const s = sessionRef.current;
       if (!s) return [];
+      // Locked (G4): that something came, never who or what.
+      const l = lockRef.current;
+      if (l?.locked && !l.unlocked) return [{ kind: 'system', text: uiRef.current.tr('lock.message') }];
       // By itself, not the services this device leaves to the person (K8); asked, everything. The model's summaries may
       // take the server up to 25 s (a model still loading): longer than a call's usual 15 s.
       const skip = asked ? [] : liveSkips(liveOf(configRef.current));
@@ -557,6 +570,63 @@ export function App() {
       careRef.current = null;
     };
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The app lock's state, at every start and whenever the server says this device is locked (G4).
+  useEffect(() => {
+    if (!session) {
+      setLock(null);
+      return;
+    }
+    const load = () =>
+      void lockApi(session)
+        .state()
+        .then((s) => {
+          session.setUnlocked(s.locked && s.unlocked);
+          setLock(s);
+        }, () => {});
+    session.onLocked = () => setLock((l) => (l ? { ...l, unlocked: false } : l));
+    load();
+    return () => {
+      session.onLocked = null;
+    };
+  }, [session, lockRev]);
+
+  /** Locks this device now ("Sperren", the screen off, out of sight for the person's while): only help stays. */
+  const lockNow = async (say = true) => {
+    const s = sessionRef.current;
+    if (!s || !lockRef.current?.locked) return;
+    await lockApi(s).lock().catch(() => {});
+    s.setUnlocked(false);
+    setLock((l) => (l ? { ...l, unlocked: false } : l));
+    setPage('areas');
+    if (say) uiRef.current.say(uiRef.current.tr('lock.locked'), 'system');
+  };
+  const lockNowRef = useRef(lockNow);
+  lockNowRef.current = lockNow;
+  // Out of sight (the app in the background, the screen off) for the person's while: locked again. At once is at once.
+  useEffect(() => {
+    let hiddenAt: number | null = null;
+    const hide = () => {
+      const l = lockRef.current;
+      if (!l?.locked || !l.unlocked) return;
+      if (l.lockAfterS === 0) void lockNowRef.current(false);
+      else hiddenAt = Date.now();
+    };
+    const show = () => {
+      const l = lockRef.current;
+      if (hiddenAt !== null && l?.locked && l.unlocked && Date.now() - hiddenAt >= l.lockAfterS * 1000) void lockNowRef.current(false);
+      hiddenAt = null;
+    };
+    const visibility = () => (document.hidden ? hide() : show());
+    document.addEventListener('visibilitychange', visibility);
+    const paused = has('App') ? CapApp.addListener('pause', hide) : null;
+    const resumed = has('App') ? CapApp.addListener('resume', show) : null;
+    return () => {
+      document.removeEventListener('visibilitychange', visibility);
+      void paused?.then((h) => h.remove());
+      void resumed?.then((h) => h.remove());
+    };
+  }, []);
 
   // The browser's service worker signs push receipts: it needs to know who this device is, and in which language.
   useEffect(() => {
@@ -866,6 +936,11 @@ export function App() {
       case 'whatCanIDo':
         u.say(currentVoice().whatCanIDo?.() ?? `${u.tr('whatcan.page', { screen: title() })} ${u.tr('whatcan.commands')}`, 'system');
         return;
+      // The app lock (G4): "Sperren" locks this device now, when its lock is on.
+      case 'lock':
+        if (lockRef.current?.locked) void lockNow();
+        else u.say(u.tr('lock.off'), 'system');
+        return;
       // LIVE mode (docs/plan-m2.md): switched by voice as by touch, a change of this device's configuration.
       case 'liveOn':
       case 'liveOff': {
@@ -1015,6 +1090,15 @@ export function App() {
         u.earcons.play('message');
         return news.arrived();
       }
+      // Locked (G4): that a message came, never who or what; once in a burst.
+      const l = lockRef.current;
+      if (l?.locked && !l.unlocked) {
+        if (Date.now() - (announcedAt.current.get('locked') ?? 0) < 20_000) return;
+        announcedAt.current.set('locked', Date.now());
+        u.earcons.play('message');
+        u.say(u.tr('lock.message'), 'notice');
+        return;
+      }
       // A burst in one conversation: who wrote is said once; what they wrote, each time, the earcon once.
       const conv = String(data.conversationId ?? '');
       const withText = messagesOf(configRef.current).text;
@@ -1134,6 +1218,26 @@ export function App() {
     );
   else if (page === 'devices') content = <Devices session={session} serverName={server.name || server.url} onSignedOut={() => signedOut(ui.tr('devices.signedOut'))} onClose={() => setPage('settings')} />;
   else if (page === 'screens') content = <ScreensPage config={config} onConfig={updateConfig} onClose={() => setPage('settings')} />;
+  else if (page === 'lockCode')
+    content = (
+      <SetCodeScreen
+        config={config}
+        onSave={async (code) => {
+          try {
+            await lockApi(session).setCode(code);
+            setLockRev((n) => n + 1);
+            return null;
+          } catch {
+            return ui.tr('error.internal');
+          }
+        }}
+        onDone={() => setPage('settings')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+      />
+    );
   else if (page === 'helpers')
     content = (
       <Helpers
@@ -1416,6 +1520,7 @@ export function App() {
         }}
         onClose={() => setPage('areas')}
       >
+        <LockSetting session={session} refresh={lockRev} onChanged={() => setLockRev((n) => n + 1)} onSetCode={() => setPage('lockCode')} onLocked={() => void lockNow()} />
         <HelpKeySetting />
         <AndroidPushSetup session={session} server={server} />
         <DeletedSetting session={session} />
@@ -1436,6 +1541,51 @@ export function App() {
         onCare={() => setPage('care')}
         onInbox={isHelper ? () => setPage('inbox') : undefined}
         pages={{ notes: () => setPage('notes'), messages: () => setPage('messages'), contacts: () => setPage('contactList'), appointments: () => setPage('appointmentList'), tasks: () => setPage('taskList') }}
+      />
+    );
+
+  // The app lock (G4): locked, only help, the person's areas, a help request, a reminder and a helper's alert are there;
+  // anything else asks for the code first, and opens once it is right.
+  const lockedNow = session !== null && !!lock?.locked && !lock.unlocked;
+  const openWhileLocked = typeof page === 'string' ? ['areas', 'care', 'inbox'].includes(page) : 'alert' in page || 'reminder' in page || 'help' in page || 'configChanged' in page;
+  if (session && lockedNow && !openWhileLocked)
+    content = (
+      <UnlockScreen
+        config={config}
+        title={ui.tr('lock.title')}
+        intro={ui.tr('lock.intro')}
+        onCode={async (code) => {
+          const problem = await lockApi(session).unlock(code);
+          if (!problem) {
+            setLock((l) => (l ? { ...l, unlocked: true, waitUntil: null } : l));
+            ui.say(ui.tr('lock.unlocked'), 'system');
+            return null;
+          }
+          return ui.tr(problem.key, problem.params);
+        }}
+        onCancel={() => setPage('areas')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+        onAndroid={
+          lock?.android && has('UnlockKey')
+            ? async () => {
+                const problem = await unlockWithAndroid(session, { title: ui.tr('lock.androidPrompt'), subtitle: ui.tr('lock.android') });
+                if (!problem) {
+                  setLock((l) => (l ? { ...l, unlocked: true } : l));
+                  ui.say(ui.tr('lock.unlocked'), 'system');
+                  return null;
+                }
+                // The phone's lock was removed (Android deleted the key): the code is the way, as always.
+                if (problem === 'key_gone') {
+                  void session.call('/api/v1/lock/android-key', { method: 'DELETE' }).catch(() => {});
+                  setLock((l) => (l ? { ...l, android: false } : l));
+                }
+                return problem === 'cancelled' ? null : ui.tr(problem === 'key_gone' ? 'lock.androidGone' : 'lock.androidFailed');
+              }
+            : undefined
+        }
       />
     );
 

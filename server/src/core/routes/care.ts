@@ -16,7 +16,7 @@ import type { Clock } from '../../lib/clock.ts';
 import type { Db } from '../../lib/db.ts';
 import { AppError } from '../../lib/errors.ts';
 import type { AnyApp } from '../../lib/http.ts';
-import { auth, requireAuth } from '../auth.ts';
+import { auth, OPEN, requireAuth } from '../auth.ts';
 import { signed } from '../signed.ts';
 
 const Uuid = Type.String({ format: 'uuid' });
@@ -71,11 +71,11 @@ export function registerCareRoutes(
     },
   );
 
-  app.get('/api/v1/care/requests', { preHandler: requireAuth, schema: { querystring: Type.Object({ role: Type.Optional(Type.Union([Type.Literal('person'), Type.Literal('helper')])) }) } }, async (req) => ({
+  app.get('/api/v1/care/requests', { preHandler: requireAuth, config: OPEN, schema: { querystring: Type.Object({ role: Type.Optional(Type.Union([Type.Literal('person'), Type.Literal('helper')])) }) } }, async (req) => ({
     requests: await care.list(auth(req).userId, (req.query as { role?: 'person' | 'helper' }).role ?? 'person'),
   }));
 
-  app.get('/api/v1/care/requests/:id', { preHandler: requireAuth, schema: { params: ById } }, async (req) => care.get(auth(req).userId, (req.params as { id: string }).id));
+  app.get('/api/v1/care/requests/:id', { preHandler: requireAuth, config: OPEN, schema: { params: ById } }, async (req) => care.get(auth(req).userId, (req.params as { id: string }).id));
 
   app.post('/api/v1/care/requests/:id/cancel', { preHandler: o.requireSigned, schema: { params: ById, body: Episode } }, async (req, reply) => {
     await care.cancel(signed(req).userId, (req.params as { id: string }).id, (req.body as { episode: number }).episode);
@@ -88,7 +88,7 @@ export function registerCareRoutes(
   });
 
   for (const action of ['seen', 'accept', 'decline', 'release', 'resolve'] as const) {
-    app.post(`/api/v1/care/requests/:id/${action}`, { preHandler: requireAuth, schema: { params: ById, body: Episode } }, async (req, reply) => {
+    app.post(`/api/v1/care/requests/:id/${action}`, { preHandler: requireAuth, config: OPEN, schema: { params: ById, body: Episode } }, async (req, reply) => {
       await care[action](auth(req).userId, (req.params as { id: string }).id, (req.body as { episode: number }).episode);
       return reply.code(204).send();
     });
@@ -98,6 +98,7 @@ export function registerCareRoutes(
     '/api/v1/care/requests/:id/messages',
     {
       preHandler: requireAuth,
+      config: OPEN,
       schema: {
         params: ById,
         body: Type.Object({
@@ -120,7 +121,7 @@ export function registerCareRoutes(
   // The escalation plan: the person, or a helper with care.configure.
   const mayPlan = async (userId: string, personId: string) => userId === personId || (await people.can(userId, 'care.configure', personId));
   // With the helpers it names, so an editor can say who is who and warn about anyone it cannot reach.
-  app.get('/api/v1/people/:id/escalation-plan', { preHandler: requireAuth, schema: { params: ById } }, async (req): Promise<Plan & { helpers: Awaited<ReturnType<typeof planHelpers>> }> => {
+  app.get('/api/v1/people/:id/escalation-plan', { preHandler: requireAuth, config: OPEN, schema: { params: ById } }, async (req): Promise<Plan & { helpers: Awaited<ReturnType<typeof planHelpers>> }> => {
     const personId = (req.params as { id: string }).id;
     if (!(await mayPlan(auth(req).userId, personId))) throw new AppError('not_found');
     return { ...(await effectivePlan(o.db, personId)), helpers: await planHelpers(o.db, personId) };
@@ -155,11 +156,11 @@ export function registerCareRoutes(
   // registers UnifiedPush whenever the distributor hands it an endpoint, also while the app is closed, so it signs.
   const Subscription = Type.Object({ endpoint: Type.String({ maxLength: 1000 }), keys: Type.Object({ p256dh: Type.String({ maxLength: 200 }), auth: Type.String({ maxLength: 100 }) }) });
   type Sub = { endpoint: string; keys: { p256dh: string; auth: string } };
-  app.put('/api/v1/devices/current/push-endpoints/webpush', { preHandler: requireAuth, schema: { body: Subscription } }, async (req, reply) => {
+  app.put('/api/v1/devices/current/push-endpoints/webpush', { preHandler: requireAuth, config: OPEN, schema: { body: Subscription } }, async (req, reply) => {
     await o.push.register(auth(req).deviceId, 'webpush', req.body as Sub);
     return reply.code(204).send();
   });
-  app.delete('/api/v1/devices/current/push-endpoints/webpush', { preHandler: requireAuth }, async (req, reply) => {
+  app.delete('/api/v1/devices/current/push-endpoints/webpush', { preHandler: requireAuth, config: OPEN }, async (req, reply) => {
     await o.push.unregister(auth(req).deviceId, 'webpush');
     return reply.code(204).send();
   });
@@ -173,7 +174,7 @@ export function registerCareRoutes(
   });
 
   // A test alarm to this device, the readiness checklist's last step; its receipt comes back as the event push.test.
-  app.post('/api/v1/devices/current/push-test', { preHandler: requireAuth }, async (req) => o.push.test(auth(req).userId, auth(req).deviceId));
+  app.post('/api/v1/devices/current/push-test', { preHandler: requireAuth, config: OPEN }, async (req) => o.push.test(auth(req).userId, auth(req).deviceId));
 
   // "Annehmen" / "Kann nicht" on the alarm itself, sent by the app's native code without opening the app.
   app.post(
@@ -192,7 +193,7 @@ export function registerCareRoutes(
   app.get('/api/v1/push/vapid', async () => ({ publicKey: o.push.publicKey }));
 
   // For the person: whether their helpers can be reached; for everyone: their own devices' readiness.
-  app.get('/api/v1/care/readiness', { preHandler: requireAuth }, async (req) => o.heartbeats.view(o.db, auth(req).userId));
+  app.get('/api/v1/care/readiness', { preHandler: requireAuth, config: OPEN }, async (req) => o.heartbeats.view(o.db, auth(req).userId));
 
   // A receipt proves the device decrypted the alert: it returns the delivery's nonce, signed by that device.
   app.post(

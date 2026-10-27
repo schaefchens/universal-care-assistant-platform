@@ -364,6 +364,9 @@ export class VoiceController {
       case 'unmatched':
         if (!currentVoice().onOther?.()) ui.say(ui.tr('voice.unmatched'), 'assistant');
         return;
+      case 'locked':
+        ui.say(ui.tr('lock.voice'), 'system');
+        return;
       case 'error':
         if (e.code === 'stt_unavailable') this.unavailable();
         else if (e.code === 'assistant_unavailable') ui.say(ui.tr('assistant.unavailable'), 'system');

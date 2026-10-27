@@ -20,7 +20,7 @@ export type CommandLang = 'de' | 'en';
  */
 export type CommandContext = 'global' | 'confirm' | 'reminder' | 'dictation' | 'reply';
 
-export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo' | 'liveOn' | 'liveOff' | 'pause' | 'resume' | 'news' | 'slower' | 'faster' | 'shorter' | 'longer' | 'biggerText' | 'smallerText' | 'highContrast' | 'normalContrast';
+export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo' | 'liveOn' | 'liveOff' | 'pause' | 'resume' | 'news' | 'slower' | 'faster' | 'shorter' | 'longer' | 'biggerText' | 'smallerText' | 'highContrast' | 'normalContrast' | 'lock';
 
 export type Match = { kind: 'command'; intent: Intent } | { kind: 'ask'; reason: 'help_word' | 'help_near' } | { kind: 'none' };
 
@@ -68,6 +68,8 @@ const GLOBAL: Record<CommandLang, Table> = {
     smallerText: ['Mach die Schrift kleiner', 'Schrift kleiner', 'Kleinere Schrift'],
     highContrast: ['Hoher Kontrast', 'Mehr Kontrast', 'Kontrast an', 'Mach den Kontrast höher'],
     normalContrast: ['Normaler Kontrast', 'Kontrast normal', 'Kontrast aus'],
+    // The app lock (docs/plan-m4.md, G4): this device locked now; help stays.
+    lock: ['Sperren', 'App sperren', 'UCAP sperren', 'Sperre die App'],
   },
   en: {
     stop: ['Stop', 'Cancel', 'Enough', 'Quiet'],
@@ -93,6 +95,7 @@ const GLOBAL: Record<CommandLang, Table> = {
     smallerText: ['Smaller text', 'Make the text smaller'],
     highContrast: ['High contrast', 'More contrast'],
     normalContrast: ['Normal contrast'],
+    lock: ['Lock', 'Lock the app', 'Lock UCAP'],
   },
 };
 

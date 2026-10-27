@@ -20,6 +20,8 @@ export const PURPOSES = [
   'identity.reissue',
   // Device linking (docs/plan-m4.md, G3): the person's yes on the device that offered the code.
   'device.link',
+  // The app lock (G4): Android's key, bound to the phone's own lock, unlocks a session.
+  'session.unlock',
 ] as const;
 export type Purpose = (typeof PURPOSES)[number];
 

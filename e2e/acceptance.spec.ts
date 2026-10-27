@@ -275,6 +275,12 @@ test('5 · escalation: nobody accepts within two minutes, Tom is alerted and Tom
 });
 
 test('6 · a reminder: Maria sets "Trinken" for 15:00; at 15:00 it asks; "Noch nicht. Kann mir jemand Wasser bringen?" leads to the question, "Ja" to a help request linked to it', async () => {
+  // A three o'clock in the afternoon past step 5's reopen window (30 minutes after its request was resolved), or "Ja"
+  // would reopen that request instead of sending a new one. The clock goes to five minutes before it while the reminder
+  // does not exist yet: a jump past another three o'clock after it was set would leave that one asking, a day late (a
+  // walk started at 14:20 showed it again at step 9).
+  const due = nextBerlin((await clocks.now()) + 31 * 60_000, 15, 0);
+  await clocks.moveTo(due - 5 * 60_000);
   // Maria, who may manage the person's reminders.
   await home(maria);
   await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
@@ -289,10 +295,8 @@ test('6 · a reminder: Maria sets "Trinken" for 15:00; at 15:00 it asks; "Noch n
   await editor.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(maria.getByText(/^Erinnerung „Trinken“ gespeichert/).first()).toBeVisible();
 
-  // Half a minute before three in the afternoon, then three: a three o'clock past step 5's reopen window (30 minutes
-  // after its request was resolved), or "Ja" would reopen that request instead of sending a new one.
+  // Half a minute before three, then three.
   await home(clara);
-  const due = nextBerlin((await clocks.now()) + 31 * 60_000, 15, 0);
   await clocks.moveTo(due - 30_000);
   const from = await mark(clara);
   await clocks.moveTo(due + 1_000);
@@ -965,6 +969,53 @@ test('G3 · a second device (docs/plan-m4.md, G3; acceptance 3): Clara’s table
   await linked.getByRole('button', { name: 'Abmelden', exact: true }).click();
   await clara.getByRole('button', { name: 'Ja, abmelden', exact: true }).click();
   await expect(heading(fresh)).toHaveText('Willkommen bei UCAP', { timeout: 5_000 });
+  await home(clara);
+});
+
+test('G4 · the app lock (docs/plan-m4.md, G4; acceptance 4): Clara chooses her code on the large areas and locks her tablet; locked, help still works by touch and her notes wait behind the code; a wrong code is said, the right one unlocks; unlocked again for the steps after', async () => {
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  const from = await mark(clara);
+  // The code: six presses on the large areas, asked twice; never said.
+  await clara.getByRole('button', { name: 'Code festlegen', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Neuer Code');
+  await axe(clara, 'Neuer Code');
+  const enter = async (code: string) => {
+    for (const d of code) await clara.getByRole('button', { name: d, exact: true }).click();
+  };
+  await enter('123412');
+  await expect(heading(clara)).toHaveText('Noch einmal, zur Kontrolle');
+  await enter('123412');
+  await said(clara, /^Dein Code ist festgelegt\.$/, from);
+  expect((await spoken(clara)).slice(from).filter((t) => /1.?2.?3.?4.?1.?2/.test(t))).toEqual([]);
+  // On for this tablet.
+  await setChoice(clara.getByRole('switch', { name: 'App-Sperre auf diesem Gerät' }));
+  await said(clara, /^Die App-Sperre ist auf diesem Gerät eingeschaltet\.$/, from);
+  await clara.getByRole('button', { name: 'Jetzt sperren', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Startseite');
+  await said(clara, /^UCAP ist gesperrt\. Hilfe geht weiter, auch ohne Code\.$/, from);
+  // Locked: the notes wait behind the code.
+  await clara.getByRole('button', { name: 'Termine', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Gesperrt');
+  await axe(clara, 'Gesperrt');
+  await enter('444444');
+  await said(clara, /^Der Code stimmt nicht\. Bitte noch einmal\.$/, from);
+  // Help by touch needs no code.
+  await clara.getByRole('button', { name: 'Hilfe', exact: true }).click();
+  await said(clara, /^Dein Hilferuf wurde gesendet\./, from);
+  await clara.getByRole('button', { name: 'Hilferuf abbrechen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Ja, abbrechen', exact: true }).click();
+  await said(clara, /^Hilferuf abgebrochen\./, from);
+  // The right code unlocks.
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Gesperrt');
+  await enter('123412');
+  await said(clara, /^Entsperrt\.$/, from);
+  await expect(heading(clara)).toHaveText('Einstellungen');
+  // Off again: the steps after use the tablet unlocked.
+  await setChoice(clara.getByRole('switch', { name: 'App-Sperre auf diesem Gerät' }), false);
+  await said(clara, /^Die App-Sperre ist auf diesem Gerät ausgeschaltet\.$/, from);
   await home(clara);
 });
 

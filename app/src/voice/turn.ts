@@ -16,6 +16,8 @@ export type TurnEvent =
   | { t: 'command'; intent: Intent }
   | { t: 'ask'; kind: 'help_confirm'; reason: 'help_word' | 'help_near' }
   | { t: 'unmatched' }
+  /** The device is locked (docs/plan-m4.md, G4): commands and help work; this needs the person's code first. */
+  | { t: 'locked' }
   | { t: 'error'; code: 'stt_unavailable' | 'audio' | 'assistant_unavailable' | 'assistant_failed' }
   /**
    * A part of the assistant's answer: its own words, a summary, an original (read word for word), a voice message's

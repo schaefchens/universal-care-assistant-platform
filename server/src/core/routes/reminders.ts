@@ -8,7 +8,7 @@ import { Schedule } from '@ucap/shared';
 import Type from 'typebox';
 import type { ReminderInput, ReminderService } from '../../domain/reminders/service.ts';
 import type { AnyApp } from '../../lib/http.ts';
-import { auth, requireAuth } from '../auth.ts';
+import { auth, OPEN, requireAuth } from '../auth.ts';
 import { signed } from '../signed.ts';
 
 const Uuid = Type.String({ format: 'uuid' });
@@ -60,11 +60,11 @@ export function registerReminderRoutes(app: AnyApp, o: { reminders: ReminderServ
   });
 
   // What the person's device sets its own alarms from: the next 48 hours.
-  app.get('/api/v1/people/:id/reminders/upcoming', { preHandler: requireAuth, schema: { params: Person } }, async (req) => reminders.upcoming(auth(req).userId, ids(req).id));
+  app.get('/api/v1/people/:id/reminders/upcoming', { preHandler: requireAuth, config: OPEN, schema: { params: Person } }, async (req) => reminders.upcoming(auth(req).userId, ids(req).id));
 
   app.get('/api/v1/people/:id/reminder-responses', { preHandler: requireAuth, schema: { params: Person } }, async (req) => reminders.responses(auth(req).userId, ids(req).id));
 
-  app.get('/api/v1/reminders/occurrences/:id', { preHandler: requireAuth, schema: { params: Person } }, async (req) => reminders.occurrence(auth(req).userId, ids(req).id));
+  app.get('/api/v1/reminders/occurrences/:id', { preHandler: requireAuth, config: OPEN, schema: { params: Person } }, async (req) => reminders.occurrence(auth(req).userId, ids(req).id));
 
   app.post(
     '/api/v1/reminders/occurrences/:id/responses',
