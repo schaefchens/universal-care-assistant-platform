@@ -27,6 +27,12 @@ and tasks; and two permissions for helpers to manage contacts and appointments.
 [docs/acceptance-m3.md](docs/acceptance-m3.md) says where its checks stand and what waits for a real phone;
 [docs/play.md](docs/play.md) holds the declarations and disclosures Google Play asks for.
 
+Milestone 4 ([docs/plan-m4.md](docs/plan-m4.md)) added helpers' remote setup of screens, areas, sounds, voices and care
+contacts on one page per person; a second device by a code and four pictures; UCAP's own app lock, help never behind
+it; new words that wait a day, an operator's reset, representatives and trusted persons; areas that open apps, UCAP as
+the home screen and a kiosk with its own permission; and UCAP as the phone app with its own call screen.
+[docs/acceptance-m4.md](docs/acceptance-m4.md) says where its checks stand and what waits for a real phone.
+
 ## Running the development stack
 
 Requirements: Docker Desktop, Node 24 or newer.

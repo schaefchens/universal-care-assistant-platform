@@ -1,7 +1,7 @@
 # Google Play: declarations and disclosures
 
-What UCAP's Android app asks Android for since M3, why, what Google Play requires for it, and what the app tells the
-person before each step. Prepared for the Play release (plan.md, M9: "Play release (closed test with 12 testers for 14
+What UCAP's Android app asks Android for since M3 (and, since M4, the phone role, device administration and the list
+of apps), why, what Google Play requires for it, and what the app tells the person before each step. Prepared for the Play release (plan.md, M9: "Play release (closed test with 12 testers for 14
 days, declarations, prominent disclosures)"); written in M3 as plan-m3.md, K9 asks ("the disclosures written (the SMS
 role, notification access, contacts)").
 
@@ -134,6 +134,85 @@ lookup by number, which is part of the default SMS handler's core function. The 
 **What goes to the server:** on the import, each contact's name, numbers and email addresses with their labels. With an
 SMS, the sender's name from the address book.
 
+## The phone role (UCAP as the default phone app, M4)
+
+**What it is for.** The person makes UCAP their phone app (plan-m4.md, G10; the owner's choice of 2026-10-27). Calls then
+come to UCAP's own screen with large areas, over the lock screen and inside the kiosk, and UCAP says who is calling;
+calls out go straight through the role; missed calls are said once, and "Wer hat angerufen?" answers by voice.
+
+**Permissions and parts**, granted by Android with the role (`RoleManager.ROLE_DIALER`, asked through Android's own
+dialog): `CALL_PHONE` (UCAP already asked for it in M1 for direct calls to a helper), `READ_CONTACTS` (see Contacts),
+`POST_NOTIFICATIONS`. The parts the role requires: an `InCallService` (`UcapCallService`, bound only by the system
+through `BIND_INCALL_SERVICE`) and an activity for `android.intent.action.DIAL` with and without `tel:`
+(`DialActivity`, which asks the person before anything is called). UCAP asks for **no call log permission**
+(`READ_CALL_LOG`, `WRITE_CALL_LOG`, `PROCESS_OUTGOING_CALLS`): it keeps its own record of the calls it handled.
+
+**Play's policy.** Without the call log group, the Permissions Declaration Form is not required for the role itself.
+The role is offered only on a phone with telephony; a tablet never sees it. The declaration text, should Play ask
+(also for `READ_CONTACTS` from 2027, see Contacts):
+
+> UCAP is an assistive app for disabled people. As the phone's default phone app it shows calls on its own screen
+> with large areas and says who is calling, by the name in the person's contacts or the number, so people who cannot
+> see the screen or use small buttons can answer, decline or ask for help. It records who called and whom the person
+> called, when and how it ended, on the person's own UCAP server, so it can tell them about missed calls on any of
+> their devices; never what was said.
+
+**The video** shows on a phone with a SIM: Einstellungen → Telefon-App, the page's text and "UCAP als Telefon-App";
+Android's role dialog with UCAP chosen; an incoming call said and answered on the large area; a missed call said
+("Verpasster Anruf von Anna, heute um 14:05 Uhr."); "Wer hat angerufen?"; the way back ("Telefon-App zurückgeben",
+Android's default apps).
+
+**The disclosure**, on the settings page's section Telefon-App, before its button:
+
+- `phone.intro`: „UCAP kann deine Telefon-App sein: Anrufe kommen dann auf UCAPs eigenen Bildschirm mit großen
+  Flächen, und UCAP sagt, wer anruft, auch über dem Sperrbildschirm und im Kiosk-Modus. Wer dich anruft und wen du
+  anrufst, wann und wie lange, geht mit dem Namen aus deinen Kontakten an deinen UCAP-Server, damit UCAP dir verpasste
+  Anrufe sagt und weiß, wer angerufen hat. Was gesprochen wird, nie. Deine Helfer sehen deine Anrufe nicht.“ ("UCAP can
+  be your phone app: calls then come to UCAP's own screen with large areas, and UCAP says who is calling, over the lock
+  screen and in kiosk mode too. Who calls you and whom you call, when and for how long, goes with the name in your
+  contacts to your UCAP server, so UCAP can tell you about missed calls and knows who called. Never what is said. Your
+  helpers do not see your calls.")
+- `phone.explain`: what Android will ask, said before it asks.
+- The consent: the button „UCAP als Telefon-App“ (`phone.ask`), which opens Android's dialog.
+
+**What goes to the server:** per call the number, the name the phone's contacts give it, in or out, answered, missed or
+declined, its time and length, signed by the phone. Kept 90 days (docs/operator.md, "What is kept").
+
+## Device administration (dedicated kiosk devices, M4)
+
+**What it is for.** A tablet that should stay in UCAP and a few allowed apps (plan-m4.md, G9) is set up once by an
+operator as a dedicated device, with UCAP as its device owner (`adb shell dpm set-device-owner …`, docs/operator.md).
+UCAP then uses lock task mode with the allowed apps, makes itself the home app, and may switch off Android's lock
+screen where the setting asks for it. On every other device the kiosk is Android's screen pinning, without device
+administration.
+
+**Parts:** a `DeviceAdminReceiver` (`UcapAdmin`, `BIND_DEVICE_ADMIN`) with no policies of its own
+(`res/xml/ucap_device_admin.xml`). The app never asks a person to activate it, and it is inactive unless an operator
+made UCAP the device owner. UCAP's settings end it ("Kiosk-Gerät wieder normal machen").
+
+**Play's policy.** Device administration may not be used to stop the app's removal or to take control of a person's
+device; the kiosk is set up by whoever runs the device for the person and ended by the person (with their code) or
+their helpers, as the person chose. The declaration:
+
+> UCAP can turn a dedicated tablet into a kiosk for a disabled person: it stays in UCAP and the apps the person or
+> their helper allowed, and help is always one touch away. Only an operator can make UCAP the device owner, on a
+> device without accounts, with adb; UCAP never asks for device administration and uses no policies besides lock
+> task, its home screen and, if chosen, switching off Android's lock screen. It is ended in UCAP's settings.
+
+## The list of apps (areas that open apps, M4)
+
+**What it is for.** An area can open another app (plan-m4.md, G8): the person or a helper who may set the device up
+chooses it from the apps the device reports.
+
+**How:** a `<queries>` entry for `MAIN`/`LAUNCHER` activities, so UCAP sees only what a launcher sees; **no
+`QUERY_ALL_PACKAGES`**. The home role (`ROLE_HOME`) is asked for through Android's own question.
+
+**What goes to the server:** the names and package names of those apps, whether UCAP is the home screen, and the
+kiosk's state, at every start and after a change; shown to the person and to helpers with "Bedienung der Geräte
+einstellen". **Open for the release:** Play counts this as "Installed apps"; whether a disclosure before the first
+report and the person's consent are needed (the report could then wait until an area is to open an app) is to be
+decided with the owner before M9.
+
 ## Data safety form (M3's part)
 
 What the app sends off the phone since M3. M1's and M2's (voice, help requests, device data) are listed with M9.
@@ -149,7 +228,16 @@ Check each line against Play's guidance at the release: whether data sent to a s
 Telegram, WhatsApp and email are connected by the person's server, not by the app; the app shows and sends what the
 server holds.
 
+M4 adds (check the type names against Play's list at the release):
+
+| Data type (Play's names) | When | Shared with third parties | Purpose | Optional | Encrypted in transit | Deleted |
+|---|---|---|---|---|---|---|
+| Calls (who, when, how long; nearest: Contacts / App activity) | UCAP is the phone app | no | app functionality | yes | yes | after 90 days |
+| App activity: Installed apps | every start (the apps a launcher shows) | no | app functionality | no (see above) | yes | with the device |
+
 ## Open until a real phone with a SIM
 
 The role dialog with TalkBack under real fingers, the SMS role on a phone with a carrier, and WhatsApp's own
-notifications as previews: listed in docs/acceptance-m3.md.
+notifications as previews: listed in docs/acceptance-m3.md. For M4: calls on a real network, the earpiece and the
+proximity sensor, a second call during a call, Bluetooth headsets, and a device owner set up by QR code: listed in
+docs/acceptance-m4.md.

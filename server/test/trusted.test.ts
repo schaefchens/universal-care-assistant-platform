@@ -145,6 +145,12 @@ describe('trusted persons', () => {
     expect((await c.req('POST', `/api/v1/identity/reset/${waiting.changeId}/poll`, { jkt: rec.djkt })).json()).toEqual({ state: 'stopped' });
   });
 
+  it('wrong codes count against the trusted person who enters them (G11): the eleventh in an hour waits', async () => {
+    await c.renew(lena);
+    for (let i = 0; i < 10; i++) expect((await as(lena)('POST', '/api/v1/trusted-recoveries/lookup', { code: `90000${i}` })).statusCode).toBe(404);
+    expect((await as(lena)('POST', '/api/v1/trusted-recoveries/lookup', { code: '900010' })).statusCode).toBe(429);
+  });
+
   it('a code lives half an hour', async () => {
     await fresh(maria);
     const rec = await start();

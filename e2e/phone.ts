@@ -195,6 +195,8 @@ export async function smsPhone(name: string, words: readonly string[], origin = 
     deviceId,
     connectionId,
     call,
+    /** A request signed by the phone, as its native code sends what it saw (G10: the calls). */
+    signed,
     /** An SMS arrives from a number the phone's address book names; forwarded at once, as the native code does. */
     async receive(from: { number: string; name: string }, text: string, at = Date.now()) {
       const thread = threads.get(from.number) ?? String(threads.size + 1);

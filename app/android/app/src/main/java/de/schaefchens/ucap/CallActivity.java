@@ -17,6 +17,7 @@ import android.telecom.Call;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.accessibility.AccessibilityManager;
 import android.widget.Button;
 import android.widget.GridLayout;
 import android.widget.LinearLayout;
@@ -61,6 +62,7 @@ public class CallActivity extends Activity {
         who.setTextColor(Color.WHITE);
         who.setGravity(Gravity.CENTER);
         who.setPadding(0, 24, 0, 48);
+        if (Build.VERSION.SDK_INT >= 28) who.setAccessibilityHeading(true);
         root.addView(who, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         grid = new GridLayout(this);
         grid.setColumnCount(2);
@@ -180,14 +182,23 @@ public class CallActivity extends Activity {
             area(Texts.get(this, "calls.help"), 0xffb3261e, this::help, false);
         }
         // Said once per change: who calls, whom UCAP calls, and "Verbunden" only once Android says the call is active.
-        if (state != drawnState && voiced && state != Call.STATE_HOLDING) {
+        if (state != drawnState && (voiced || screenReader()) && state != Call.STATE_HOLDING) {
             drawnState = state;
             say(ringing ? Texts.format(this, "calls.ringingSaid", c[1], c[2]) : Texts.format(this, active ? "calls.activeSaid" : "calls.dialingSaid", c[1]));
         }
     }
 
+    /** TalkBack (or another screen reader that explores by touch) is on. */
+    private boolean screenReader() {
+        AccessibilityManager am = getSystemService(AccessibilityManager.class);
+        return am != null && am.isEnabled() && am.isTouchExplorationEnabled();
+    }
+
+    /** Said by UCAP's voice; with a screen reader on, by the screen reader, as the app does: never two voices at once. */
+    @SuppressWarnings("deprecation")
     private void say(String text) {
-        if (voiced) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "call");
+        if (screenReader()) who.announceForAccessibility(text);
+        else if (voiced) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "call");
     }
 
     /** A large area, a real button; `wide` fills its row, so no corner is left empty. */

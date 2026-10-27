@@ -2067,8 +2067,8 @@ The plan: [plan-m4.md](plan-m4.md).
    own dialler even then (which, as no longer the phone app, may not be able to place it).
 10. **The server keeps the person's calls** (G10): number, the name the phone's contacts give it, in or out, answered,
    missed or declined, when and how long; never what was said. The plan: "what the server keeps (who, when, how)
-   reaches it signed by the phone". Read only by the person's own devices; how long it is kept comes with G11's
-   retention. The other choice: calls stay on the phone, and "Wer hat angerufen?" works there only.
+   reaches it signed by the phone". Read only by the person's own devices; kept 90 days (G11), as a phone's own call
+   list keeps months. The other choice: calls stay on the phone, and "Wer hat angerufen?" works there only.
 
 ### Decided (within the plan)
 
@@ -2297,7 +2297,41 @@ The plan: [plan-m4.md](plan-m4.md).
   call (the screen shows the newest; to check on a phone). Found and fixed: the call log's body was refused by the
   signing code (org.json objects; now maps, a JVM test), "Lautsprecher aus" read as a state, no way back to a call
   left for help ("Zurück zum Anruf", the notification), the last area of three half a row, and (reading the code) the
-  call's state read with Android 12's call, which would have ended the screen on Android 10 and 11. Seen once and not again
+  call's state read with Android 12's call, which would have ended the screen on Android 10 and 11.
+- **G11, the codes canary** (step M4-01): every code the walk meets (a link code, the app lock's, a reset code linked and
+  spoken, a trusted recovery's) and both sets of four pictures, looked for in every log of the e2e stack (core, the
+  assistant, the connectors, Caddy, Postgres) and in everything the stand-ins received: a code whole or as it is said
+  ("4 8 1, 0 2 7"), the pictures' words in their order, also joined by "und" as they are said. Only whether, never
+  what. Its matchers were checked against made-up leaks first: the first version missed both spoken forms. Codes and pictures are said by the device's own
+  voice only (system speech never goes to a server voice), and no code is ever part of a URL.
+- **G11, retention**: a code for a new device a day after it ended or expired; a recovery through trusted persons a
+  day after it expired or was declined, or with its change; new words, done or stopped, 30 days after (the audit keeps
+  who did what); calls after 90 days (To confirm 10); reset codes as invitations. One sweep in core (`pruneCore`).
+- **G11, limits on every new code**, each with a test: link codes per address and overall (G3), the app lock's code
+  per person with waits, which the kiosk's check counts the same (G4, G9), reset codes per address as invitations
+  (G5), a trusted person's wrong codes against them (G7).
+- **G11, accessibility**: axe on every new screen (the walk's, and on the emulator the device-only ones), and their
+  accessibility trees identical with TalkBack off and on (Einstellungen, Kiosk-Modus, Anrufe, "Anrufen?", the code
+  screen with its six buttons). The native call screen speaks through TalkBack when it is on, as the app's live region
+  does (never two voices), and names the caller as a heading; under TalkBack it was answered and ended by touch and
+  double tap. The console finger tool wrote to port 5554 whatever ANDROID_SERIAL said: G4's "not even a plain button"
+  was the wrong emulator; it follows ANDROID_SERIAL now. Over the WebView after the call screen, TalkBack still
+  answered no console touch (its focus stayed on the closed window): left for real fingers (acceptance-m4.md).
+- **G11, acceptance 12**: the walk's step 14 stops the assistant too, with every connector: help by touch reaches
+  Maria and an appointment's reminder comes. The walk's clock helper leaves a stopped assistant's clock alone and sets it again once
+  the assistant is back (a restarted assistant starts on the real time).
+- **G5 on the scratch emulator (G11, 2026-10-27)**: new words asked for on the person's browser; the tablet said at once
+  "Neue Wiederherstellungswörter. Ab Mittwoch, 28. Oktober 2026, 20:25 Uhr gelten neue Wiederherstellungswörter,
+  angefordert auf dem Gerät „Browser (Chrome)“. Wenn du das nicht warst, sag „Abbrechen“.", said it again at the next
+  start, and "Abbrechen" there stopped it ("Gestoppt. Es gelten weiter deine bisherigen Wiederherstellungswörter.";
+  the change stopped by the device). And inside a pinned kiosk: "angeheftet" said once Android pinned UCAP, help by
+  touch on the home screen sent and said as sent once the server had it, the kiosk still pinned; ended with the
+  person's code.
+- **G11, Play** (play.md): the phone role needs no call log permission (UCAP keeps its own record), device
+  administration is inactive unless an operator made UCAP the device owner, and the list of apps uses `<queries>` for
+  launchers only. The phone page now says what goes to the server ("Wer dich anruft und wen du anrufst … Was gesprochen
+  wird, nie."). Open for the release: the list of apps is "Installed apps" for Play, sent at every start; whether it
+  needs a disclosure and the person's consent first is for the owner to decide before M9. Seen once and not again
   after a restart: the kiosk's "Beenden" missing although the person has a code (the app's own state of the lock);
   for G11. Capacitor's debug builds write every plugin result to Android's log (`loggingBehavior` defaults to debug):
   for G11's log checks, as the SMS and preview plugins' results hold content.

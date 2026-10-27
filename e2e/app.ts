@@ -194,9 +194,10 @@ export const clocks = {
   async now(): Promise<number> {
     return ((await (await fetch(`${ORIGIN}/__test/clock`)).json()) as { now: number }).now;
   },
-  /** `messaging` false: the messaging stand-in is stopped (acceptance 14) and keeps its time. */
-  async moveTo(at: number, o: { messaging?: boolean } = {}): Promise<void> {
-    for (const path of ['/__test/clock', '/__test/assistant/clock']) {
+  /** `messaging` false: the messaging stand-in is stopped (acceptance 14) and keeps its time; `assistant` false: so is the
+   *  assistant (M4's acceptance 12), whose clock is set again once it is back. */
+  async moveTo(at: number, o: { messaging?: boolean; assistant?: boolean } = {}): Promise<void> {
+    for (const path of o.assistant === false ? ['/__test/clock'] : ['/__test/clock', '/__test/assistant/clock']) {
       const r = await fetch(`${ORIGIN}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ at }) });
       expect(r.ok, path).toBe(true);
     }

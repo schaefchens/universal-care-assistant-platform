@@ -2045,7 +2045,7 @@
   "config.change.kioskOff": "{name} switched kiosk mode off.",
   "config.change.kiosk": "{name} changed kiosk mode.",
   "phone.title": "Phone app",
-  "phone.intro": "UCAP can be your phone app: calls then come to UCAP's own screen with large areas, and UCAP says who is calling. Over the lock screen and in kiosk mode too.",
+  "phone.intro": "UCAP can be your phone app: calls then come to UCAP's own screen with large areas, and UCAP says who is calling, over the lock screen and in kiosk mode too. Who calls you and whom you call, when and for how long, goes with the name in your contacts to your UCAP server, so UCAP can tell you about missed calls and knows who called. Never what is said. Your helpers do not see your calls.",
   "phone.held": "UCAP is this device's phone app: calls come to UCAP's own screen.",
   "phone.ask": "UCAP as the phone app",
   "phone.explain": "Android will ask which app shall be the phone app. Choose UCAP, then “Set as default”.",

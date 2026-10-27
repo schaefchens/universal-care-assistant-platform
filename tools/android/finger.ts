@@ -5,13 +5,17 @@
  *
  *   node tools/android/finger.ts touch <x> <y>     one tap: TalkBack moves its focus there and says what it found
  *   node tools/android/finger.ts dtap [x y]        a double tap: TalkBack activates what has its focus
+ *
+ * With another project's emulator beside ours, ANDROID_SERIAL picks the console as it picks the device for adb.
  */
 import { readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const token = readFileSync(`${process.env.HOME}/.emulator_console_auth_token`, 'utf8').trim();
-const sock = connect(5554, '127.0.0.1');
+// The console of the emulator ANDROID_SERIAL names (emulator-5560: port 5560), as adb uses it; else the first one's.
+const port = Number(/^emulator-(\d+)$/.exec(process.env.ANDROID_SERIAL ?? '')?.[1] ?? 5554);
+const sock = connect(port, '127.0.0.1');
 let buf = '';
 sock.on('data', (d) => (buf += d.toString()));
 const until = async (re: RegExp) => {

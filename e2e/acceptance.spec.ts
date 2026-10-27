@@ -31,6 +31,8 @@ let resetTablet: Page;
 let ph: SmsPhone;
 /** Each account's twelve words, in memory only: the recovery on a new device, and the phrase canary. */
 const words = new Map<string, string[]>();
+/** M4's codes and the four pictures as the walk meets them, in memory only, for the codes canary (M4-01). */
+const m4Secrets = { codes: [] as string[], pictures: [] as string[][] };
 
 async function open(browser: Browser, name: string): Promise<Page> {
   const ctx = await browser.newContext({ baseURL: ORIGIN, locale: 'de-DE', timezoneId: 'Europe/Berlin', permissions: ['microphone'], viewport: { width: 1000, height: 900 } });
@@ -941,6 +943,7 @@ test('G3 · a second device (docs/plan-m4.md, G3; acceptance 3): Clara’s table
   await clara.getByRole('button', { name: 'Code für ein neues Gerät', exact: true }).click();
   const code = (await clara.locator('.link-code').innerText()).replace(/\s/g, '');
   expect(code).toMatch(/^\d{6}$/);
+  m4Secrets.codes.push(code);
   // Said digit by digit, with the server.
   await said(clara, /^Der Code für das neue Gerät: \d \d \d, \d \d \d\. Server: .*Er gilt zehn Minuten\.$/, from);
   await axe(clara, 'Meine Geräte, a code for a new device');
@@ -956,6 +959,7 @@ test('G3 · a second device (docs/plan-m4.md, G3; acceptance 3): Clara’s table
   // The tablet asks, with the same four pictures, said too.
   await expect(clara.getByRole('alert')).toHaveText(/^Ein Gerät möchte sich verbinden: /);
   expect(await pictures(clara).allInnerTexts()).toEqual(await pictures(fresh).allInnerTexts());
+  m4Secrets.pictures.push(await pictures(clara).allInnerTexts());
   await said(clara, /^Ein Gerät möchte sich verbinden: .*Sind es dieselben\?$/, from);
   await axe(clara, 'Meine Geräte, the four pictures');
   await clara.getByRole('button', { name: 'Ja, das ist mein neues Gerät', exact: true }).click();
@@ -986,6 +990,7 @@ test('G4 · the app lock (docs/plan-m4.md, G4; acceptance 4): Clara chooses her 
     for (const d of code) await clara.getByRole('button', { name: d, exact: true }).click();
   };
   await enter('123412');
+  m4Secrets.codes.push('123412');
   await expect(heading(clara)).toHaveText('Noch einmal, zur Kontrolle');
   await enter('123412');
   await said(clara, /^Dein Code ist festgelegt\.$/, from);
@@ -1470,7 +1475,7 @@ test('13 · disconnecting (docs/plan-m3.md, acceptance 13): WhatsApp and email g
   await home(clara);
 });
 
-test('14 · help needs none of it (docs/plan-m3.md, acceptance 14): with the messaging stand-in stopped, as every connector process, help by touch reaches Maria, and an appointment’s reminder comes at its time', async () => {
+test('14 · help needs none of it (docs/plan-m3.md, acceptance 14; docs/plan-m4.md, acceptance 12): with the messaging stand-in stopped, as every connector process, and the assistant too, help by touch reaches Maria, and an appointment’s reminder comes at its time', async () => {
   // Past the half hour in which a press would reopen the last request (step 9's).
   await clocks.advance(31 * 60_000);
   // An appointment of Clara's own, in two hours: reminded an hour before.
@@ -1488,7 +1493,7 @@ test('14 · help needs none of it (docs/plan-m3.md, acceptance 14): with the mes
   await expect(clara.getByRole('heading', { name: 'Fußpflege', exact: true })).toBeVisible();
   await home(clara);
 
-  execFileSync('docker', ['compose', '--profile', 'e2e', 'stop', 'connectors-e2e'], { cwd: REPO, stdio: 'ignore' });
+  execFileSync('docker', ['compose', '--profile', 'e2e', 'stop', 'connectors-e2e', 'assistant-e2e'], { cwd: REPO, stdio: 'ignore' });
   try {
     // Help by touch, as in step 4.
     await home(maria);
@@ -1506,13 +1511,16 @@ test('14 · help needs none of it (docs/plan-m3.md, acceptance 14): with the mes
     // The appointment's reminder, an hour before it, on the home screen (the resolved request's screen stays until left).
     await home(clara);
     const due = at - 3_600_000;
-    await clocks.moveTo(due - 30_000, { messaging: false });
+    await clocks.moveTo(due - 30_000, { messaging: false, assistant: false });
     from = await mark(clara);
-    await clocks.moveTo(due + 1_000, { messaging: false });
+    await clocks.moveTo(due + 1_000, { messaging: false, assistant: false });
     await expect(heading(clara)).toHaveText(/Fußpflege/);
     await said(clara, /Fußpflege/, from);
   } finally {
     execFileSync('docker', ['compose', '--profile', 'e2e', 'start', 'connectors-e2e'], { cwd: REPO, stdio: 'ignore' });
+    // The assistant back, healthy, before the next step speaks with it, and on the servers' time again.
+    execFileSync('docker', ['compose', '--profile', 'e2e', 'up', '-d', '--wait', '--no-recreate', 'assistant-e2e'], { cwd: REPO, stdio: 'ignore' });
+    await clocks.moveTo(await clocks.now(), { messaging: false });
   }
   // Back, with the servers' time.
   await expect.poll(async () => (await fetch(`${MESSAGING}/clock`, { method: 'POST', body: JSON.stringify({ at: await clocks.now() }) }).catch(() => null))?.ok ?? false, { timeout: 30_000 }).toBe(true);
@@ -1629,7 +1637,11 @@ test('G5b · no words yet, and the operator’s reset (docs/plan-m4.md, G5; acce
     await tomRow().getByRole('textbox', { name: 'Grund (die Person hört ihn)' }).fill('Telefon und Kärtchen verloren, am Telefon mit Tom besprochen.');
     await tomRow().getByRole('button', { name: 'Code zum Zurücksetzen erstellen', exact: true }).click();
     await expect(maria.getByText(/^Code für Tom\. /).first()).toBeVisible();
-    return (await maria.locator('[role=status] pre.command').innerText()).trim();
+    const link = (await maria.locator('[role=status] pre.command').innerText()).trim();
+    m4Secrets.codes.push(link.replace(/^.*#reset=/, ''));
+    const spokenCode = (await maria.getByText(/^Code für Tom\. /).first().innerText()).match(/Gesprochener Code: ([\d ]+)\./)?.[1];
+    if (spokenCode) m4Secrets.codes.push(spokenCode.replace(/\s/g, ''));
+    return link;
   };
   const link = await resetCode();
   await expect.poll(() => sql(`select count(*) from user_events e join users u on u.id = e.user_id where u.display_name = 'Tom' and e.type = 'identity.reset'`)).toBe('1');
@@ -1795,8 +1807,10 @@ test('G7 · trusted persons (docs/plan-m4.md, G7; acceptance 6): Clara asks Mari
   const newWords = await ceremony(tablet);
   await expect(heading(tablet)).toHaveText('Mit Vertrauenspersonen wiederherstellen');
   const code = (await tablet.locator('.link-code').innerText()).replace(/\s/g, '');
+  m4Secrets.codes.push(code);
   const pictures = (page: Page) => page.getByRole('list', { name: 'Die vier Bilder' }).getByRole('listitem');
   await expect(pictures(tablet)).toHaveCount(4);
+  m4Secrets.pictures.push(await pictures(tablet).allInnerTexts());
   await axe(tablet, 'Mit Vertrauenspersonen wiederherstellen');
   // Maria enters the code, sees the same pictures and says yes for Clara.
   const trust = maria.locator('section').filter({ has: maria.getByRole('heading', { name: 'Vertrauenspersonen', exact: true }) });
@@ -1863,6 +1877,34 @@ test('G9 · the kiosk permission (docs/plan-m4.md, G9; acceptance 9): Clara lets
   expect(off.told).toMatch(/Maria hat den Kiosk-Modus ausgeschaltet\./);
 });
 
+test('G10 · the calls (docs/plan-m4.md, G10; acceptance 10): Clara’s phone tells the server, signed, of a missed call from Anna and a call to Maria; "Wer hat angerufen?" on her tablet names both, newest first', async () => {
+  const now = await clocks.now();
+  const calls = [
+    { id: 'walk-call-1', number: '+4915112345678', name: 'Anna', dir: 'in', outcome: 'missed', at: now - 20 * 60_000, durationS: 0 },
+    { id: 'walk-call-2', number: '+4917099887766', name: 'Maria', dir: 'out', outcome: 'answered', at: now - 10 * 60_000, durationS: 95 },
+  ];
+  expect(await ph.signed('POST', '/api/v1/devices/current/calls', { calls })).toEqual({ added: 2 });
+  // LIVE speaks when nothing else is being said, and this browser's speech ends only when it is cut (step L).
+  test.setTimeout(300_000);
+  const LIVE_WAIT = 90_000;
+  await home(clara);
+  let from = await mark(clara);
+  // LIVE is allowed on this tablet since step L: a touch opens it, and it hears the question (as in L2).
+  engines.heard.push('Wer hat angerufen?');
+  await clara.getByRole('button', { name: 'Sprechen', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Anrufe', { timeout: LIVE_WAIT });
+  // The servers' clock is days ahead of the browser's: "heute" or the day.
+  const when = String.raw`(heute|am \d+\. \p{L}+) um \d\d:\d\d Uhr`;
+  await said(clara, new RegExp(`^Anrufe\\. Anruf an Maria, ${when}\\. Verpasster Anruf von Anna, ${when}\\.$`, 'u'), from, LIVE_WAIT);
+  await expect(clara.locator('li.device')).toHaveText([new RegExp('^Anruf an Maria, '), new RegExp('^Verpasster Anruf von Anna, ')]);
+  await axe(clara, 'Anrufe');
+  // LIVE off again, as the steps before left it.
+  from = await mark(clara);
+  engines.heard.push('LIVE aus');
+  await said(clara, /^LIVE-Modus ist aus\. /, from, LIVE_WAIT);
+  await home(clara);
+});
+
 test('10 · recovery: on a new device the English words recover the same account; the other device is told; signed out, it loses its connection at once', async ({ browser }) => {
   const german = words.get('Clara')!;
   const phrase = fromWords(german);
@@ -1912,6 +1954,26 @@ test('ID-02 · the phrase canary: no three recovery words in a row in anything t
   const leaked = phrases.some((p) => received.some((r) => phraseIn(r, p)) || phraseIn(logs, p));
   expect(leaked, 'recovery words found in what the stand-ins received or the servers logged').toBe(false);
   phrases.length = 0;
+});
+
+test('M4-01 · the codes canary (docs/plan-m4.md, G11): no link, lock, reset or recovery code and no four pictures in a row in any log, nor in anything the stand-ins received', async () => {
+  // G3's and G7's codes and pictures, G4's code, G5's reset codes (linked and spoken).
+  expect(m4Secrets.codes.length, 'the walk met its codes').toBeGreaterThanOrEqual(6);
+  expect(m4Secrets.pictures.length, 'the walk met its pictures').toBe(2);
+  const logs = execFileSync('docker', ['compose', '--profile', 'e2e', 'logs', '--no-color', 'core-e2e', 'assistant-e2e', 'connectors-e2e', 'caddy-e2e', 'db'], { cwd: REPO, maxBuffer: 512 * 1024 * 1024 }).toString();
+  const received = [...engines.seen.chat.map((c) => `${c.system}\n${c.messages.map((m) => m.content).join('\n')}`), ...engines.seen.speech, ...engines.seen.transcribed.map((t) => t.text)].join('\n');
+  const all = `${logs}\n${received}`;
+  const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // A code whole (not inside a longer number such as a time), also as it is said ("4 8 1, 0 2 7").
+  const codeIn = (code: string) => new RegExp(`(?<![0-9A-Za-z])${code.split('').map(escape).join('[ .,]{0,2}')}(?![0-9A-Za-z])`).test(all);
+  // The four pictures' words in their order, whatever stands between them, "und" as they are said too.
+  const between = String.raw`(?:[^\p{L}]{1,16}|[^\p{L}]{1,4}(?:und|and)[^\p{L}]{1,4})`;
+  const picturesIn = (p: string[]) => new RegExp(p.map((t) => escape(t.replace(/[^\p{L}\s-]/gu, '').trim())).join(between), 'iu').test(all);
+  // Only whether: a match is never printed.
+  expect(m4Secrets.codes.some(codeIn), 'a code in a log or in what the stand-ins received').toBe(false);
+  expect(m4Secrets.pictures.some(picturesIn), 'four pictures in a row in a log or in what the stand-ins received').toBe(false);
+  m4Secrets.codes.length = 0;
+  m4Secrets.pictures.length = 0;
 });
 
 test('L-02 · LIVE’s privacy canary: what it overheard and dropped is kept nowhere, not in a log, not in any table', async () => {

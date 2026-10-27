@@ -49,6 +49,65 @@ describe('hardening', () => {
     expect((await sql<{ history: unknown[] }>`select history from assistant_sessions`.execute(db)).rows[0]!.history).toHaveLength(1);
   });
 
+  it('drops M4’s codes, recoveries and changes once they are over, and calls after 90 days (docs/plan-m4.md, G11)', async () => {
+    const at = (hoursAgo: number) => new Date(clock() - hoursAgo * 3_600_000);
+    const bytes = () => Buffer.from(uuidv7().replace(/-/g, ''), 'hex');
+    const link = async (state: string, expires: number, ended: number | null) => {
+      const id = uuidv7();
+      await sql`insert into device_links (id, user_id, offered_by, code_mac, state, expires_at, created_at, ended_at)
+        values (${id}, ${anna.userId}, ${anna.deviceId}, ${bytes()}, ${state}, ${at(expires)}, ${at(expires + 1)}, ${ended === null ? null : at(ended)})`.execute(db);
+      return id;
+    };
+    const change = async (state: string, ended: number | null) => {
+      const id = uuidv7();
+      await sql`insert into identity_changes (id, user_id, kind, new_key, proof, state, effective_at, created_at, ended_at)
+        values (${id}, ${anna.userId}, 'trusted', ${bytes()}, '{}'::jsonb, ${state}, ${at(ended ?? -24)}, ${at((ended ?? 0) + 24)}, ${ended === null ? null : at(ended)})`.execute(db);
+      return id;
+    };
+    const recovery = async (state: string, expires: number, changeId: string | null) => {
+      const id = uuidv7();
+      await sql`insert into trusted_recoveries (id, code_mac, person_id, new_key, proof, new_device, salt, state, change_id, created_at, expires_at)
+        values (${id}, ${bytes()}, ${anna.userId}, ${bytes()}, '{}'::jsonb, '{}'::jsonb, ${bytes()}, ${state}, ${changeId}, ${at(expires + 1)}, ${at(expires)})`.execute(db);
+      await sql`insert into trusted_approvals (recovery_id, trustee_id, proof, at) values (${id}, ${anna.userId}, '{}'::jsonb, ${at(expires + 1)})`.execute(db);
+      return id;
+    };
+    const call = async (daysAgo: number) => {
+      const id = uuidv7();
+      await sql`insert into calls (id, person_id, device_id, client_id, number, direction, outcome, at, duration_s, created_at)
+        values (${id}, ${anna.userId}, ${anna.deviceId}, ${id}, '030123456', 'in', 'missed', ${at(daysAgo * 24)}, 0, ${at(daysAgo * 24)})`.execute(db);
+      return id;
+    };
+    const gone = { link: await link('approved', 47, 48), recovery: await recovery('expired', 25, null), change: await change('done', 31 * 24), call: await call(91) };
+    const goneWithChange = await recovery('waiting', 32 * 24, gone.change);
+    const kept = {
+      // Expired an hour ago: still there for the device that asks how it ended.
+      link: await link('open', 1, null),
+      open: await link('open', -0.2, null),
+      recovery: await recovery('declined', -0.3, null),
+      waiting: await change('waiting', null),
+      stopped: await change('stopped', 29 * 24),
+      call: await call(89),
+    };
+    const keptWithChange = await recovery('waiting', 1, kept.waiting);
+    await pruneCore(db, clock);
+    const exists = async (table: string, id: string) => (await sql<{ n: number }>`select count(*)::int as n from ${sql.table(table)} where id = ${id}`.execute(db)).rows[0]!.n === 1;
+    expect(await exists('device_links', gone.link)).toBe(false);
+    expect(await exists('trusted_recoveries', gone.recovery)).toBe(false);
+    expect(await exists('trusted_recoveries', goneWithChange)).toBe(false);
+    expect(await exists('identity_changes', gone.change)).toBe(false);
+    expect(await exists('calls', gone.call)).toBe(false);
+    for (const [table, id] of [['device_links', kept.link], ['device_links', kept.open], ['trusted_recoveries', kept.recovery], ['trusted_recoveries', keptWithChange], ['identity_changes', kept.waiting], ['identity_changes', kept.stopped], ['calls', kept.call]] as const) {
+      expect(await exists(table, id), `${table} kept`).toBe(true);
+    }
+    expect((await sql<{ n: number }>`select count(*)::int as n from trusted_approvals`.execute(db)).rows[0]!.n).toBe(2);
+    // Nothing of it for the tests after (a waiting change shows on the admin page).
+    await sql`delete from trusted_approvals`.execute(db);
+    await sql`delete from trusted_recoveries`.execute(db);
+    await sql`delete from identity_changes`.execute(db);
+    await sql`delete from device_links`.execute(db);
+    await sql`delete from calls`.execute(db);
+  });
+
   it('holds back an address that keeps failing to sign in, never a help request', async () => {
     const fail = () =>
       core.app.inject({ method: 'POST', url: '/api/v1/sessions', remoteAddress: '203.0.113.9', payload: { org: ORG, deviceId: anna.deviceId, challengeId: uuidv7(), nonce: 'A'.repeat(43), proof: 'A'.repeat(86) } });

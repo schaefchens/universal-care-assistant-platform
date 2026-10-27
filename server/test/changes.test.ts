@@ -260,4 +260,11 @@ describe('new words, the waiting day and the operator reset', () => {
     await run();
     expect((await client.req('POST', `/api/v1/identity/reset/${id}/poll`, { jkt: claim.djkt })).json()).toEqual({ state: 'stopped' });
   });
+
+  it('wrong reset codes are limited per address, as invitations are (G11): the eleventh try in an hour waits', async () => {
+    const elsewhere = accountClient(core, '10.66.0.1');
+    // A wrong code is refused as a wrong invitation is.
+    for (let i = 0; i < 10; i++) expect((await elsewhere.req('POST', '/api/v1/identity/reset/check', { code: `WRONG-${i}-CODE` })).statusCode).toBe(401);
+    expect((await elsewhere.req('POST', '/api/v1/identity/reset/check', { code: 'WRONG-10-CODE' })).statusCode).toBe(429);
+  });
 });
