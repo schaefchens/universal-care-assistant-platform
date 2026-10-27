@@ -2004,3 +2004,56 @@ The plan: [plan-m3.md](plan-m3.md).
     heard: read in UCAP and in the store, its notification gone.
   - Afterwards LIVE was switched on again ("waiting"), the long test SMS marked read in UCAP by hand, the SMS role
     given back to Google Messages, and the storage setting removed.
+
+## M4: Helper depth, devices, kiosk (planned 2026-10-27)
+
+The plan: [plan-m4.md](plan-m4.md).
+
+### Decided by the owner (2026-10-27)
+
+1. **Kiosk mode is a home screen and a lock.** UCAP can be Android's home screen (Home comes back to it, it starts
+   after a restart, allowed apps open from its areas); "locked" keeps the person inside UCAP, on a dedicated device
+   (device owner) with the allowed apps inside, elsewhere through Android's screen pinning without other apps.
+   plan.md's roadmap said "lock task or HOME role"; the owner chose both, the device owner optional.
+2. **The person and helpers with a new permission, "Kiosk-Modus einstellen" (`device.kiosk`), switch the kiosk.**
+   Every change is said on the device and kept in the history; help is never locked.
+3. **The app lock's main unlock is UCAP's own code, entered on the large areas; Android's lock is an extra.** The
+   owner: "this is more complicated, because native unlocking might miss disability support. non seeing users might
+   not unlock at all. could be a option that on some devices the system locking is disabled completely, might need to
+   check this." Then, asked whether this is the direction: off by default and per device; UCAP's code checked by the
+   server with limited tries; Android's fingerprint, face or PIN only where the person can use it, after G0 checked it
+   with TalkBack; on a dedicated kiosk device Android's lock screen can be switched off. plan.md's roadmap said "App
+   lock with biometrics or PIN (a second Keystore key; help never locked)".
+4. **A representative is named by the person, or by an administrator with a written reason when the person cannot**,
+   never the administrator themselves; said to the person, kept in their history, every act on their behalf told.
+5. **M4 also builds "Später einrichten", an operator identity reset and UCAP as the phone app** (plan.md's open
+   points; plan-m3.md's "Wer hat angerufen?"). Not in M4: a person removing a protected control on their own device.
+6. **The waiting period is 24 hours.** New words without the old ones (from a device of the person, through trusted
+   persons, by the operator) take effect only then; every device of the person says so at once and can stop it, and
+   so can the old words. This is how the plan reads the roadmap's "delayed key rotation".
+
+### To confirm
+
+1. **"Activities" in §8's remote setup are the activity screens for now.** CONCEPT §8: "This includes screen layouts,
+   touch-area assignments, sounds, spoken explanations, voice preferences, reminders, activities, and care contacts."
+   M4 lets helpers put the activity screens (messages, notes, contacts, appointments, tasks) and apps on areas; §10's
+   activities (games, quizzes, stories) come with M7, which brings their remote setup with them. The other choice: a
+   framework for activities in M4 already, with nothing to put in it until M7.
+2. **UCAP's code is six presses on four large areas** (the corners, each with its own sound and name; 1 to 4 on a
+   keyboard), 4096 possibilities. It is short so that everyone can enter it; the server lets five wrong tries pass,
+   then waits a minute, longer each time, and only the device itself (with its key) can try. The other choices: digits
+   on a pad of ten areas (smaller areas, a million possibilities), or a length the person picks.
+3. **One code per person**, the same on every device that locks, set on any of them; a forgotten one is replaced from
+   another unlocked device of the person or with the recovery words. The other choice: a code per device.
+4. **What a representative may do:** invite and approve helpers, set and withdraw their permissions (never adding to
+   their own), end connections, sign out the person's devices. Not: messages or notes, approving a new device (plan.md:
+   "approved only on the person's own devices"), recovery, the person's consents to outside providers. The person may
+   end the arrangement on their own device at any time, also one an administrator made; the administrator may end the
+   one they made.
+5. **Who may end the kiosk is part of the kiosk's setting**, said when it starts ("Beenden können Clara und Maria" or
+   "nur Maria"): the person's own kiosk is theirs to end (with their code); a helper who locks it chooses whether the
+   person may end it. CONCEPT §20: "so users cannot break out … this depends on what the user wants".
+6. **The first words of an account set up without them need no waiting period**: there are no old words to protect,
+   and every device of the person is told. Later new words without the old ones wait 24 hours.
+7. **The apps a device can open are listed in its device editor** for helpers with `device.configure` (names only, as
+   Android shows them), so they can put an app on an area. The other choice: the person's device alone chooses apps.
