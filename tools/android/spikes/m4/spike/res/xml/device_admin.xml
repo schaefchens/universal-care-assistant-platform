@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the spike's device administrator declares; lock task and the keyguard need being device owner, not a policy. -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <force-lock />
+        <disable-keyguard-features />
+    </uses-policies>
+</device-admin>

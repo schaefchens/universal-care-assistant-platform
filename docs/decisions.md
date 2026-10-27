@@ -2057,3 +2057,15 @@ The plan: [plan-m4.md](plan-m4.md).
    and every device of the person is told. Later new words without the old ones wait 24 hours.
 7. **The apps a device can open are listed in its device editor** for helpers with `device.configure` (names only, as
    Android shows them), so they can put an app on an area. The other choice: the person's device alone chooses apps.
+
+### Decided (within the plan)
+
+- **G0's measurements and choices are in [spikes/m4.md](spikes/m4.md).** The scratch emulator is made from the shared
+  emulator's Google Play image rather than Android's plain one (TalkBack is only on the former), with no account on
+  it, and it stays until M4 ends: G4, G9 and G10 are checked on it.
+- **"Lisa, zurück" by voice brings UCAP to the front only while it is the home screen** (spikes/m4.md, B: Android
+  blocks a start from the background otherwise). Elsewhere UCAP names Home and its notification as the ways back.
+- **On a device that is not dedicated, the lock is screen pinning, and UCAP says that one gesture ends it** (C: swipe up
+  and hold). A real kiosk is a dedicated device.
+- **A kiosk on a phone needs UCAP as its phone app** (C: with Google's Phone app as the dialer, an incoming call rang
+  inside the kiosk and could not be answered). G9 asks for the phone role before it locks a phone with telephony.
