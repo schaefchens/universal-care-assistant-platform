@@ -11,7 +11,7 @@ import org.json.JSONObject;
 
 /**
  * Signed requests that could not go out at once (offline, the server down): kept in order and sent again.
- * Receipts, the alarm's answers, endpoint registrations. Each keeps its idempotency key, so a request the server did
+ * Receipts, the alarm's answers, endpoint registrations, calls. Each keeps its idempotency key, so a request the server did
  * get before the connection broke counts once (I6).
  * - While the app's process lives, quick tries first: 2, 4, 8, 15, 30 and 60 s after the failure.
  * - OutboxJob (JobScheduler) as the durable way: expedited where Android has it, so it runs as soon as a network is
@@ -112,9 +112,9 @@ final class Outbox {
         }
     }
 
-    /** How long an entry is worth sending: an answer or a receipt for an hour, a registration for a week. */
+    /** How long an entry is worth sending: an answer or a receipt for an hour, a registration or a call (G10) for a week. */
     private static long maxAge(String kind) {
-        return "endpoint".equals(kind) || "unregister".equals(kind) ? 7 * 86_400_000L : 3_600_000L;
+        return "endpoint".equals(kind) || "unregister".equals(kind) || "call".equals(kind) ? 7 * 86_400_000L : 3_600_000L;
     }
 
     /** Sends what is waiting, in order; true when something is left for a later try. */

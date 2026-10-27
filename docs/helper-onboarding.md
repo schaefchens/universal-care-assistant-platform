@@ -132,6 +132,13 @@ UCAP and the apps you allow, and say who may end it there: the person (with thei
 On a dedicated device (operator.md) it is a real lock; on any other phone or tablet it is Android's screen pinning,
 which one gesture ends. A browser cannot be locked. Help always works inside it.
 
+## Calls (M4)
+
+On a phone, the person can make UCAP their phone app (Einstellungen → Telefon-App; only on the phone itself). Calls
+then come to UCAP's own screen: who calls, said and shown, and large areas for Annehmen, Ablehnen and Hilfe. "Hilfe"
+during a call reaches you as any help request, and the call goes on. Missed calls are said to the person once, and
+"Wer hat angerufen?" tells them who called. You do not see their calls.
+
 ## Representing someone (M4)
 
 A person can make you their **representative** (or the operator can, with a reason, when the person cannot). You then

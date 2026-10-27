@@ -8,6 +8,7 @@
  * another device, goes back to onboarding and says why.
  */
 import { App as CapApp } from '@capacitor/app';
+import { Button } from 'react-aria-components';
 import { type DeviceConfig, isLang, kioskOf, liveOf, liveSkips, messagesOf, type Scope, speechOf, t } from '@ucap/shared';
 import type { Intent } from '@ucap/speech-text';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -26,7 +27,7 @@ import { WebPushSetup } from './care/WebPushSetup.tsx';
 import { deviceKey, shareRefWithWorker } from './identity/device-key.ts';
 import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
-import { Alerts, has, Info, Keys, Kiosk, Launcher, Previews, Reminders, Sms } from './native/plugins.ts';
+import { Alerts, has, Info, Keys, Kiosk, Launcher, Phone, Previews, Reminders, Sms } from './native/plugins.ts';
 import { ApiError, deviceRevoked } from './net/api.ts';
 import { emitAppEvent } from './net/events.ts';
 import { Realtime } from './net/realtime.ts';
@@ -61,6 +62,8 @@ import { Helpers } from './screens/Helpers.tsx';
 import { forgetHomeAsked, HomeSetting, homeAsked } from './screens/HomeSetting.tsx';
 import { KioskPage } from './screens/KioskPage.tsx';
 import { KioskSetting } from './screens/KioskSetting.tsx';
+import { type CallView, CallsPage, DialQuestion, sentenceOf } from './screens/CallsPage.tsx';
+import { PhoneSetting } from './screens/PhoneSetting.tsx';
 import { IdentityChangeScreen } from './screens/IdentityChange.tsx';
 import { RepresentedAccess } from './screens/RepresentedAccess.tsx';
 import { NewWords } from './screens/NewWords.tsx';
@@ -161,6 +164,10 @@ type Page =
   | { configChanged: Change }
   /** A helper setting up a person's device (S11). */
   | { configOf: { id: string; displayName: string; scopes?: readonly string[] } }
+  /** The calls the person's phone told the server (G10). */
+  | 'calls'
+  /** A number handed to the dialler while UCAP is the phone app (G10): asked first, then back where the person was. */
+  | { dial: string; back: Page }
   /** Ending the kiosk on the device, with the person's code (G9), and setting it up there. */
   | 'kioskEnd'
   | 'kioskSetup'
@@ -174,7 +181,7 @@ type Page =
 const LOCAL_UNDO_MS = 120_000;
 const pageKey = (p: Page) => (typeof p === 'string' ? p : Object.keys(p)[0]!);
 /** Pages a due reminder does not interrupt: a help request in progress, a helper's alert. It waits for its next prompt. */
-const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p || 'confirm' in p || 'help' in p || 'configChanged' in p));
+const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in p || 'approve' in p || 'confirm' in p || 'help' in p || 'configChanged' in p || 'dial' in p));
 
 /** An invitation opened as a link in the browser (`…/#invite=CODE`): taken once and removed from the address bar
  *  and history. The code sits in the fragment, so it never reaches a server's access log. */
@@ -244,6 +251,8 @@ export function App() {
   const [configRev, setConfigRev] = useState(0);
   const [careState, setCareState] = useState<CareState>({ pending: false, request: null });
   const [isHelper, setIsHelper] = useState(false);
+  /** A call goes on (G10): UCAP shows the way back to it above every page. */
+  const [inCall, setInCall] = useState(false);
   const careRef = useRef<CareClient | null>(null);
 
   const assistive: AssistiveMode = modeFrom(a11y, prefs.assistive);
@@ -311,6 +320,7 @@ export function App() {
         // No words at all ("Später einrichten", G5): said at start, once a day.
         if (m.recoveryState === 'none' && onceToday('ucap.noWordsSaid')) ui.say(ui.tr('settings.recovery.noneReminder'), 'notice');
         void reportDevice(session).catch(() => {});
+        void phoneNews(session).catch(() => {});
         // Android starts UCAP anew when it becomes the home screen (G8): the answer to its question is said now.
         if (has('Launcher') && homeAsked()) {
           forgetHomeAsked();
@@ -383,6 +393,8 @@ export function App() {
           void careNews(e.type, e.data);
         } else if (e.type === 'push.test') {
           emitAppEvent(e.type, e.data);
+        } else if (e.type === 'calls.changed') {
+          if (Number(e.data.missed) > 0) void callNews(session).catch(() => {});
         } else if (e.type === 'contact.changed' || e.type === 'contacts.imported') {
           void contactNews(e.data);
         } else if (e.type === 'agenda.changed') {
@@ -843,6 +855,21 @@ export function App() {
     return () => void resumed.then((h) => h.remove());
   }, []);
 
+  // A call going on while UCAP is in front (help pressed during it): the way back to its screen.
+  useEffect(() => {
+    if (!has('Phone')) return;
+    void Phone.state().then((s) => setInCall(!!s.inCall), () => {});
+    const h = Phone.addListener('call', (e) => setInCall(e.inCall));
+    return () => void h.then((x) => x.remove());
+  }, []);
+
+  // UCAP as the phone app (G10): back in front (a call ended, another app handed over a number), the phone's news.
+  useEffect(() => {
+    if (!session || !has('App') || !has('Phone')) return;
+    const resumed = CapApp.addListener('resume', () => void phoneNews(session).catch(() => {}));
+    return () => void resumed.then((h) => h.remove());
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reminders ring on the device itself too (with the app closed, offline): its alarms follow the schedule. A local
   // alarm while the app is in front, and a tap on a reminder's notification, open its question here.
   useEffect(() => {
@@ -1063,6 +1090,9 @@ export function App() {
         return;
       case 'time':
         u.say(u.tr('time.now', { time: new Date() }), 'system');
+        return;
+      case 'calls':
+        setPage('calls');
         return;
       case 'whereAmI':
         u.say(currentVoice().where?.() ?? u.tr('where.screen', { screen: title(), route: u.tr('area.back.label') }), 'system');
@@ -1286,6 +1316,40 @@ export function App() {
       u.say(m.madeHow === 'admin' ? u.tr('rep.mine.admin', { name: m.representative.displayName, by: m.madeBy, reason: m.reason ?? '' }) : u.tr('rep.news.active', { name: m.representative.displayName }), 'notice');
     } else if (state === 'active' && r.represented.length) u.say(u.tr('rep.news.youActive', { name: r.represented.at(-1)!.person.displayName }), 'notice');
     else if (state === 'ended') u.say(u.tr('rep.news.endedAny'), 'notice');
+  }
+
+  /**
+   * UCAP as the phone app (G10), as UCAP starts or comes to the front: a number handed to the dialler is asked about
+   * first (the help screen's fallback too, which must never be left waiting), then the missed calls.
+   */
+  async function phoneNews(s: Session) {
+    if (!has('Phone')) return;
+    const asked = await Phone.takeDial();
+    if (asked.number) {
+      const number = asked.number;
+      setPage((pg) => ({ dial: number, back: typeof pg === 'object' && 'dial' in pg ? pg.back : pg }));
+    }
+    await callNews(s);
+  }
+
+  /**
+   * Missed calls (G10), each said once, by whichever of the person's devices says it first: LIVE's news anywhere, with
+   * the rest of what came in; otherwise the phone that is UCAP's phone app, in front and not locked ("Verpasster Anruf
+   * von Anna, heute um 14:05 Uhr."). The phone told the server of them itself, signed, as each call ended.
+   */
+  async function callNews(s: Session) {
+    const u = uiRef.current;
+    if (liveRef.current?.listening) {
+      const news = newsRef.current!;
+      if (!news.allowed()) return;
+      u.earcons.play('message');
+      return news.arrived();
+    }
+    if (!has('Phone') || !(await Phone.state().catch(() => null))?.held) return;
+    const l = lockRef.current;
+    if ((l?.locked && !l.unlocked) || document.visibilityState !== 'visible') return;
+    const { calls } = await s.call<{ calls: CallView[] }>('/api/v1/calls/announce', { method: 'POST' });
+    for (const c of calls) u.say(sentenceOf(u, c), 'notice');
   }
 
   /** What this device can open and whether it is the home screen (G8), for the editors of its areas. */
@@ -1753,6 +1817,25 @@ export function App() {
     );
   } else if (typeof page === 'object' && 'representing' in page) {
     content = <RepresentedAccess session={session} person={page.representing} serverUrl={server.url} refresh={peopleRev} onClose={() => setPage('helpers')} />;
+  } else if (page === 'calls') {
+    content = <CallsPage session={session} onClose={() => setPage('settings')} />;
+  } else if (typeof page === 'object' && 'dial' in page) {
+    const { dial: number, back } = page;
+    content = (
+      <DialQuestion
+        number={number}
+        config={config}
+        onCall={() => {
+          void call(number, true);
+          setPage(back);
+        }}
+        onCancel={() => setPage(back)}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+      />
+    );
   } else if (page === 'kioskSetup') {
     content = <KioskPage config={config} personName={me?.displayName ?? ''} onConfig={updateConfig} onClose={() => setPage('settings')} />;
   } else if (page === 'kioskEnd') {
@@ -1844,6 +1927,7 @@ export function App() {
         onAiAdmin={me?.isAdmin ? () => setPage('aiAdmin') : undefined}
         onServerAdmin={me?.isAdmin ? () => setPage('serverAdmin') : undefined}
         onNewWords={() => setPage('newWords')}
+        onCalls={() => setPage('calls')}
         onAssistant={async (o) => {
           try {
             await session.call('/api/v1/me', { method: 'PATCH', body: o });
@@ -1858,6 +1942,7 @@ export function App() {
         <LockSetting session={session} refresh={lockRev} onChanged={() => setLockRev((n) => n + 1)} onSetCode={() => setPage('lockCode')} onLocked={() => void lockNow()} />
         <HomeSetting onChanged={() => void reportDevice(session)} />
         <KioskSetting config={config} hasCode={!!lock?.hasCode} onEnd={() => setPage('kioskEnd')} onSetUp={() => setPage('kioskSetup')} />
+        <PhoneSetting />
         <HelpKeySetting />
         <AndroidPushSetup session={session} server={server} />
         <DeletedSetting session={session} />
@@ -1901,7 +1986,9 @@ export function App() {
   const lockedNow = session !== null && !!lock?.locked && !lock.unlocked;
   // The notice of new words is said while locked too; stopping them waits for the code (G5).
   const openWhileLocked =
-    typeof page === 'string' ? ['areas', 'care', 'inbox'].includes(page) : 'alert' in page || 'reminder' in page || 'help' in page || 'configChanged' in page || ('identityChange' in page && !page.stopping);
+    typeof page === 'string'
+      ? ['areas', 'care', 'inbox'].includes(page)
+      : 'alert' in page || 'reminder' in page || 'help' in page || 'configChanged' in page || ('identityChange' in page && !page.stopping) || 'dial' in page;
   if (session && lockedNow && !openWhileLocked)
     content = (
       <UnlockScreen
@@ -1946,9 +2033,19 @@ export function App() {
   return (
     <UiProvider value={ui}>
       <VoiceContext.Provider value={{ voice: session ? voiceRef.current : null, state: voiceView.state, heard: voiceView.heard, live: liveState, keyword: has('VoiceCapture') ? liveKeyword : null }}>
-        <ErrorBoundary key={pageKey(page)} text={{ title: ui.tr('app.failed'), restart: ui.tr('app.restart') }}>
-          {content}
-        </ErrorBoundary>
+        {/* One frame always, so a call that starts or ends adds its button without mounting the page anew. */}
+        <div className="frame">
+          {inCall && (
+            <Button className="button primary call-back" onPress={() => void Phone.showCall().catch(() => {})}>
+              {ui.tr('calls.backToCall')}
+            </Button>
+          )}
+          <div className="frame-page">
+            <ErrorBoundary key={pageKey(page)} text={{ title: ui.tr('app.failed'), restart: ui.tr('app.restart') }}>
+              {content}
+            </ErrorBoundary>
+          </div>
+        </div>
       </VoiceContext.Provider>
     </UiProvider>
   );

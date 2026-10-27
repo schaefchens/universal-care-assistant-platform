@@ -3,7 +3,7 @@
  * M2 says Telegram's, with its service; an email by who and its subject, then summed up, by itself only from someone
  * the person knows; lists and newsletters never by themselves, only counted when asked; a one-time code never said
  * and never given to the model; a preview as one; the services a device leaves to the person; and "Was gibt's
- * Neues?" covering everything, the tasks due today too.
+ * Neues?" covering everything, the tasks due today too. And a missed call, which the phone told the server (G10).
  */
 import { formatSigHeader, signedRequestPayload } from '@ucap/identity';
 import type { FromConnectors } from '@ucap/shared';
@@ -345,5 +345,25 @@ describe('LIVE across services', () => {
       { kind: 'original', text: 'Mama wrote by text message: “Are you awake?”', source: { message: id } },
       { kind: 'system', text: 'To do today: Rezept abholen and Blumen gießen.' },
     ]);
+  });
+
+  it('a missed call (docs/plan-m4.md, G10) is said first, by who and when where the person is, once on any device; an answered one never', async () => {
+    const url = '/api/v1/devices/current/calls';
+    const at = clock();
+    const body = {
+      calls: [
+        { id: 'call-1', number: '+4917012345', name: 'Mama', dir: 'in', outcome: 'missed', at, durationS: 0 },
+        { id: 'call-2', number: '030123456', dir: 'in', outcome: 'answered', at, durationS: 30 },
+      ],
+    };
+    const idem = crypto.randomUUID();
+    const sig = await clara.dev.sign('req', signedRequestPayload({ srv: core.serverId, org: ORG, method: 'POST', path: url, body: body as never, idem }));
+    const r = await core.app.inject({ method: 'POST', url, payload: body, headers: { 'ucap-sig': formatSigHeader({ did: clara.deviceId, org: ORG, sig }), 'idempotency-key': idem } });
+    expect(r.json()).toEqual({ added: 2 });
+    const time = new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' }).format(at);
+    expect(await news()).toEqual([{ kind: 'system', text: `Verpasster Anruf von Mama, heute um ${time} Uhr.` }]);
+    // Said: not again, here or on the phone.
+    expect(await news()).toEqual([]);
+    expect((await asCore(clara, 'POST', '/api/v1/calls/announce')).json()).toEqual({ calls: [] });
   });
 });

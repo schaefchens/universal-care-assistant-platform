@@ -315,6 +315,18 @@ export interface KioskPlugin {
 }
 export const Kiosk = registerPlugin<KioskPlugin>('Kiosk');
 
+/** UCAP as the phone app (docs/plan-m4.md, G10): the role, calls out through it, a number handed to the dialler. */
+export interface PhonePlugin {
+  state(): Promise<{ available: boolean; held: boolean; inCall?: boolean }>;
+  requestRole(): Promise<{ available: boolean; held: boolean }>;
+  roleSettings(): Promise<void>;
+  place(o: { number: string }): Promise<void>;
+  takeDial(): Promise<{ number?: string }>;
+  /** The call's own screen in front again. */
+  showCall(): Promise<void>;
+  addListener(event: 'call', fn: (e: { inCall: boolean }) => void): Promise<PluginListenerHandle>;
+}
+export const Phone = registerPlugin<PhonePlugin>('Phone');
 export const VoiceCapture = registerPlugin<VoiceCapturePlugin>('VoiceCapture');
 export const Sms = registerPlugin<SmsPlugin>('Sms');
 export const PhoneContacts = registerPlugin<PhoneContactsPlugin>('PhoneContacts');

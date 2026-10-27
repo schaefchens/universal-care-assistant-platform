@@ -20,7 +20,7 @@ export type CommandLang = 'de' | 'en';
  */
 export type CommandContext = 'global' | 'confirm' | 'reminder' | 'dictation' | 'reply';
 
-export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo' | 'liveOn' | 'liveOff' | 'pause' | 'resume' | 'news' | 'slower' | 'faster' | 'shorter' | 'longer' | 'biggerText' | 'smallerText' | 'highContrast' | 'normalContrast' | 'lock';
+export type Intent = 'help' | 'stop' | 'back' | 'home' | 'repeat' | 'louder' | 'quieter' | 'time' | 'whereAmI' | 'whatCanIDo' | 'yes' | 'no' | 'done' | 'later' | 'undo' | 'liveOn' | 'liveOff' | 'pause' | 'resume' | 'news' | 'slower' | 'faster' | 'shorter' | 'longer' | 'biggerText' | 'smallerText' | 'highContrast' | 'normalContrast' | 'lock' | 'calls';
 
 export type Match = { kind: 'command'; intent: Intent } | { kind: 'ask'; reason: 'help_word' | 'help_near' } | { kind: 'none' };
 
@@ -70,6 +70,8 @@ const GLOBAL: Record<CommandLang, Table> = {
     normalContrast: ['Normaler Kontrast', 'Kontrast normal', 'Kontrast aus'],
     // The app lock (docs/plan-m4.md, G4): this device locked now; help stays.
     lock: ['Sperren', 'App sperren', 'UCAP sperren', 'Sperre die App'],
+    // The calls (docs/plan-m4.md, G10): who called, what was missed.
+    calls: ['Wer hat angerufen?', 'Wer hat mich angerufen?', 'Verpasste Anrufe'],
   },
   en: {
     stop: ['Stop', 'Cancel', 'Enough', 'Quiet'],
@@ -96,6 +98,7 @@ const GLOBAL: Record<CommandLang, Table> = {
     highContrast: ['High contrast', 'More contrast'],
     normalContrast: ['Normal contrast'],
     lock: ['Lock', 'Lock the app', 'Lock UCAP'],
+    calls: ['Who called?', 'Who called me?', 'Missed calls'],
   },
 };
 

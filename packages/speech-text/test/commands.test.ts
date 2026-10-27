@@ -76,6 +76,12 @@ describe('contexts', () => {
     for (const t of ["What's new?", 'Any news?']) expect(act(t, 'en')).toEqual({ kind: 'command', intent: 'news' });
   });
 
+  it('"Wer hat angerufen?" opens the calls, in either language (docs/plan-m4.md, G10); "Anrufen" does not', () => {
+    for (const t of ['Wer hat angerufen?', 'Wer hat mich angerufen', 'Verpasste Anrufe']) expect(act(t)).toEqual({ kind: 'command', intent: 'calls' });
+    for (const t of ['Who called?', 'Who called me?', 'Missed calls']) expect(act(t, 'en')).toEqual({ kind: 'command', intent: 'calls' });
+    expect(act('Anrufen')).not.toEqual({ kind: 'command', intent: 'calls' });
+  });
+
   it('speech and the screen by voice: slower, shorter, bigger text, high contrast (L5)', () => {
     const de: [string, string][] = [['Langsamer', 'slower'], ['Sprich schneller', 'faster'], ['Kürzer', 'shorter'], ['Ausführlicher', 'longer'], ['Mach die Schrift größer', 'biggerText'], ['Schrift kleiner', 'smallerText'], ['Hoher Kontrast', 'highContrast'], ['Normaler Kontrast', 'normalContrast']];
     for (const [t, intent] of de) expect(act(t), t).toEqual({ kind: 'command', intent });

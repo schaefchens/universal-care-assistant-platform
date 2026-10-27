@@ -18,6 +18,7 @@ import { createHeartbeats, type Soak } from '../domain/care/heartbeat.ts';
 import { createPush } from '../domain/care/push.ts';
 import { createCareService } from '../domain/care/service.ts';
 import { createAgendaService } from '../domain/agenda/service.ts';
+import { createCalls } from '../domain/calls/service.ts';
 import { createContactService } from '../domain/contacts/service.ts';
 import { createDeleted } from '../domain/deleted/service.ts';
 import { createReminderService } from '../domain/reminders/service.ts';
@@ -33,6 +34,7 @@ import { registerPeopleRoutes } from './routes/people.ts';
 import { registerCareRoutes } from './routes/care.ts';
 import { registerNoteRoutes } from './routes/notes.ts';
 import { registerAgendaRoutes } from './routes/agenda.ts';
+import { registerCallRoutes } from './routes/calls.ts';
 import { registerContactRoutes } from './routes/contacts.ts';
 import { registerDeletedRoutes } from './routes/deleted.ts';
 import { registerReminderRoutes } from './routes/reminders.ts';
@@ -157,6 +159,8 @@ export async function buildCore(o: {
   registerReminderRoutes(app, { reminders, requireSigned });
   registerContactRoutes(app, { contacts });
   registerAgendaRoutes(app, { agenda });
+  // The phone's calls, once UCAP is its phone app (docs/plan-m4.md, G10).
+  registerCallRoutes(app, { calls: createCalls({ db: o.db, clock: o.clock }), requireSigned });
   const notes = createNotes({ db: o.db, clock: o.clock });
   registerNoteRoutes(app, { notes });
   registerDeletedRoutes(app, { deleted: createDeleted({ db: o.db, clock: o.clock }) });

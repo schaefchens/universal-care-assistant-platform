@@ -2060,6 +2060,15 @@ The plan: [plan-m4.md](plan-m4.md).
 8. **A screen has at most nine areas** (G1): one, two stacked or side by side, three, four, six in three rows or two,
    eight, nine. Up to nine, every area keeps at least a ninth of the screen, as the help area must (S11). CONCEPT §6:
    "including one, two, six, or more areas". The other choice: more areas, with the help area spanning several cells.
+9. **The emergency number, while UCAP is the phone app, is asked about by UCAP** (G10). plan.md, Appendix D, A3b: "The
+   emergency number always opens the dialler." Opening the dialler then opens UCAP's own question ("1 1 2 anrufen?
+   Anrufen, Abbrechen oder Hilfe."), and the call goes out only when the person chooses "Anrufen", as they would press
+   call in a dialler; nothing calls 112 by itself. The other choice: UCAP hands the emergency number to the system's
+   own dialler even then (which, as no longer the phone app, may not be able to place it).
+10. **The server keeps the person's calls** (G10): number, the name the phone's contacts give it, in or out, answered,
+   missed or declined, when and how long; never what was said. The plan: "what the server keeps (who, when, how)
+   reaches it signed by the phone". Read only by the person's own devices; how long it is kept comes with G11's
+   retention. The other choice: calls stay on the phone, and "Wer hat angerufen?" works there only.
 
 ### Decided (within the plan)
 
@@ -2250,3 +2259,45 @@ The plan: [plan-m4.md](plan-m4.md).
   reports it, checks for half a minute, and otherwise says that UCAP is not pinned and what Android needs for it. And
   UCAP started again while pinned asked again, and Android showed its sheet over the screen once more: it asks only
   when it is not pinned or locked already.
+- **G10, the phone role** is offered where the device has telephony (Android 10 and later: the role's API), after UCAP
+  says what Android will ask. Android lets an app ask for a role but never hand one on, so "Telefon-App zurückgeben"
+  opens Android's default apps, where "Telefon-App" is one choice away. The role grants calls, contacts and
+  notifications itself.
+- **G10, the call screen** is native (CallActivity), so it shows over the lock screen, inside a pinned or locked kiosk
+  (it lives in UCAP's task) and with the app closed. Who calls is the name the phone's contacts give the number, else
+  the number (said digit by digit) and "Nicht in deinen Kontakten.", or "Eine unterdrückte Nummer". Ringing:
+  Annehmen, Ablehnen, Hilfe; in the call: Auflegen, Lautsprecher einschalten or ausschalten (named by what a press
+  does), Lauter, Hilfe; every area a real button. Said once per change with the person's language and speed, only by
+  a local voice (a caller's name never leaves the phone), and "Verbunden" only once Android says the call is active;
+  "Anruf beendet" as it closes. Android rings as always (its ringtone, vibration and Do Not Disturb). At the ear the
+  screen goes dark (the proximity sensor), so a cheek presses nothing. White on black, as the alarm screen; the
+  person's own colours on UCAP's native screens are left for G11's audits.
+- **G10, help during a call** is the help key's path (help is sent by the app): UCAP comes to the front and sends help;
+  the call goes on. While it lasts, "Zurück zum Anruf" stands above every page of UCAP (inside a kiosk, where Android's
+  notifications are closed, it is the only way back), and a quiet notification leads back too (naming nobody on the
+  lock screen).
+- **G10, calls out** go through the role (`placeCall`), with no dialler in between, where UCAP calls directly (the
+  person's phone fallback set to direct). A number another app hands to the dialler comes to UCAP's question first
+  ("… anrufen?"), the help screen's fallback too; should the role refuse a call, nothing else is tried (the dialler
+  would be UCAP again).
+- **G10, the calls reach the server from the phone itself**, signed with its key, as each call ends (with the app
+  closed too); offline, the native outbox tries again for a week. A missed call is said once on whichever of the
+  person's devices says it first: LIVE's news anywhere (first, before messages), else the phone that holds the role,
+  in front and not locked ("Verpasster Anruf von Anna, heute um 14:05 Uhr."). Android's own missed-call notification
+  is UCAP's while it is the phone app (channel "Anrufe"). "Wer hat angerufen?" (by voice, or Einstellungen, Anrufe)
+  says the last three and lists twenty; the page writes the number as it is, speech spells it.
+- **G10 on the scratch emulator (2026-10-27)**: the role taken through Android's question (calls and contacts granted
+  by the role); `adb emu gsm call`: UCAP's screen "5551234 ruft an" with Android's ringtone and UCAP's speech; answered
+  ("Verbunden"), ended; declined; missed and said once ("Verpasster Anruf von 5 5 5 1 2 3 4, heute um 18:50 Uhr."),
+  the server marking it said, Android's notification on "Anrufe"; the calls page; another app's number asked about,
+  then called through the role (Telecom: created by UCAP, dialling, active); help during a call (sent, said once the
+  server had it, the call still active); a call inside the pinned kiosk, and back to UCAP pinned; with the screen off,
+  the screen on and the call over the lock screen; the role given back to Phone in Android's settings. Not on the
+  emulator: the earpiece (it has the speaker only, so the proximity lock never engages) and a second call during a
+  call (the screen shows the newest; to check on a phone). Found and fixed: the call log's body was refused by the
+  signing code (org.json objects; now maps, a JVM test), "Lautsprecher aus" read as a state, no way back to a call
+  left for help ("Zurück zum Anruf", the notification), the last area of three half a row, and (reading the code) the
+  call's state read with Android 12's call, which would have ended the screen on Android 10 and 11. Seen once and not again
+  after a restart: the kiosk's "Beenden" missing although the person has a code (the app's own state of the lock);
+  for G11. Capacitor's debug builds write every plugin result to Android's log (`loggingBehavior` defaults to debug):
+  for G11's log checks, as the SMS and preview plugins' results hold content.

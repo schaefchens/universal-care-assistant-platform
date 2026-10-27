@@ -71,6 +71,8 @@ export function Settings(p: {
   /** Administrators only: the server's state, the accounts, account invitations. */
   onServerAdmin?: () => void;
   onNewWords: () => void;
+  /** The calls the person's phone told the server (G10). */
+  onCalls?: () => void;
   /** Saves the assistant's name and keyword (the person's, on all their devices). */
   onAssistant: (o: { assistantName?: string; keyword?: string | null }) => Promise<boolean>;
   onClose: () => void;
@@ -137,6 +139,11 @@ export function Settings(p: {
         <Button className="button" onPress={p.onTasks}>
           {tr('agenda.page.tasks')}
         </Button>
+        {p.onCalls && (
+          <Button className="button" onPress={p.onCalls}>
+            {tr('calls.title')}
+          </Button>
+        )}
         <Button className="button" onPress={p.onDevices}>
           {tr('settings.devices')}
         </Button>

@@ -24,6 +24,22 @@ public class KeysPlugin extends Plugin {
     @Override
     public void load() {
         instance = this;
+        if (pendingHelp) {
+            pendingHelp = false;
+            notifyListeners("help", new JSObject().put("code", -1), true);
+        }
+    }
+
+    private static volatile boolean pendingHelp;
+
+    /**
+     * Help from UCAP's call screen (G10): the same as the help key's, taken by the app as soon as it runs (kept until a
+     * listener takes it).
+     */
+    static void requestHelp(Context c) {
+        KeysPlugin p = instance;
+        if (p != null) p.notifyListeners("help", new JSObject().put("code", -1), true);
+        else pendingHelp = true;
     }
 
     private SharedPreferences prefs() {

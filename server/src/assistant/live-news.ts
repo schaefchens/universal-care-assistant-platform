@@ -15,7 +15,9 @@
  * - a one-time code by who sent it, never the code: "Amazon hat per SMS einen Code geschickt." (K8);
  * - a preview as one: "Vorschau von Signal: …" (CONCEPT §3: previews are no conversation's history);
  * - a voice message or a photo by what it is; at most three conversations, then how many more;
- * - the service named when the person has more than one ("Anna schrieb auf WhatsApp: …").
+ * - the service named when the person has more than one ("Anna schrieb auf WhatsApp: …");
+ * - first of all a missed call, by who and when: "Verpasster Anruf von Anna, heute um 14:05 Uhr." (docs/plan-m4.md,
+ *   G10: what the person's phone told the server; said once, here or by the phone).
  *
  * By itself it leaves out the services the device is set to leave to the person. Asked, it covers everything: those
  * services too, what an email from anyone says, a count of what is never said by itself (lists and newsletters, muted
@@ -24,10 +26,11 @@
  * Each message is announced once, on any device (`live_announced_at`); the conversation becomes the device's focus,
  * so "Antworte ihr, …" knows whom. What was said is not kept.
  */
-import { type AddressForm, type Lang, t } from '@ucap/shared';
+import { type AddressForm, callSentence, type Lang, t } from '@ucap/shared';
 import { sql } from 'kysely';
 import type { Llm } from '../ai/llm/service.ts';
 import type { AgendaService } from '../domain/agenda/service.ts';
+import type { Calls } from '../domain/calls/service.ts';
 import type { Clock } from '../lib/clock.ts';
 import type { Db } from '../lib/db.ts';
 import { fold, type Item, MEDIA_NEWS, type Messaging, serviceName, via } from '../messaging/service.ts';
@@ -49,7 +52,7 @@ export interface NewsSegment {
   source?: { message: string };
 }
 
-export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: Messaging; agenda: AgendaService; log: (m: string) => void; summaryBudgetMs?: number }) {
+export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: Messaging; agenda: AgendaService; calls: Calls; log: (m: string) => void; summaryBudgetMs?: number }) {
   async function person(userId: string) {
     const r = await sql<{ display_name: string; locale: string; address_form: AddressForm; timezone: string }>`select display_name, locale, address_form, timezone from users where id = ${userId}`.execute(d.db);
     const x = r.rows[0]!;
@@ -121,7 +124,9 @@ export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: M
       for (const m of pending) byChat.set(m.conversationId, [...(byChat.get(m.conversationId) ?? []), m]);
       const chats = [...byChat.values()];
       const told = chats.slice(0, MAX_CONVERSATIONS);
-      const out: NewsSegment[] = [];
+      // Missed calls first, oldest first; announced below with the rest.
+      const missed = await d.calls.pending(userId);
+      const out: NewsSegment[] = missed.map((c) => ({ kind: 'system', text: callSentence(tr, lang, { ...c, at: new Date(c.at) }, { now: new Date(d.clock()), timeZone: who.timezone }) }));
       let codeSaid = false;
       const budget = AbortSignal.any([o.signal, AbortSignal.timeout(d.summaryBudgetMs ?? SUMMARY_BUDGET_MS)]);
       for (const msgs of told) {
@@ -169,6 +174,7 @@ export function createLiveNews(d: { db: Db; clock: Clock; llm: Llm; messaging: M
       if (more) out.push({ kind: 'system', text: tr('live.news.more', { n: more }) });
       // The device gave up waiting: nothing of it counts as announced, so it comes again.
       if (o.signal.aborted) return [];
+      await d.calls.announced(userId, missed.map((c) => c.id));
       if (told.length) {
         await d.messaging.announced(userId, told.flat().map((m) => m.id));
         // "Antworte ihr, …": the last conversation told is what the conversation is about now.

@@ -4,7 +4,7 @@
  * number filled in; in a browser a tel: link (best effort). The emergency number always opens the dialler.
  */
 import type { Session } from '../identity/account.ts';
-import { Alerts, has } from '../native/plugins.ts';
+import { Alerts, has, Phone } from '../native/plugins.ts';
 
 export interface PhoneFallback {
   name: string;
@@ -53,6 +53,15 @@ export async function call(number: string, direct = false): Promise<boolean> {
 
 /** A call placed directly, the dialler (or a browser's tel: link) opened with the number, or neither (null). */
 export async function dial(number: string, direct = false): Promise<'direct' | 'dialler' | null> {
+  // As the phone app (G10) UCAP calls through its role, with no dialler in between; anything else opens the dialler,
+  // which is then UCAP's own question (DialActivity): the emergency number is still called by the person's own choice.
+  // Should the role refuse, nothing else is tried: the dialler would be UCAP again.
+  if (direct && has('Phone') && (await Phone.state().catch(() => null))?.held) {
+    return Phone.place({ number }).then(
+      () => 'direct' as const,
+      () => null,
+    );
+  }
   if (has('Alerts')) {
     try {
       return (await Alerts.call({ number, direct })).direct ? 'direct' : 'dialler';

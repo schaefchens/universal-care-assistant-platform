@@ -36,6 +36,7 @@ import { createActions } from './actions.ts';
 import { createAssistant } from './loop.ts';
 import { registerAiAdminRoutes } from './routes/ai-admin.ts';
 import { registerAssistantRoutes } from './routes/assistant.ts';
+import { createCalls } from '../domain/calls/service.ts';
 import { createLiveNews } from './live-news.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerModelRoutes } from './routes/models.ts';
@@ -153,7 +154,7 @@ export async function buildAssistant(o: {
   registerSpeechRoutes(app, { speech, providers, stt, people, db: o.db, clock: o.clock });
   registerTurnRoutes(app, { turns, stt, llm });
   registerModelRoutes(app, { modelsDir: o.config.modelsDir, log });
-  const liveNews = createLiveNews({ db: o.db, clock: o.clock, llm, messaging, agenda, log, summaryBudgetMs: o.liveSummaryMs });
+  const liveNews = createLiveNews({ db: o.db, clock: o.clock, llm, messaging, agenda, calls: createCalls({ db: o.db, clock: o.clock }), log, summaryBudgetMs: o.liveSummaryMs });
   registerLiveRoutes(app, { news: liveNews });
   registerAssistantRoutes(app, { actions, llm, contextFor });
   registerMessagingRoutes(app, { messaging, identity, actions, contextFor, requireSigned, clock: o.clock });

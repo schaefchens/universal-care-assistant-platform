@@ -204,8 +204,18 @@ pinned.
 To make a dedicated device an ordinary one again, end the kiosk, then in UCAP's settings "Kiosk-Gerät wieder normal
 machen" (only the app itself can end being the device owner), or reset the device.
 
-On a phone, a kiosk needs UCAP as the phone app too: with another phone app, an incoming call rings inside the kiosk
-but cannot be answered (spikes/m4.md, C).
+On a phone, a kiosk needs UCAP as the phone app too (below): with another phone app, an incoming call rings inside the
+kiosk but cannot be answered (spikes/m4.md, C).
+
+### UCAP as the phone app (M4)
+
+On a phone (Android 10 or later, with a SIM), the person can make UCAP their phone app in UCAP's settings (Telefon-App;
+Android asks, and gives UCAP calls, contacts and notifications with it). Calls then come to UCAP's own screen with
+large areas (Annehmen, Ablehnen, Hilfe; in a call Auflegen, Lautsprecher, Lauter, Hilfe), over the lock screen and
+inside the kiosk; UCAP says who calls (the name in the phone's contacts, or the number). Android rings as before.
+Missed calls are said once, on the phone or by LIVE mode on any of the person's devices; "Wer hat angerufen?" lists
+them. Helpers cannot switch it on remotely. Given back in Android's default apps (UCAP's settings open them), where
+"Telefon-App" is one choice away.
 
 ### herde
 
@@ -279,6 +289,9 @@ node tools/backup/backup.ts restore <dir> --into <new database> --files --connec
   read; it never deletes from it (a test checks the app's code), so the history stays when the role goes back.
 - Notes, appointments and tasks made from a message stay the person's after the message is gone, with where they came
   from (service, sender, time); "Lies die Nachricht dazu" then says it is no longer kept.
+- **Calls**, while UCAP is the person's phone app: the number and the name the phone's contacts give it, in or out,
+  answered, missed or declined, when and how long, sent by the phone as each call ends; never what was said. Only the
+  person's own devices read them. Kept for now as long as the account; a period comes with M4's last step.
 - Notes, contacts, appointments and tasks as long as the person keeps them. What they delete stays kept, with its
   earlier versions, for undo and their history, until they remove it for good (Settings → Gelöschtes, asked first;
   docs/decisions.md, M3, item 20). An appointment's ended reminders and their answers go with it; the history keeps who

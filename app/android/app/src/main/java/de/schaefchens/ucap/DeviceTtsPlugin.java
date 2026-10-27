@@ -1,5 +1,7 @@
 package de.schaefchens.ucap;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.os.SystemClock;
 import android.speech.tts.TextToSpeech;
@@ -118,8 +120,17 @@ public class DeviceTtsPlugin extends Plugin {
         return !v.isNetworkConnectionRequired() && (features == null || !features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED));
     }
 
+    /** The person's language and speed, kept for UCAP's call screen (G10), which speaks while the app may not run. */
+    static final String PREFS = "ucap.tts";
+
+    private void remember(String lang, float rate) {
+        SharedPreferences p = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (lang.equals(p.getString("lang", null)) && p.getFloat("rate", -1f) == rate) return;
+        p.edit().putString("lang", lang).putFloat("rate", rate).apply();
+    }
+
     /** A local, installed voice for the language (or the one named), the same one every time; null when none. */
-    private Voice pick(String lang, String named) {
+    static Voice pick(TextToSpeech tts, String lang, String named) {
         Locale want = Locale.forLanguageTag(lang);
         Set<Voice> voices = tts.getVoices();
         if (voices == null) return null;
@@ -153,7 +164,7 @@ public class DeviceTtsPlugin extends Plugin {
         String key = lang + "|" + (named == null ? "" : named);
         Voice v = chosen.get(key);
         if (v != null && local(v)) return v;
-        v = pick(lang, named);
+        v = pick(tts, lang, named);
         if (v != null) chosen.put(key, v);
         return v;
     }
@@ -162,7 +173,7 @@ public class DeviceTtsPlugin extends Plugin {
     public void check(PluginCall call) {
         String lang = call.getString("lang", "de-DE");
         whenReady(call, () -> {
-            Voice v = pick(lang, null);
+            Voice v = pick(tts, lang, null);
             JSObject r = new JSObject();
             r.put("local", v != null);
             r.put("voice", v != null ? v.getName() : null);
@@ -186,6 +197,7 @@ public class DeviceTtsPlugin extends Plugin {
             tts.setVoice(v);
             tts.setSpeechRate(rate);
             tts.setPitch(pitch);
+            remember(lang, rate);
             String id = UUID.randomUUID().toString();
             Pending p = new Pending();
             p.t0 = now();
