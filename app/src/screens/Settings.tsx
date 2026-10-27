@@ -55,6 +55,8 @@ export function Settings(p: {
   onConfig: (c: DeviceConfig) => void;
   onPrefs: (p: Prefs) => void;
   onDevices: () => void;
+  /** The person's own screens and areas on this device (docs/plan-m4.md, G1). */
+  onScreens: () => void;
   onPeople: () => void;
   onReminders: () => void;
   onContacts: () => void;
@@ -93,6 +95,9 @@ export function Settings(p: {
         <Range label={tr('settings.textScale')} value={p.config.visual.textScale} min={1} max={3} step={0.25} format={(v) => `${Math.round(v * 100)} %`} onChange={(textScale) => visual({ textScale })} />
         <Range label={tr('settings.borders')} value={p.config.visual.borderPx} min={0} max={12} step={1} format={(v) => `${v} px`} onChange={(borderPx) => visual({ borderPx })} />
         <Choice label={tr('settings.font')} value={p.config.visual.font} options={['atkinson', 'system'] as const} text={(v) => tr(`settings.font.${v}`)} onChange={(font) => visual({ font })} />
+        <Button className="button" onPress={p.onScreens}>
+          {tr('screens.open')}
+        </Button>
       </Section>
 
       <Section title={tr('settings.touch')}>

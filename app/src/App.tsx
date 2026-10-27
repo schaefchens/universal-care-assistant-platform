@@ -53,6 +53,7 @@ import { EmailPage } from './screens/EmailPage.tsx';
 import { PreviewsPage } from './screens/PreviewsPage.tsx';
 import { SmsPage } from './screens/SmsPage.tsx';
 import { Devices } from './screens/Devices.tsx';
+import { ScreensPage } from './screens/ScreensPage.tsx';
 import { DeletedSetting } from './screens/DeletedSetting.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
@@ -103,6 +104,8 @@ type Page =
   | 'nameIntro'
   | 'aiAdmin'
   | 'serverAdmin'
+  /** The person's own screens and areas, shaped on this device (docs/plan-m4.md, G1). */
+  | 'screens'
   /**
    * "Soll ich einen Hilferuf senden?" after a help word or a near match, or proposed by the assistant (A17); asked at a
    * reminder, the request is linked to it.
@@ -279,6 +282,10 @@ export function App() {
         if (e.type === 'device.added' && e.data.deviceId !== session.ref.deviceId && e.data.via === 'recover') {
           ui.earcons.play('screen');
           ui.say(ui.tr('devices.added', { name: String(e.data.name ?? '') }), 'notice');
+        } else if (e.type === 'device.added' && e.data.deviceId !== session.ref.deviceId && e.data.via === 'link' && e.data.byDevice !== session.ref.deviceId) {
+          // A device linked by a code (docs/plan-m4.md, G3): every device of the person hears it, and through which.
+          ui.earcons.play('screen');
+          ui.say(ui.tr('devices.addedLink', { name: String(e.data.name ?? ''), by: String(e.data.by ?? '') }), 'notice');
         } else if (e.type === 'device.revoked' && e.data.deviceId === session.ref.deviceId) {
           void session.forget().then(() => signedOut(ui.tr('devices.signedOut')));
         } else if (e.type === 'relationship.changed') {
@@ -751,7 +758,7 @@ export function App() {
 
   /** Android's back button and "Zurück": the newest thing closes first; at home, where the person is. */
   const goBack = () => {
-    if (page === 'devices' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'contacts' || page === 'appointments' || page === 'tasks' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
+    if (page === 'devices' || page === 'screens' || page === 'newWords' || page === 'helpers' || page === 'reminders' || page === 'contacts' || page === 'appointments' || page === 'tasks' || page === 'voices' || page === 'aiAdmin' || page === 'serverAdmin' || page === 'messagingServices') setPage('settings');
     else if (page === 'telegram' || page === 'whatsapp' || page === 'sms' || page === 'previews' || (typeof page === 'object' && 'email' in page)) setPage('messagingServices');
     else if (typeof page === 'object' && ('remindersOf' in page || 'contactsOf' in page || 'agendaOf' in page || 'configOf' in page)) setPage('helpers');
     else if (typeof page === 'object' && 'alert' in page) setPage('inbox');
@@ -1125,7 +1132,8 @@ export function App() {
         onNoticeSeen={() => setNotice(null)}
       />
     );
-  else if (page === 'devices') content = <Devices session={session} onSignedOut={() => signedOut(ui.tr('devices.signedOut'))} onClose={() => setPage('settings')} />;
+  else if (page === 'devices') content = <Devices session={session} serverName={server.name || server.url} onSignedOut={() => signedOut(ui.tr('devices.signedOut'))} onClose={() => setPage('settings')} />;
+  else if (page === 'screens') content = <ScreensPage config={config} onConfig={updateConfig} onClose={() => setPage('settings')} />;
   else if (page === 'helpers')
     content = (
       <Helpers
@@ -1386,6 +1394,7 @@ export function App() {
         onConfig={updateConfig}
         onPrefs={updatePrefs}
         onDevices={() => setPage('devices')}
+        onScreens={() => setPage('screens')}
         onPeople={() => setPage('helpers')}
         onReminders={() => setPage('reminders')}
         onContacts={() => setPage('contacts')}

@@ -119,6 +119,29 @@ export async function recoverAccount(o: { server: ServerRef; entropy: Uint8Array
 }
 
 /**
+ * Device linking (docs/plan-m4.md, G3): this new device takes a code another device of the person shows, with a key of
+ * its own, and gets the four fingerprint words to compare. Nothing is its own until the person says yes over there.
+ */
+export async function claimLink(o: { server: ServerRef; code: string; device: DeviceInfo }): Promise<{ id: string; words: number[]; jkt: string; expiresAt: string }> {
+  const ch = await api<{ challengeId: string; nonce: string }>(o.server.url, '/api/v1/identity/challenge', { body: { purpose: 'device.proof' } });
+  const dev = await deviceProof(o.server, ch.nonce);
+  const r = await api<{ id: string; words: number[]; expiresAt: string }>(o.server.url, '/api/v1/devices/links/claim', {
+    body: { code: o.code.replace(/\s/g, ''), org: org(o.server), challengeId: ch.challengeId, nonce: ch.nonce, device: { jwk: dev.jwk, ...o.device, keyStore: deviceKey.keyStore, proof: dev.proof } },
+  });
+  return { ...r, jkt: dev.djkt };
+}
+
+/** How the claim stands. Once the person said yes, this device is theirs and signs in with its own key. */
+export async function pollLink(o: { server: ServerRef; id: string; jkt: string }): Promise<{ state: 'claimed' | 'declined' | 'cancelled' | 'expired' } | { state: 'approved'; session: Session }> {
+  const r = await api<{ state: 'claimed' | 'declined' | 'cancelled' | 'expired' } | { state: 'approved'; userId: string; deviceId: string; seq: number }>(o.server.url, `/api/v1/devices/links/${o.id}/poll`, { body: { jkt: o.jkt } });
+  if (r.state !== 'approved') return r;
+  const ref = { serverUrl: o.server.url, serverId: o.server.serverId, userId: r.userId, deviceId: r.deviceId };
+  saveDeviceRef(ref);
+  startEventsAt(r.deviceId, r.seq);
+  return { state: 'approved', session: new Session(ref) };
+}
+
+/**
  * The WebView's storage was lost, but Android kept this device's key and who it is (AN-06: the Keystore survives
  * WebView storage loss): the device signs in again with its key, without the words. Null when there is nothing to
  * restore; 'later' when the server cannot be reached now (native code keeps ringing alarms meanwhile). A server that

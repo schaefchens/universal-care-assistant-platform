@@ -2057,6 +2057,9 @@ The plan: [plan-m4.md](plan-m4.md).
    and every device of the person is told. Later new words without the old ones wait 24 hours.
 7. **The apps a device can open are listed in its device editor** for helpers with `device.configure` (names only, as
    Android shows them), so they can put an app on an area. The other choice: the person's device alone chooses apps.
+8. **A screen has at most nine areas** (G1): one, two stacked or side by side, three, four, six in three rows or two,
+   eight, nine. Up to nine, every area keeps at least a ninth of the screen, as the help area must (S11). CONCEPT §6:
+   "including one, two, six, or more areas". The other choice: more areas, with the help area spanning several cells.
 
 ### Decided (within the plan)
 
@@ -2069,3 +2072,39 @@ The plan: [plan-m4.md](plan-m4.md).
   and hold). A real kiosk is a dedicated device.
 - **A kiosk on a phone needs UCAP as its phone app** (C: with Google's Phone app as the dialer, an incoming call rang
   inside the kiosk and could not be answered). G9 asks for the phone role before it locks a phone with telephony.
+- **G1, screens and areas, one editor for helpers and the person**: the helper's "Gerät von …" and the person's
+  Einstellungen → "Bildschirme einrichten" share the part that shapes screens (`ScreensEditor`); the person's page
+  applies at once on the device ("Übernehmen"), as every setting the person changes there, and the helper's waits for
+  the device to be idle (S11).
+- **A new layout keeps what fits in place**: an area in a corner or along an edge stays in that corner or along that
+  edge (the help area bottom right stays bottom right), the rest fill free cells in reading order; with fewer cells, the
+  last areas in reading order go, after a question that names them, never the help area or a screen's way back.
+  `relayout` in `packages/shared/src/config-edit.ts`, tested.
+- **A new area starts as "Uhrzeit"** in the free cell it is added to (harmless until its task is chosen); a new screen
+  starts with Zurück, Wo bin ich?, Startseite and Hilfe in the four corners, as every activity screen; a screen is
+  removed only once no area opens it any more (the page names those areas).
+- **A part of a screen no area covers is a warning**, saved only when acknowledged: a finger there hears nothing.
+- **Each kind of change to an area is said by its own sentence** ("… hat dem Feld „Nachrichten“ einen anderen Ton
+  gegeben.", "… die Beschreibung des Felds „Notizen“ geändert."), where S11 said "… hat den Bildschirm „Startseite“
+  geändert." for them; an area pressed at one tap is said first when it is the help area. An area that keeps its
+  corner on a new layout is not said as moved.
+- **Where an area is, in words, knows edges now**: two areas stacked are "oben" and "unten", side by side "links" and
+  "rechts", one area "der ganze Bildschirm" (was "Reihe 1, Spalte 1"). "Was kann ich hier tun?" uses the same words.
+- **Per area: a sound of twelve** (area-7 to area-12 are new, `tools/earcons.ts`), heard as it is chosen; **no
+  vibration** for that area; **"schon auf einmal Tippen"** (the touch engine's direct areas; for the help area, the
+  per-person direct help of plan.md's decisions). Per-area double tap or hold stay in the schema unused: the engine has
+  one gesture per device. **A symbol** (up to four characters, an emoji) is shown above the label and never read: the
+  label stays the area's name.
+- **G3, device linking: the offering device approves, by its key.** The code comes from a signed-in device; only that
+  device says yes, signing `device.link` over the link and the new device's key (kept as the new device's enrolment
+  proof, with `linked_by`). A helper, an administrator or another account never sees the link. plan-m4.md: "approved
+  only on the person's own devices".
+- **The fingerprint words come from a salt the server draws when the code is claimed, and the new device's key**:
+  four words of 64 pictures (24 bits). Drawn after the key, so nobody can make a key that gives chosen words; one claim
+  per code, so a second device that tries the same code is refused and the person's new device says so.
+- **Wrong codes are limited per address (ten in ten minutes) and on the whole server (fifty)**, after which claims
+  wait for the window to pass. plan-m4.md said "five wrong tries end a code": a wrong code cannot tell which code it
+  was meant for, so the limits are per address and for everyone; with six digits, ten minutes and these limits a
+  guess stays hopeless, and the words and the person's yes come after.
+- **The new device signs in as every device does**: once approved, its poll returns its device id and where it starts
+  reading events, and it asks for a session with its own key.

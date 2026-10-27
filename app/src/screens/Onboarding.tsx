@@ -14,6 +14,7 @@ import { confirmWords, createAccount, recoverAccount, type Session } from '../id
 import { ApiError } from '../net/api.ts';
 import type { Prefs, ServerRef } from '../state/store.ts';
 import { useUi } from '../ui.tsx';
+import { LinkDevice } from './LinkDevice.tsx';
 import { deviceInfo, localVoiceFor, useWipeOnUnmount, wordLanguage } from './words/common.ts';
 import { WordCeremony } from './words/WordCeremony.tsx';
 import { WordEntry } from './words/WordEntry.tsx';
@@ -21,7 +22,7 @@ import { WordEntry } from './words/WordEntry.tsx';
 /** The emergency number before any server is known (docs/plan.md, Appendix D: {sos} from the locale, 112 in DE). */
 const SOS = '112';
 
-type Step = { kind: 'welcome' } | { kind: 'invite' } | { kind: 'words'; entropy: Uint8Array; session: Session; handoverTo?: string } | { kind: 'recover' };
+type Step = { kind: 'welcome' } | { kind: 'invite' } | { kind: 'words'; entropy: Uint8Array; session: Session; handoverTo?: string } | { kind: 'recover' } | { kind: 'link' };
 
 export interface OnboardingProps {
   server: ServerRef;
@@ -52,7 +53,7 @@ export function Onboarding(p: OnboardingProps) {
   useEffect(() => {
     if (step.kind === 'welcome') {
       ui.earcons.play('screen');
-      say([p.notice ?? '', tr('screen.announce', { screen: tr('onboard.welcome.title'), count: 5 }), tr('onboard.welcome.intro'), tr('onboard.notSetUp', { sos: SOS })].filter(Boolean).join(' '), 'system');
+      say([p.notice ?? '', tr('screen.announce', { screen: tr('onboard.welcome.title'), count: 6 }), tr('onboard.welcome.intro'), tr('onboard.notSetUp', { sos: SOS })].filter(Boolean).join(' '), 'system');
     } else if (step.kind === 'invite') say(`${tr('onboard.invite.title')}. ${tr('onboard.invite.intro')}`, 'system');
   }, [step.kind, p.prefs.lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -112,6 +113,8 @@ export function Onboarding(p: OnboardingProps) {
           choices={[
             { id: 'invite', label: tr('onboard.choice.invite'), description: tr('onboard.choice.invite.description'), role: 'assistant' },
             { id: 'recover', label: tr('onboard.choice.recover'), description: tr('onboard.choice.recover.description'), role: 'notes' },
+            // Another device of the person's gives a code (docs/plan-m4.md, G3): no words needed.
+            { id: 'link', label: tr('onboard.choice.link'), description: tr('onboard.choice.link.description'), role: 'messages' },
             // Always named in the other language, so whoever cannot read this one finds it.
             { id: 'language', label: p.prefs.lang === 'de' ? 'English' : 'Deutsch', description: p.prefs.lang === 'de' ? 'Use the app in English.' : 'Die App auf Deutsch verwenden.', role: 'neutral' },
             { id: 'server', label: tr('onboard.choice.server'), role: 'nav' },
@@ -119,10 +122,11 @@ export function Onboarding(p: OnboardingProps) {
             { id: 'sos', label: tr('onboard.choice.sos', { sos: SOS }), description: tr('onboard.choice.sos.description', { sos: SOS }), role: 'neutral' },
           ]}
           onChoose={(id) => {
-            if (id === 'invite' || id === 'recover') p.onNoticeSeen?.();
+            if (id === 'invite' || id === 'recover' || id === 'link') p.onNoticeSeen?.();
             if (id === 'sos') void call(SOS);
             else if (id === 'invite') setStep({ kind: 'invite' });
             else if (id === 'recover') setStep({ kind: 'recover' });
+            else if (id === 'link') setStep({ kind: 'link' });
             else if (id === 'language') p.onPrefs({ ...p.prefs, lang: p.prefs.lang === 'de' ? 'en' : 'de' });
             else p.onChangeServer();
           }}
@@ -158,6 +162,8 @@ export function Onboarding(p: OnboardingProps) {
       </main>
     );
   }
+
+  if (step.kind === 'link') return <LinkDevice server={p.server} onSignedIn={p.onSignedIn} onCancel={() => setStep({ kind: 'welcome' })} />;
 
   if (step.kind === 'words') {
     const { entropy, session } = step;

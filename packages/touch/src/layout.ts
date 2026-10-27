@@ -67,12 +67,15 @@ export function gridProblems(grid: Grid, areas: GridArea[]): string[] {
 }
 
 export type Corner = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right';
+/** An area as wide or as high as the screen: the top or bottom half of two stacked, the left of two side by side. */
+export type Edge = 'top' | 'bottom' | 'left' | 'right' | 'whole';
 
 /**
- * Where an area is, in words a person can use: a corner when the area touches exactly one corner of the grid,
- * otherwise row and column (1-based). Used by "Was kann ich hier tun?".
+ * Where an area is, in words a person can use: a corner when the area touches exactly one corner of the grid; an edge
+ * when it spans the screen's width or height and touches one side (two areas stacked are "oben" and "unten"); the whole
+ * screen; otherwise row and column (1-based). Used by "Was kann ich hier tun?".
  */
-export function position(grid: Grid, cell: Cell): { corner: Corner } | { row: number; col: number } {
+export function position(grid: Grid, cell: Cell): { corner: Corner } | { edge: Edge } | { row: number; col: number } {
   const top = cell.row === 0;
   const bottom = cell.row + (cell.rowSpan ?? 1) === grid.rows;
   const left = cell.col === 0;
@@ -81,6 +84,11 @@ export function position(grid: Grid, cell: Cell): { corner: Corner } | { row: nu
   if (top && right && !bottom && !left) return { corner: 'top_right' };
   if (bottom && left && !top && !right) return { corner: 'bottom_left' };
   if (bottom && right && !top && !left) return { corner: 'bottom_right' };
+  if (top && bottom && left && right) return { edge: 'whole' };
+  if (left && right && top) return { edge: 'top' };
+  if (left && right && bottom) return { edge: 'bottom' };
+  if (top && bottom && left) return { edge: 'left' };
+  if (top && bottom && right) return { edge: 'right' };
   return { row: cell.row + 1, col: cell.col + 1 };
 }
 

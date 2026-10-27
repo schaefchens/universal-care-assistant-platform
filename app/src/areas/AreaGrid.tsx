@@ -162,6 +162,12 @@ export function AreaGrid(p: AreaGridProps) {
         };
         return (
           <button key={a.id} type="button" className="area" data-role={a.role} style={style} aria-description={t.description} onClick={click(a)}>
+            {/* A symbol of the area's own (CONCEPT §6: "symbol"): seen, never read; the label is its name. */}
+            {a.symbol && (
+              <span className="area-symbol" aria-hidden>
+                {a.symbol}
+              </span>
+            )}
             <span className="area-label" dir="auto">
               {t.label}
             </span>

@@ -10,6 +10,8 @@ export * from './connectors.ts';
 export * from './contrast.ts';
 export * from './config-rules.ts';
 export * from './config-diff.ts';
+export * from './config-edit.ts';
+export * from './link-words.ts';
 export * from './mail-providers.ts';
 export * from './mail-quote.ts';
 export * from './numbers.ts';

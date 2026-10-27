@@ -6,7 +6,7 @@
 import { Earcons, has } from '../native/plugins.ts';
 
 export const EARCON_NAMES = [
-  'area-1', 'area-2', 'area-3', 'area-4', 'area-5', 'area-6', 'help', 'activate', 'screen', 'confirm',
+  'area-1', 'area-2', 'area-3', 'area-4', 'area-5', 'area-6', 'area-7', 'area-8', 'area-9', 'area-10', 'area-11', 'area-12', 'help', 'activate', 'screen', 'confirm',
   'listen-start', 'listen-stop', 'care-press', 'care-received', 'care-delivered', 'care-accepted', 'care-cancelled',
   'care-failed', 'error', 'message', 'live-open', 'live-close',
 ] as const;
@@ -68,9 +68,9 @@ export function createEarcons(base = 'earcons/'): EarconPlayer {
   };
 }
 
-/** The default earcon for an area: its own, `help` for the help area, else by position. */
+/** The default earcon for an area: its own, `help` for the help area, else by position (twelve, told apart by ear). */
 export function earconFor(area: { earcon?: string; role: string }, index: number): string {
   if (area.earcon) return area.earcon;
   if (area.role === 'help') return 'help';
-  return `area-${(index % 6) + 1}`;
+  return `area-${(index % 12) + 1}`;
 }

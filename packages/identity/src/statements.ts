@@ -18,6 +18,8 @@ export const PURPOSES = [
   'recovery.confirm',
   'identity.rotate',
   'identity.reissue',
+  // Device linking (docs/plan-m4.md, G3): the person's yes on the device that offered the code.
+  'device.link',
 ] as const;
 export type Purpose = (typeof PURPOSES)[number];
 

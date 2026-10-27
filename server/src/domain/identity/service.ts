@@ -10,7 +10,7 @@
  * - Sessions: the device signs a challenge; the access token lives 15 minutes, in the app's memory only.
  * - Every proof names this server (srv) and an origin it answers on (org).
  */
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { b64url, fromB64url, inviteDigest, type Json, newLinkCode, newSpokenCode, normaliseLinkCode, normaliseSpokenCode, verifyIdentity } from '@ucap/identity';
 import { uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
@@ -27,6 +27,22 @@ export const CHALLENGE_TTL_S = 120;
 export const LINK_CODE_TTL_S = 7 * 86_400;
 export const SPOKEN_CODE_TTL_S = 86_400;
 export const BOOTSTRAP_TTL_S = 3_600;
+/** Device linking (docs/plan-m4.md, G3): a code lives ten minutes. */
+export const LINK_TTL_S = 600;
+/** Wrong link codes: ten per address in ten minutes, fifty on the whole server (then claims wait). */
+const LINK_LIMIT_IP = { windowS: 600, max: 10 };
+const LINK_LIMIT_ALL = { bucket: 'link:all', windowS: 600, max: 50 };
+
+/**
+ * The four fingerprint words of a link (indices into a list of 64 pictures, packages/shared): from the salt the server
+ * drew when the new device claimed the code, and that device's key. Both devices show them; nobody chooses a key that
+ * makes given words, because the salt comes after the key.
+ */
+export function linkWords(salt: Uint8Array, jkt: string): number[] {
+  const h = createHash('sha256').update('ucap:link-words:').update(salt).update(jkt).digest();
+  const n = (h[0]! << 16) | (h[1]! << 8) | h[2]!;
+  return [(n >> 18) & 63, (n >> 12) & 63, (n >> 6) & 63, n & 63];
+}
 /** M1: every scope. The optional app lock (M4) will keep `personal` and `elevated` behind a local unlock. */
 export const DEFAULT_SCOPES = ['care', 'ui', 'status', 'personal', 'elevated'];
 
@@ -118,13 +134,13 @@ export function createIdentityService(d: IdentityDeps) {
     return { jwk, jkt };
   }
 
-  async function insertDevice(trx: Trx, userId: string, dev: DeviceInput, key: { jwk: P256Jwk; jkt: string }, via: 'create' | 'recover', proof: Record<string, Json>) {
+  async function insertDevice(trx: Trx, userId: string, dev: Omit<DeviceInput, 'jwk' | 'proof'>, key: { jwk: P256Jwk; jkt: string }, via: 'create' | 'recover' | 'link', proof: Record<string, Json>, linkedBy: string | null = null) {
     const id = uuidv7(d.clock());
     try {
       await sql`
-        insert into devices (id, user_id, name, platform, form_factor, public_jwk, jkt, key_store, enrolled_via, enrollment_proof, app_version, created_at)
+        insert into devices (id, user_id, name, platform, form_factor, public_jwk, jkt, key_store, enrolled_via, enrollment_proof, app_version, linked_by, created_at)
         values (${id}, ${userId}, ${dev.name}, ${dev.platform}, ${dev.formFactor ?? null}, ${JSON.stringify(key.jwk)}::jsonb, ${key.jkt}, ${dev.keyStore},
-                ${via}, ${JSON.stringify(proof)}::jsonb, ${dev.appVersion ?? null}, ${now()})`.execute(trx);
+                ${via}, ${JSON.stringify(proof)}::jsonb, ${dev.appVersion ?? null}, ${linkedBy}, ${now()})`.execute(trx);
     } catch (e) {
       if ((e as { code?: string }).code === '23505') throw new AppError('conflict', { params: { reason: 'device_key_known' } });
       throw e;
@@ -439,6 +455,152 @@ export function createIdentityService(d: IdentityDeps) {
         }
         await audit(trx, d.clock, { actorUser: a.userId, actorDevice: a.deviceId, subjectUser: a.userId, action: 'identity.reissued', targetType: 'identity_key', targetId: cur.rows[0]?.id });
       });
+    },
+
+    // —— Device linking (docs/plan-m4.md, G3) ——
+
+    /**
+     * A signed-in device offers a code for a new device of the person: six digits for ten minutes. A person has one at
+     * a time: an older open or claimed one ends.
+     */
+    async offerLink(a: { userId: string; deviceId: string }) {
+      return d.db.transaction().execute(async (trx) => {
+        await sql`update device_links set state = 'cancelled', ended_at = ${now()} where user_id = ${a.userId} and state in ('open', 'claimed')`.execute(trx);
+        const id = uuidv7(d.clock());
+        const expiresAt = new Date(d.clock() + LINK_TTL_S * 1000);
+        // Six digits; another person's open code with the same digits is drawn again.
+        for (let i = 0; ; i++) {
+          const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+          const r = await sql`
+            insert into device_links (id, user_id, offered_by, code_mac, state, expires_at, created_at)
+            values (${id}, ${a.userId}, ${a.deviceId}, ${mac(d.pepper, 'link', code)}, 'open', ${expiresAt}, ${now()})
+            on conflict (code_mac) where state = 'open' do nothing`.execute(trx);
+          if (Number(r.numAffectedRows ?? 0) === 1) {
+            await audit(trx, d.clock, { actorUser: a.userId, actorDevice: a.deviceId, subjectUser: a.userId, action: 'device.link.offered', targetType: 'device_link', targetId: id });
+            return { id, code, expiresAt: expiresAt.toISOString() };
+          }
+          if (i > 20) throw new AppError('conflict', { params: { reason: 'link_busy' } });
+        }
+      });
+    },
+
+    /**
+     * The new device claims a code with its own key, proved on a challenge. Wrong codes count per address and on the
+     * whole server. Returns the link and its fingerprint words; the new device asks after the person's answer.
+     */
+    async claimLink(input: { code: string; org: string; challengeId: string; nonce: string; device: DeviceInput; ip: string }) {
+      checkOrigin(input.org);
+      const ipLimit = { bucket: `link:ip:${input.ip}`, ...LINK_LIMIT_IP };
+      await checkLimit(d.db, d.clock, LINK_LIMIT_ALL);
+      await checkLimit(d.db, d.clock, ipLimit);
+      const code = input.code.replace(/[\s-]/g, '');
+      try {
+        return await d.db.transaction().execute(async (trx) => {
+          await consumeChallenge(trx, input.challengeId, input.nonce, 'device.proof');
+          const key = checkDevice(input.device, input.org, input.nonce);
+          const salt = randomBytes(16);
+          const claim = { name: input.device.name, platform: input.device.platform, formFactor: input.device.formFactor ?? null, keyStore: input.device.keyStore, appVersion: input.device.appVersion ?? null, proof: input.device.proof, nonce: input.nonce };
+          const r = /^\d{6}$/.test(code)
+            ? await sql<{ id: string; user_id: string; expires_at: Date }>`
+                update device_links set state = 'claimed', claim_jwk = ${JSON.stringify(key.jwk)}::jsonb, claim_jkt = ${key.jkt}, claim = ${JSON.stringify(claim)}::jsonb,
+                  salt = ${salt}, claimed_at = ${now()}
+                where code_mac = ${mac(d.pepper, 'link', code)} and state = 'open' and expires_at > ${now()}
+                returning id, user_id, expires_at`.execute(trx)
+            : { rows: [] };
+          const link = r.rows[0];
+          if (!link) throw new AppError('unauthorised', { params: { reason: 'link_code' } });
+          await emit(trx, { kind: 'device.link', recipients: [link.user_id], payload: { linkId: link.id, state: 'claimed' } });
+          return { id: link.id, words: linkWords(salt, key.jkt), expiresAt: link.expires_at.toISOString() };
+        });
+      } catch (e) {
+        if (e instanceof AppError && e.params?.reason === 'link_code') {
+          await countFailure(d.db, d.clock, ipLimit);
+          await countFailure(d.db, d.clock, LINK_LIMIT_ALL);
+        }
+        throw e;
+      }
+    },
+
+    /** The link as the person's device sees it: the new device as it names itself, and the words to compare. */
+    async viewLink(userId: string, linkId: string) {
+      const r = await sql<{ state: string; offered_by: string; claim: { name: string; platform: string; formFactor: string | null } | null; claim_jkt: string | null; salt: Buffer | null; expires_at: Date; device_id: string | null }>`
+        select state, offered_by, claim, claim_jkt, salt, expires_at, device_id from device_links where id = ${linkId} and user_id = ${userId}`.execute(d.db);
+      const x = r.rows[0];
+      if (!x) throw new AppError('not_found');
+      const expired = (x.state === 'open' || x.state === 'claimed') && x.expires_at.getTime() <= d.clock();
+      return {
+        id: linkId,
+        state: expired ? 'expired' : x.state,
+        offeredBy: x.offered_by,
+        device: x.claim ? { name: x.claim.name, platform: x.claim.platform, formFactor: x.claim.formFactor } : null,
+        words: x.salt && x.claim_jkt ? linkWords(new Uint8Array(x.salt), x.claim_jkt) : null,
+        // The new device's key, which the yes names (`device.link`).
+        djkt: x.claim_jkt,
+        expiresAt: x.expires_at.toISOString(),
+        deviceId: x.device_id,
+      };
+    },
+
+    /**
+     * The person says yes on the device that offered the code, which signs `device.link` naming the new device's key:
+     * the new device is enrolled, and every device of the person hears it. Nobody else can: not a helper, not an
+     * administrator, not another account.
+     */
+    async approveLink(a: { userId: string; deviceId: string }, linkId: string, input: { org: string; proof: string }) {
+      checkOrigin(input.org);
+      return d.db.transaction().execute(async (trx) => {
+        const r = await sql<{ offered_by: string; claim_jwk: P256Jwk; claim_jkt: string; claim: { name: string; platform: 'android' | 'ios' | 'web'; formFactor: 'phone' | 'tablet' | 'desktop' | null; keyStore: 'keystore' | 'webcrypto'; appVersion: string | null; proof: string; nonce: string } }>`
+          select offered_by, claim_jwk, claim_jkt, claim from device_links
+          where id = ${linkId} and user_id = ${a.userId} and state = 'claimed' and expires_at > ${now()} for update`.execute(trx);
+        const link = r.rows[0];
+        if (!link) throw new AppError('not_found');
+        if (link.offered_by !== a.deviceId) throw new AppError('forbidden', { params: { reason: 'link_other_device' } });
+        const approver = await sql<{ public_jwk: P256Jwk; name: string }>`select public_jwk, name from devices where id = ${a.deviceId} and revoked_at is null`.execute(trx);
+        const by = approver.rows[0];
+        if (!by) throw bad();
+        const payload = { srv: d.serverId, org: input.org, lid: linkId, djkt: link.claim_jkt };
+        if (!verifyDevice(by.public_jwk, 'device.link', payload, input.proof)) throw bad();
+        const c = link.claim;
+        const deviceId = await insertDevice(trx, a.userId, { name: c.name, platform: c.platform, formFactor: c.formFactor ?? undefined, keyStore: c.keyStore, appVersion: c.appVersion ?? undefined }, { jwk: link.claim_jwk, jkt: link.claim_jkt }, 'link', {
+          purpose: 'device.link',
+          payload,
+          proof: input.proof,
+          by: a.deviceId,
+          claim: { nonce: c.nonce, proof: c.proof },
+        }, a.deviceId);
+        await sql`update device_links set state = 'approved', approved_at = ${now()}, approval = ${JSON.stringify({ payload, proof: input.proof })}::jsonb, device_id = ${deviceId}, ended_at = ${now()} where id = ${linkId}`.execute(trx);
+        await audit(trx, d.clock, { actorUser: a.userId, actorDevice: a.deviceId, subjectUser: a.userId, action: 'device.linked', targetType: 'device', targetId: deviceId });
+        await emit(trx, { kind: 'device.link', recipients: [a.userId], payload: { linkId, state: 'approved' } });
+        await emit(trx, { kind: 'device.added', recipients: [a.userId], payload: { deviceId, name: c.name, via: 'link', by: by.name, byDevice: a.deviceId } });
+        return { deviceId };
+      });
+    },
+
+    /** The person says no (the words differ), or the offering device takes its code back. */
+    async endLink(a: { userId: string; deviceId: string }, linkId: string, how: 'declined' | 'cancelled') {
+      const r = await sql`
+        update device_links set state = ${how}, ended_at = ${now()}
+        where id = ${linkId} and user_id = ${a.userId} and state in ('open', 'claimed')`.execute(d.db);
+      if (Number(r.numAffectedRows ?? 0) === 0) throw new AppError('not_found');
+      if (how === 'declined') await audit(d.db, d.clock, { actorUser: a.userId, actorDevice: a.deviceId, subjectUser: a.userId, action: 'device.link.declined', targetType: 'device_link', targetId: linkId });
+      await emit(d.db, { kind: 'device.link', recipients: [a.userId], payload: { linkId, state: how } });
+    },
+
+    /**
+     * The new device asks how its claim stands, naming its key's thumbprint (only it knows the link's id and its key).
+     * Once approved: its device id, the person's, and where it starts reading events; it then signs in with its key.
+     */
+    async pollLink(linkId: string, jkt: string) {
+      const r = await sql<{ state: string; user_id: string; device_id: string | null; expires_at: Date }>`
+        select state, user_id, device_id, expires_at from device_links where id = ${linkId} and claim_jkt = ${jkt}`.execute(d.db);
+      const x = r.rows[0];
+      if (!x) throw new AppError('not_found');
+      if (x.state === 'approved' && x.device_id) {
+        const seq = await d.db.transaction().execute((trx) => eventHead(trx, x.user_id));
+        return { state: 'approved' as const, userId: x.user_id, deviceId: x.device_id, seq };
+      }
+      const expired = x.state === 'claimed' && x.expires_at.getTime() <= d.clock();
+      return { state: (expired ? 'expired' : x.state) as 'claimed' | 'declined' | 'cancelled' | 'expired' };
     },
 
     async isAdmin(userId: string) {

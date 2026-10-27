@@ -869,6 +869,105 @@ test('8b · the appointments in areas (docs/plan-m3.md, K7): Maria turns Clara�
   await home(maria);
 });
 
+test('G1 · screens and areas (docs/plan-m4.md, G1; acceptance 1): Maria gives Clara a screen "Freizeit", lays the home screen out for six with an area that opens it, gives "Nachrichten" another sound; the tablet says it and opens the new screen; Clara shapes her own screens too', async () => {
+  await home(clara);
+  await home(maria);
+  await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await maria.getByRole('button', { name: 'Helfer', exact: true }).click();
+  await maria.getByRole('button', { name: 'Gerät einrichten' }).click();
+  await expect(heading(maria)).toHaveText('Gerät von Clara');
+  const field = (name: string) => maria.locator('fieldset').filter({ has: maria.getByRole('heading', { name: `Feld „${name}“` }) });
+  const layout = () => maria.getByRole('radiogroup', { name: 'Anordnung der Felder' });
+  // A new screen, laid out for six: its two new areas start as "Uhrzeit", the first becomes "Notizen".
+  await maria.getByRole('textbox', { name: 'Name für einen neuen Bildschirm' }).fill('Freizeit');
+  await maria.getByRole('button', { name: 'Neuen Bildschirm anlegen' }).click();
+  await choose(layout(), '6 Felder, 3 Reihen');
+  await maria.getByRole('button', { name: /^Feld hinzufügen: / }).first().click();
+  await field('Uhrzeit').getByRole('radiogroup', { name: 'Was das Feld öffnet' }).getByText('Notizen', { exact: true }).click();
+  await maria.getByRole('button', { name: /^Feld hinzufügen: / }).first().click();
+  await expect(maria.getByRole('img', { name: /^Vorschau von „Freizeit“: Oben links: Zurück, Oben rechts: Wo bin ich\?, Reihe 2, Spalte 1: Notizen, Reihe 2, Spalte 2: Uhrzeit, Unten links: Startseite, Unten rechts: Hilfe$/ })).toBeVisible();
+  // Home for six: the help area stays bottom right; a new area opens "Freizeit".
+  await choose(maria.getByRole('radiogroup', { name: 'Welcher Bildschirm' }), 'Startseite');
+  await choose(layout(), '6 Felder, 3 Reihen');
+  await maria.getByRole('button', { name: /^Feld hinzufügen: / }).first().click();
+  await field('Uhrzeit').getByRole('radiogroup', { name: 'Was das Feld öffnet' }).getByText('Bildschirm „Freizeit“', { exact: true }).click();
+  await maria.getByRole('button', { name: /^Feld hinzufügen: / }).first().click();
+  await choose(field('Nachrichten').getByRole('radiogroup', { name: 'Ton beim Berühren' }), 'Ton 9');
+  await expect(maria.getByRole('img', { name: /Unten rechts: Hilfe/ })).toBeVisible();
+  await axe(maria, 'Gerät von Clara, screens and areas');
+  const from = await mark(clara);
+  await maria.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Neue Einstellungen', { timeout: 60_000 });
+  const told = await said(clara, /^Neue Einstellungen\. /, from);
+  expect(told).toMatch(/Maria hat die Startseite auf 6 Felder umgestellt\./);
+  expect(told).toMatch(/Maria hat dem Feld „Nachrichten“ einen anderen Ton gegeben\./);
+  expect(told).toMatch(/Maria hat das Feld „Freizeit“ hinzugefügt\./);
+  // The help area kept its corner: not said as moved.
+  expect(told).not.toMatch(/Hilfe-Feld verschoben/);
+  await clara.getByRole('button', { name: 'Behalten', exact: true }).click();
+  await expect(maria.getByText(/ist auf dem Gerät angewendet/)).toBeVisible();
+  // The new screen opens from its area, said with its areas, and leads back.
+  const opened = await mark(clara);
+  await clara.getByRole('button', { name: 'Freizeit', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Freizeit');
+  await said(clara, /^Freizeit\. 6 Felder\.$/, opened);
+  await clara.getByRole('button', { name: 'Zurück', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Startseite');
+  // Clara's own page shapes her screens on the tablet, at once.
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Bildschirme einrichten', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Bildschirme einrichten');
+  await axe(clara, 'Bildschirme einrichten');
+  const own = clara.locator('fieldset').filter({ has: clara.getByRole('heading', { name: 'Feld „Uhrzeit“' }) });
+  await own.getByRole('textbox', { name: 'Beschriftung' }).fill('Wie spät?');
+  await clara.getByRole('button', { name: 'Übernehmen', exact: true }).click();
+  await said(clara, /^Übernommen\.$/, opened);
+  await home(clara);
+  await expect(clara.getByRole('button', { name: 'Wie spät?', exact: true })).toBeVisible();
+  await home(maria);
+});
+
+test('G3 · a second device (docs/plan-m4.md, G3; acceptance 3): Clara’s tablet gives a code; a new browser takes it; both show the same four pictures; Clara says yes on the tablet, and the browser is hers without any words; signed out from the tablet, it is off at once', async ({ browser }) => {
+  await home(clara);
+  await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Meine Geräte', exact: true }).click();
+  const from = await mark(clara);
+  await clara.getByRole('button', { name: 'Code für ein neues Gerät', exact: true }).click();
+  const code = (await clara.locator('.link-code').innerText()).replace(/\s/g, '');
+  expect(code).toMatch(/^\d{6}$/);
+  // Said digit by digit, with the server.
+  await said(clara, /^Der Code für das neue Gerät: \d \d \d, \d \d \d\. Server: .*Er gilt zehn Minuten\.$/, from);
+  await axe(clara, 'Meine Geräte, a code for a new device');
+  const fresh = await open(browser, 'Claras zweites Gerät');
+  await fresh.goto('/');
+  await fresh.getByRole('button', { name: 'Mit einem anderen Gerät verbinden' }).click();
+  await expect(heading(fresh)).toHaveText('Mit einem anderen Gerät verbinden');
+  await axe(fresh, 'Mit einem anderen Gerät verbinden');
+  await fresh.getByRole('textbox', { name: 'Code mit sechs Ziffern' }).fill(code);
+  await fresh.getByRole('button', { name: 'Weiter', exact: true }).click();
+  const pictures = (page: Page) => page.getByRole('list', { name: 'Die vier Bilder' }).getByRole('listitem');
+  await expect(pictures(fresh)).toHaveCount(4);
+  // The tablet asks, with the same four pictures, said too.
+  await expect(clara.getByRole('alert')).toHaveText(/^Ein Gerät möchte sich verbinden: /);
+  expect(await pictures(clara).allInnerTexts()).toEqual(await pictures(fresh).allInnerTexts());
+  await said(clara, /^Ein Gerät möchte sich verbinden: .*Sind es dieselben\?$/, from);
+  await axe(clara, 'Meine Geräte, the four pictures');
+  await clara.getByRole('button', { name: 'Ja, das ist mein neues Gerät', exact: true }).click();
+  await said(clara, /^Verbunden\. .* gehört jetzt zu dir\.$/, from);
+  // The new device is Clara's, with no words typed: it signs in with its own key.
+  await expect(heading(fresh)).toHaveText('Startseite', { timeout: 30_000 });
+  await said(fresh, /^Verbunden\. Dieses Gerät gehört jetzt zu dir\.$/);
+  // The tablet said yes itself: it is not told again.
+  expect((await spoken(clara)).slice(from).filter((t) => t.startsWith('Ein neues Gerät wurde hinzugefügt'))).toEqual([]);
+  // Listed as connected; signed out from the tablet, it is off at once.
+  const linked = clara.locator('li.device').filter({ hasText: 'verbunden' });
+  await expect(linked).toHaveCount(1);
+  await linked.getByRole('button', { name: 'Abmelden', exact: true }).click();
+  await clara.getByRole('button', { name: 'Ja, abmelden', exact: true }).click();
+  await expect(heading(fresh)).toHaveText('Willkommen bei UCAP', { timeout: 5_000 });
+  await home(clara);
+});
+
 test('9 · without the language model and speech recognition: voice says A19; help by touch still works', async () => {
   await clocks.advance(31 * 60_000);
   engines.sttDown = true;

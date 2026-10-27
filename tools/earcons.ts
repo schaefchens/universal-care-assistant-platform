@@ -6,7 +6,9 @@
  *
  *   node tools/earcons.ts
  *
- * - area-1 … area-6: one per area position, told apart by ear (lookup's four quadrant sounds plus two).
+ * - area-1 … area-6: one per area position, told apart by ear (lookup's four quadrant sounds plus two); area-7 …
+ *   area-12 for screens of up to nine areas and for the sounds a helper or the person picks per area (docs/plan-m4.md,
+ *   G1): each with its own rhythm, register or glide.
  * - help: unmistakable, for the help area wherever it sits.
  * - The care states (care-press … care-failed) say what happened before any voice does, and still work when no voice
  *   does. confirm precedes every confirmation question: LLM output can never play it.
@@ -36,6 +38,12 @@ export const EARCONS: Record<string, Note[]> = {
   'area-4': [tone('triangle', 780, 55)],
   'area-5': [tone('sine', 495, 60), tone('sine', 742, 45, 60)],
   'area-6': [tone('triangle', 1046, 40), tone('triangle', 784, 45, 40)],
+  'area-7': [tone('sine', 392, 50), tone('sine', 523, 60, 55)],
+  'area-8': [tone('triangle', 1175, 35)],
+  'area-9': [tone('sine', 880, 80, 0, 0.5, 587)],
+  'area-10': [tone('triangle', 698, 30), tone('triangle', 698, 30, 50)],
+  'area-11': [tone('sine', 330, 70), tone('triangle', 990, 30, 70)],
+  'area-12': [tone('triangle', 523, 70, 0, 0.5, 1046)],
   help: [tone('sine', 988, 60, 0, 0.55), tone('sine', 740, 60, 70, 0.55), tone('sine', 988, 60, 140, 0.55)],
   activate: [tone('sine', 1000, 30, 0, 0.45), tone('sine', 1500, 40, 35, 0.45)],
   screen: [tone('sine', 440, 50, 0, 0.35), tone('sine', 660, 70, 50, 0.35)],

@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import { checkConfig, depths, protectConfig, warningKey } from '../src/config-rules.ts';
 import { describeChange } from '../src/config-diff.ts';
+import { addArea, areaScreens, freeCells, leadingTo, newScreen, relayout, removeArea, removeScreen } from '../src/config-edit.ts';
+import { gridProblems } from '@ucap/touch';
 import { Value } from 'typebox/value';
 import { DEFAULT_DEVICE_CONFIG, DeviceConfig, liveOf, liveSkips, messagesOf } from '../src/device-config.ts';
 
@@ -176,10 +178,84 @@ describe('a change as the person hears it', () => {
     expect(say(DEFAULT_DEVICE_CONFIG, told)).toEqual([]);
   });
 
-  it('nothing changed says nothing; a description or a sound says the screen changed', () => {
+  it('nothing changed says nothing; a description says which area (M4 G1: each kind of change by its own sentence)', () => {
     expect(say(base(), base())).toEqual([]);
     const a = base();
     area(a, 'notes').description = 'Hier sind meine Notizen.';
-    expect(say(base(), a)).toEqual(['Maria hat den Bildschirm „Startseite“ geändert.']);
+    expect(say(base(), a)).toEqual(['Maria hat die Beschreibung des Felds „Notizen“ geändert.']);
+  });
+});
+
+describe('shaping screens (docs/plan-m4.md, G1)', () => {
+  const say = (before: DeviceConfig, after: DeviceConfig) => describeChange({ lang: 'de', form: 'du', author: 'Maria', before, after, max: 10 });
+  const at = (s: { areas: { id: string; cell: { row: number; col: number } }[] }) => Object.fromEntries(s.areas.map((a) => [a.id, `${a.cell.row},${a.cell.col}`]));
+
+  it('a layout keeps what fits in place, corners in their corners, and drops the last areas first, never help or the way back', () => {
+    const c = base();
+    // Four to six: the bottom row stays the bottom row, help bottom right.
+    const six = relayout(home(c), { rows: 3, cols: 2 }, true);
+    expect(at(six.screen)).toEqual({ messages: '0,0', assistant: '0,1', notes: '2,0', help: '2,1' });
+    expect(six.dropped).toEqual([]);
+    // Four to two stacked: help and the first in reading order.
+    const two = relayout(home(c), { rows: 2, cols: 1 }, true);
+    expect(two.screen.areas.map((a) => a.id).sort()).toEqual(['help', 'messages']);
+    expect(at(two.screen)).toEqual({ messages: '0,0', help: '1,0' });
+    expect(two.dropped.map((a) => a.id)).toEqual(['assistant', 'notes']);
+    // One: help alone.
+    expect(relayout(home(c), { rows: 1, cols: 1 }, true).screen.areas.map((a) => a.id)).toEqual(['help']);
+    // Another screen keeps its way back before anything else.
+    const sub = relayout(c.screens.messages!, { rows: 2, cols: 1 }, false);
+    expect(sub.screen.areas.map((a) => a.action.type).sort()).toEqual(['back', 'help']);
+    for (const r of [six, two, sub]) expect(gridProblems(r.screen.grid, r.screen.areas)).toEqual([]);
+  });
+
+  it('a new screen has the way back, where, home and help; an area leads to it; it goes only once nothing opens it', () => {
+    const made = newScreen(base(), 'Freizeit');
+    expect(made.id).toBe('freizeit');
+    expect(newScreen(made.config, 'Freizeit').id).toBe('freizeit-2');
+    const c = made.config;
+    expect(checkConfig(c).warnings).toEqual([{ code: 'unreachable', screen: 'freizeit' }]);
+    expect(areaScreens(c)).toEqual(['home', 'freizeit']);
+    c.screens.home = relayout(home(c), { rows: 3, cols: 2 }, true).screen;
+    expect(freeCells(home(c))).toEqual([{ row: 1, col: 0 }, { row: 1, col: 1 }]);
+    expect(checkConfig(c).warnings.map((w) => w.code)).toEqual(['empty', 'unreachable']);
+    c.screens.home = addArea(home(c), { row: 1, col: 0 }, { action: { type: 'screen', screen: 'freizeit' }, role: 'neutral', label: 'Freizeit' }, 'freizeit');
+    c.screens.home = addArea(home(c), { row: 1, col: 1 }, { action: { type: 'time' }, role: 'neutral', labelKey: 'area.time.label' }, 'time');
+    expect(checkConfig(c)).toEqual({ errors: [], warnings: [] });
+    expect(removeScreen(c, 'freizeit')).toBeNull();
+    expect(leadingTo(c, 'freizeit').map((x) => `${x.screen}:${x.area.id}`)).toEqual(['home:freizeit']);
+    c.screens.home = removeArea(home(c), 'freizeit');
+    expect(removeScreen(c, 'freizeit')?.screens.freizeit).toBeUndefined();
+    // Help is never removed.
+    expect(removeArea(home(c), 'help').areas.some((a) => a.id === 'help')).toBe(true);
+  });
+
+  it('every kind of change to an area is said by its own sentence; help pressed at one tap is said first', () => {
+    const before = base();
+    const after = base();
+    area(after, 'notes').description = 'Hier sind meine Notizen.';
+    area(after, 'messages').earcon = 'area-9';
+    area(after, 'assistant').vibrate = false;
+    area(after, 'help').activation = 'single_tap';
+    expect(say(before, after)).toEqual([
+      'Maria hat eingestellt, dass das Feld „Hilfe“ schon auf einmal Tippen reagiert.',
+      'Maria hat dem Feld „Nachrichten“ einen anderen Ton gegeben.',
+      'Maria hat das Vibrieren für das Feld „Assistent“ ausgeschaltet.',
+      'Maria hat die Beschreibung des Felds „Notizen“ geändert.',
+    ]);
+  });
+
+  it('a new screen, a layout, areas added on another screen and stacked areas are said with their place', () => {
+    const before = newScreen(base(), 'Freizeit').config;
+    const after = structuredClone(before);
+    after.screens.freizeit = addArea(relayout(after.screens.freizeit!, { rows: 3, cols: 2 }, false).screen, { row: 1, col: 0 }, { action: { type: 'time' }, role: 'neutral', labelKey: 'area.time.label' }, 'time');
+    after.screens.home = relayout(home(after), { rows: 2, cols: 1 }, true).screen;
+    const lines = say(before, after);
+    expect(lines).toContain('Maria hat das Hilfe-Feld verschoben. Es ist jetzt unten.');
+    expect(lines).toContain('Maria hat die Startseite auf 2 Felder umgestellt.');
+    expect(lines).toContain('Maria hat den Bildschirm „Freizeit“ auf 5 Felder umgestellt.');
+    expect(lines).toContain('Maria hat auf dem Bildschirm „Freizeit“ das Feld „Uhrzeit“ hinzugefügt.');
+    expect(lines).toContain('Maria hat das Feld „Assistent“ entfernt.');
+    expect(say(base(), before)).toEqual(['Maria hat den Bildschirm „Freizeit“ hinzugefügt.']);
   });
 });

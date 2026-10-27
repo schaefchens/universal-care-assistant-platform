@@ -3,8 +3,7 @@
  * should always have an understandable route back to their familiar home screen"); every change of screen is
  * announced; "Wo bin ich?" and "Was kann ich hier tun?" answer from the screen itself, by physical position.
  */
-import type { AreaDef, DeviceConfig, ScreenDef } from '@ucap/shared';
-import { position } from '@ucap/touch';
+import { type AreaDef, type DeviceConfig, positionKey, type ScreenDef } from '@ucap/shared';
 import { useCallback, useContext, useEffect } from 'react';
 import { AreaGrid, type AreaText } from '../areas/AreaGrid.tsx';
 import { record } from '../debug.ts';
@@ -28,9 +27,8 @@ export function whatCanIDo(s: ScreenDef, tr: (key: string, params?: Record<strin
   const rows = [...s.areas].sort((a, b) => a.cell.row - b.cell.row || a.cell.col - b.cell.col);
   const parts = [tr('whatcan.intro', { screen: screenTitle(s, tr), count: s.areas.length })];
   for (const a of rows) {
-    const pos = position(s.grid, a.cell);
-    const where = 'corner' in pos ? tr(`position.${pos.corner}`) : tr('position.cell', { row: pos.row, col: pos.col });
-    parts.push(tr('whatcan.area', { position: where, label: areaText(a, tr).label }));
+    const pos = positionKey(s.grid, a.cell);
+    parts.push(tr('whatcan.area', { position: tr(`position.${pos.key}`, pos.params), label: areaText(a, tr).label }));
   }
   parts.push(tr('whatcan.commands'));
   return parts.join(' ');
@@ -74,7 +72,8 @@ export function AreaScreen(p: {
   const activate = useCallback(
     (a: AreaDef) => {
       earcons.play(a.role === 'help' ? 'care-press' : 'activate');
-      ui.haptic();
+      // An area set not to vibrate stays still (docs/plan-m4.md, G1); the others follow the device's setting.
+      if (a.vibrate !== false) ui.haptic();
       const act = a.action;
       switch (act.type) {
         case 'help':

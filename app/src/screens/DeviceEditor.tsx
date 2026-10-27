@@ -1,38 +1,22 @@
 /**
  * Setting up a person's device from a helper's own phone, tablet or browser (docs/plan.md, S11; CONCEPT §8 "Remote
- * setup"): how the screen looks, how touch works, and the home screen's areas (their label, place, colour and spoken
- * description), with a live preview in the person's colours and each area to listen to. What the device will say when
- * the change takes effect is shown before saving. Changes that would remove help or the way back cannot be saved;
+ * setup"): how the screen looks, how touch works, and every screen of areas (docs/plan-m4.md, G1: their layout, areas
+ * added and removed, each area's function, label, place, colour, sound, vibration and spoken description; new screens),
+ * with a live preview in the person's colours and each area to listen to. What the device will say when the change
+ * takes effect is shown before saving. Changes that would remove help or the way back cannot be saved;
  * warnings (a colour hard to read on) are saved only when acknowledged. The page tells a version saved on the server
  * from one the device received and applied, and sets an earlier version again.
  */
-import { type AreaDef, checkConfig, type ConfigIssue, describeChange, type DeviceConfig, THEME_IDS, type ThemeId, warningKey } from '@ucap/shared';
-import { position } from '@ucap/touch';
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from 'react';
-import { Button, Checkbox, Form, Heading, Input, Label, Radio, RadioGroup, Slider, SliderOutput, SliderThumb, SliderTrack, TextField } from 'react-aria-components';
+import { checkConfig, type ConfigIssue, describeChange, type DeviceConfig, THEME_IDS, type ThemeId, warningKey } from '@ucap/shared';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { Button, Checkbox, Form, Input, Label, Radio, RadioGroup, Slider, SliderOutput, SliderThumb, SliderTrack, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
 import { ApiError } from '../net/api.ts';
-import { areaText } from './AreaScreen.tsx';
-import { customAreaColours, platformPrefs, themeVariables } from '../theme/apply.ts';
-import { resolveTheme } from '../theme/themes.ts';
+import { areaText, screenTitle } from './AreaScreen.tsx';
 import { useUi } from '../ui.tsx';
 import { LiveSettings } from './LiveSettings.tsx';
 import { MessagesSetting } from './MessagesSetting.tsx';
-
-/**
- * What a home area can open (K6 brings the contacts, K7 the appointments and tasks): its task, the colour of its kind,
- * and its words. An area with any other task (help, back, where) keeps it.
- */
-const FUNCTIONS: { id: string; action: AreaDef['action']; role: AreaDef['role'] }[] = [
-  { id: 'messages', action: { type: 'screen', screen: 'messages' }, role: 'messages' },
-  { id: 'notes', action: { type: 'screen', screen: 'notes' }, role: 'notes' },
-  { id: 'contacts', action: { type: 'screen', screen: 'contacts' }, role: 'contacts' },
-  // K7: appointments in their own colour; tasks in the reminders' (things to do, "Erledigt" as on a reminder).
-  { id: 'appointments', action: { type: 'screen', screen: 'appointments' }, role: 'agenda' },
-  { id: 'tasks', action: { type: 'screen', screen: 'tasks' }, role: 'reminders' },
-  { id: 'assistant', action: { type: 'assistant' }, role: 'assistant' },
-];
-const functionOf = (a: AreaDef) => FUNCTIONS.find((f) => JSON.stringify(f.action) === JSON.stringify(a.action))?.id ?? null;
+import { ScreensEditor } from './ScreensEditor.tsx';
 
 interface DeviceRow {
   id: string;
@@ -137,42 +121,16 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
 
   const check = useMemo(() => (draft ? checkConfig(draft) : { errors: [] as ConfigIssue[], warnings: [] as ConfigIssue[] }), [draft]);
   const willSay = useMemo(() => (cfg && draft ? describeChange({ lang: ui.lang, form: ui.form, author: p.myName, before: cfg.body, after: draft, max: 6 }) : []), [cfg, draft, ui.lang, ui.form, p.myName]);
-  const home = draft?.screens[draft.home];
   const issueText = (i: ConfigIssue) => {
-    const a = i.area && draft?.screens[i.screen ?? '']?.areas.find((x) => x.id === i.area);
-    return tr(`config.issue.${i.code}`, { label: a ? areaText(a, tr).label : '', ratio: String(i.ratio ?? '').replace('.', ui.lang === 'de' ? ',' : '.') });
+    const s = draft?.screens[i.screen ?? ''];
+    const a = i.area && s?.areas.find((x) => x.id === i.area);
+    const text = tr(`config.issue.${i.code}`, { label: a ? areaText(a, tr).label : '', ratio: String(i.ratio ?? '').replace('.', ui.lang === 'de' ? ',' : '.') });
+    // Which screen, when there is more than home (docs/plan-m4.md, G1).
+    return s && draft && Object.keys(draft.screens).length > 1 && i.screen !== draft.home ? `${screenTitle(s, tr)}: ${text}` : text;
   };
 
   const setVisual = (patch: Partial<DeviceConfig['visual']>) => setDraft((d) => d && { ...d, visual: { ...d.visual, ...patch } });
   const setTouch = (patch: Partial<DeviceConfig['touch']>) => setDraft((d) => d && { ...d, touch: { ...d.touch, ...patch } });
-  const setArea = (id: string, patch: Partial<DeviceConfig['screens'][string]['areas'][number]>) =>
-    setDraft((d) => {
-      if (!d) return d;
-      const out = structuredClone(d);
-      const s = out.screens[out.home]!;
-      const a = s.areas.find((x) => x.id === id)!;
-      Object.assign(a, patch);
-      for (const [k, v] of Object.entries(patch)) if (v === undefined) delete (a as Record<string, unknown>)[k];
-      return out;
-    });
-  /** Moves an area to a cell; the area there takes its place. */
-  const moveArea = (id: string, row: number, col: number) =>
-    setDraft((d) => {
-      if (!d) return d;
-      const out = structuredClone(d);
-      const s = out.screens[out.home]!;
-      const a = s.areas.find((x) => x.id === id)!;
-      const other = s.areas.find((x) => x.id !== id && x.cell.row === row && x.cell.col === col);
-      if (other) other.cell = { ...a.cell };
-      a.cell = { ...a.cell, row, col };
-      return out;
-    });
-  const cellName = (row: number, col: number) => {
-    if (!home) return '';
-    const pos = position(home.grid, { row, col });
-    return 'corner' in pos ? tr(`position.${pos.corner}`) : tr('position.cell', { row: pos.row, col: pos.col });
-  };
-
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!cfg || !draft) return;
@@ -213,7 +171,6 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
     return tr('config.editor.state.saved', { version: cfg.version });
   };
   const device = devices?.find((x) => x.id === deviceId);
-  const preview = draft ? (themeVariables(resolveTheme(draft.visual.theme, platformPrefs()), draft.visual) as CSSProperties) : {};
 
   return (
     <main className="page settings device-editor">
@@ -245,7 +202,7 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
         </p>
       )}
 
-      {draft && home && cfg && (
+      {draft && cfg && (
         <Form className="stack" onSubmit={save}>
           <section className="settings-section">
             <h2>{tr('config.editor.look')}</h2>
@@ -277,110 +234,7 @@ export function DeviceEditor(p: { session: Session; person: { id: string; displa
             <Range label={tr('settings.dwell')} value={draft.touch.dwellMs} min={0} max={2000} step={100} format={(v) => `${(v / 1000).toFixed(1)} s`} onChange={(dwellMs) => setTouch({ dwellMs })} />
           </section>
 
-          <section className="settings-section">
-            <h2>{tr('config.editor.home')}</h2>
-            {/* The person's colours and sizes, in the helper's page: a picture of the screen, described for screen readers. */}
-            <div
-              className="area-grid config-preview"
-              role="img"
-              aria-label={`${tr('config.editor.preview')}: ${[...home.areas]
-                .sort((a, b) => a.cell.row - b.cell.row || a.cell.col - b.cell.col)
-                .map((a) => `${cellName(a.cell.row, a.cell.col)}: ${areaText(a, tr).label}`)
-                .join(', ')}`}
-              style={{ ...preview, gridTemplateRows: `repeat(${home.grid.rows}, 1fr)`, gridTemplateColumns: `repeat(${home.grid.cols}, 1fr)` }}
-            >
-              {home.areas.map((a) => {
-                const custom = a.color ? customAreaColours(a.color) : null;
-                return (
-                  <div
-                    key={a.id}
-                    className="area"
-                    data-role={a.role}
-                    aria-hidden
-                    style={{
-                      gridRow: `${a.cell.row + 1} / span ${a.cell.rowSpan ?? 1}`,
-                      gridColumn: `${a.cell.col + 1} / span ${a.cell.colSpan ?? 1}`,
-                      ...(custom ? ({ '--area-bg': custom.bg, '--area-text': custom.text, '--area-border': custom.border } as CSSProperties) : {}),
-                    }}
-                  >
-                    <span className="area-label">{areaText(a, tr).label}</span>
-                  </div>
-                );
-              })}
-            </div>
-            {home.areas.map((a) => {
-              const help = a.action.type === 'help';
-              const text = areaText(a, tr);
-              return (
-                <fieldset key={a.id} className="area-editor">
-                  <legend>
-                    <Heading level={3}>{tr('config.editor.area', { label: text.label })}</Heading>
-                  </legend>
-                  {help ? (
-                    <p className="muted">{tr('config.editor.area.helpLocked')}</p>
-                  ) : (
-                    <TextField className="field" value={a.label ?? text.label} onChange={(v) => setArea(a.id, { label: v.trim() ? v.slice(0, 60) : undefined })}>
-                      <Label>{tr('config.editor.area.label')}</Label>
-                      <Input />
-                    </TextField>
-                  )}
-                  <TextField className="field" value={a.description ?? text.description} onChange={(v) => setArea(a.id, { description: v.trim() ? v.slice(0, 300) : undefined })}>
-                    <Label>{tr('config.editor.area.description')}</Label>
-                    <Input />
-                  </TextField>
-                  {functionOf(a) && (
-                    <RadioGroup
-                      className="choice"
-                      value={functionOf(a)!}
-                      onChange={(v) => {
-                        const f = FUNCTIONS.find((x) => x.id === v)!;
-                        // The new task's own words: the person's words for the old one would not fit.
-                        setArea(a.id, { action: f.action, role: f.role, labelKey: `area.${f.id}.label`, descriptionKey: `area.${f.id}.description`, label: undefined, description: undefined });
-                      }}
-                    >
-                      <Label className="choice-label">{tr('config.editor.area.function')}</Label>
-                      {FUNCTIONS.map((f) => (
-                        <Radio key={f.id} value={f.id} className="choice-option">
-                          {tr(`area.${f.id}.label`)}
-                        </Radio>
-                      ))}
-                    </RadioGroup>
-                  )}
-                  <RadioGroup
-                    className="choice"
-                    value={`${a.cell.row},${a.cell.col}`}
-                    onChange={(v) => {
-                      const [r, c] = v.split(',').map(Number);
-                      moveArea(a.id, r!, c!);
-                    }}
-                  >
-                    <Label className="choice-label">{tr('config.editor.area.position')}</Label>
-                    {Array.from({ length: home.grid.rows * home.grid.cols }, (_, i) => [Math.floor(i / home.grid.cols), i % home.grid.cols] as const).map(([r, c]) => (
-                      <Radio key={`${r},${c}`} value={`${r},${c}`} className="choice-option">
-                        {cellName(r, c)}
-                      </Radio>
-                    ))}
-                  </RadioGroup>
-                  {!help && (
-                    <div className="row">
-                      <Checkbox className="choice-option checkbox" isSelected={!!a.color} onChange={(own) => setArea(a.id, { color: own ? (a.color ?? '#2255aa') : undefined })}>
-                        {tr('config.editor.area.colorOwn')}
-                      </Checkbox>
-                      {a.color && (
-                        <label className="field">
-                          {tr('config.editor.area.color')}
-                          <input type="color" value={a.color} onChange={(e) => setArea(a.id, { color: e.target.value })} />
-                        </label>
-                      )}
-                    </div>
-                  )}
-                  <Button className="button" onPress={() => say(`${text.label}. ${a.description ?? text.description}`, 'system')}>
-                    {tr('config.editor.area.listen')}
-                  </Button>
-                </fieldset>
-              );
-            })}
-          </section>
+          <ScreensEditor draft={draft} onDraft={setDraft} tell={tell} />
 
           {willSay.length > 0 && (
             <section className="settings-section">

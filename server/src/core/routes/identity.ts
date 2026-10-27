@@ -142,6 +142,34 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
     return reply.code(204).send();
   });
 
+  // —— Device linking (docs/plan-m4.md, G3): a code from a signed-in device, claimed by a new one, approved there ——
+  app.post('/api/v1/devices/links', { preHandler: requireAuth }, async (req, reply) => reply.code(201).send(await identity.offerLink(auth(req))));
+  app.post(
+    '/api/v1/devices/links/claim',
+    { schema: { body: Type.Object({ code: Type.String({ minLength: 6, maxLength: 12 }), org: Type.String({ maxLength: 200 }), challengeId: Uuid, nonce: B64, device: Device }) } },
+    async (req, reply) => reply.code(201).send(await identity.claimLink({ ...(req.body as Omit<Parameters<IdentityService['claimLink']>[0], 'ip'>), ip: req.ip })),
+  );
+  app.get('/api/v1/devices/links/:id', { preHandler: requireAuth, schema: { params: Type.Object({ id: Uuid }) } }, async (req) => identity.viewLink(auth(req).userId, (req.params as { id: string }).id));
+  app.post(
+    '/api/v1/devices/links/:id/approve',
+    { preHandler: requireAuth, schema: { params: Type.Object({ id: Uuid }), body: Type.Object({ org: Type.String({ maxLength: 200 }), proof: B64 }) } },
+    async (req) => identity.approveLink(auth(req), (req.params as { id: string }).id, req.body as { org: string; proof: string }),
+  );
+  app.post('/api/v1/devices/links/:id/decline', { preHandler: requireAuth, schema: { params: Type.Object({ id: Uuid }) } }, async (req, reply) => {
+    await identity.endLink(auth(req), (req.params as { id: string }).id, 'declined');
+    return reply.code(204).send();
+  });
+  app.delete('/api/v1/devices/links/:id', { preHandler: requireAuth, schema: { params: Type.Object({ id: Uuid }) } }, async (req, reply) => {
+    await identity.endLink(auth(req), (req.params as { id: string }).id, 'cancelled');
+    return reply.code(204).send();
+  });
+  // The new device, before it has a session: how its claim stands, by the link's id and its key's thumbprint.
+  app.post(
+    '/api/v1/devices/links/:id/poll',
+    { schema: { params: Type.Object({ id: Uuid }), body: Type.Object({ jkt: Type.String({ pattern: '^[A-Za-z0-9_-]{43}$' }) }) } },
+    async (req) => identity.pollLink((req.params as { id: string }).id, (req.body as { jkt: string }).jkt),
+  );
+
   app.post('/api/v1/identity/recovery-confirmed', { preHandler: requireAuth, schema: { body: Type.Object({ org: Type.String({ maxLength: 200 }), proof: B64 }) } }, async (req, reply) => {
     const b = req.body as { org: string; proof: string };
     await identity.confirmRecovery(auth(req).userId, b.org, b.proof);

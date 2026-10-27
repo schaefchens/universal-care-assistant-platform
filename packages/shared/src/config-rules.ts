@@ -12,7 +12,7 @@
  *
  * Warnings (saved only once the author acknowledged them): an area colour on which even the better of black and white
  * reads below 7:1 in a high-contrast theme (below 4.5:1 otherwise, which black or white always reaches), a screen no
- * area leads to.
+ * area leads to, a part of a screen no area covers (a touch there finds nothing to say).
  */
 import { gridProblems } from '@ucap/touch';
 import { contrast, labelColourFor } from './contrast.ts';
@@ -31,7 +31,8 @@ export interface ConfigIssue {
     | 'way_back'
     | 'home_far'
     | 'contrast'
-    | 'unreachable';
+    | 'unreachable'
+    | 'empty';
   screen?: string;
   area?: string;
   /** The contrast measured (warnings). */
@@ -92,6 +93,11 @@ export function checkConfig(c: DeviceConfig): { errors: ConfigIssue[]; warnings:
       if (d === undefined) {
         if (!(APP_SCREENS as readonly string[]).includes(id)) warnings.push({ code: 'unreachable', screen: id });
       } else if (d > 1 && !s.areas.some((a) => a.action.type === 'home')) errors.push({ code: 'home_far', screen: id });
+    }
+    // A part of the screen no area covers: a finger there hears nothing (docs/plan-m4.md, G1).
+    if (!gridProblems(s.grid, s.areas).length) {
+      const covered = s.areas.reduce((n, a) => n + (a.cell.rowSpan ?? 1) * (a.cell.colSpan ?? 1), 0);
+      if (covered < s.grid.rows * s.grid.cols) warnings.push({ code: 'empty', screen: id });
     }
     const least = c.visual.theme === 'hc-light' || c.visual.theme === 'hc-dark' ? MIN_LABEL_CONTRAST_HIGH : MIN_LABEL_CONTRAST;
     for (const a of s.areas)

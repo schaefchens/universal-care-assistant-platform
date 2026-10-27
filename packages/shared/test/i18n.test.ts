@@ -1,6 +1,7 @@
 import { IntlMessageFormat } from 'intl-messageformat';
 import { describe, expect, it } from 'vitest';
 import { CATALOGS, t } from '../src/i18n.ts';
+import { LINK_WORDS, linkWordsOf } from '../src/link-words.ts';
 
 const base = (k: string) => k.replace(/@Sie$/, '');
 
@@ -57,5 +58,17 @@ describe('the message catalogs', () => {
     }
     // "Hilferuf" throughout; "Notruf" is not used for what UCAP does (CONCEPT §4: help is not emergency services).
     for (const [key, text] of Object.entries(CATALOGS.de)) if (key.startsWith('care.')) expect(text, key).not.toMatch(/Notruf/);
+  });
+});
+
+describe('the fingerprint words of a device link (docs/plan-m4.md, G3)', () => {
+  it('are 64 things, each told apart by its word in both languages, none a word of help', () => {
+    expect(LINK_WORDS).toHaveLength(64);
+    for (const lang of ['de', 'en'] as const) {
+      const words = LINK_WORDS.map((w) => w[lang].toLowerCase());
+      expect(new Set(words).size).toBe(64);
+      expect(words.filter((w) => /hilf|help|notruf|alarm/.test(w))).toEqual([]);
+    }
+    expect(linkWordsOf([0, 63, 7, 28], 'de').map((w) => w.word)).toEqual(['Hund', 'Tasse', 'Pinguin', 'Schlüssel']);
   });
 });

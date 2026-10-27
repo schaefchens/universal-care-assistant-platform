@@ -169,6 +169,8 @@ body {
   --area-text: var(--area-neutral-text);
   --area-border: var(--area-neutral-border);
   display: flex;
+  flex-direction: column;
+  gap: 0.25em;
   align-items: center;
   justify-content: center;
   min-width: 0;
@@ -192,6 +194,21 @@ body {
 .area-label {
   display: block;
   max-width: 100%;
+}
+
+/* An area's own symbol (docs/plan-m4.md, G1), above its label. */
+.area-symbol {
+  display: block;
+  font-size: 1.4em;
+  line-height: 1;
+}
+
+/* A part of a screen no area covers, in the editor's preview. */
+.area.area-free {
+  border-style: dashed;
+  background: transparent;
+  color: var(--c-text-muted);
+  font-weight: 400;
 }
 
 .area[data-role='help'] { --area-bg: var(--area-help-bg); --area-text: var(--area-help-text); --area-border: var(--area-help-border); }
@@ -703,4 +720,37 @@ h3 {
 
 .area-editor legend h3 {
   margin: 0;
+}
+
+/* Device linking (docs/plan-m4.md, G3): the code large, the four pictures with their words. */
+.link-code {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  margin: 0.5rem 0;
+}
+
+.link-words {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.link-words li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: var(--border-px) solid var(--c-border);
+  border-radius: 1rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.link-emoji {
+  font-size: 3rem;
+  line-height: 1;
 }

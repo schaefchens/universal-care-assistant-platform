@@ -4,7 +4,7 @@
  * versions before and after, never from what the author typed: "Maria hat den Bildschirm auf hohen Kontrast, dunkel
  * umgestellt." A help area that moved is always said, first; of the rest at most three, then "und weitere".
  */
-import { position } from '@ucap/touch';
+import { positionKey } from './config-edit.ts';
 import { type AreaDef, type DeviceConfig, liveOf, messagesOf, type ScreenDef } from './device-config.ts';
 import { type AddressForm, type Lang, t } from './i18n.ts';
 
@@ -20,8 +20,8 @@ export function describeChange(o: { lang: Lang; form: AddressForm; author: strin
   const tr = (key: string, params: Record<string, string | number> = {}) => t(lang, key, { name: o.author, ...params }, form);
   const label = (a: AreaDef) => a.label ?? (a.labelKey ? t(lang, a.labelKey, {}, form) : a.id);
   const where = (s: ScreenDef, a: AreaDef) => {
-    const p = position(s.grid, a.cell);
-    return 'corner' in p ? t(lang, `config.position.${p.corner}`) : t(lang, 'config.position.cell', { row: p.row, col: p.col });
+    const p = positionKey(s.grid, a.cell);
+    return t(lang, `config.position.${p.key}`, p.params);
   };
   const screenName = (s: ScreenDef) => s.title ?? (s.titleKey ? t(lang, s.titleKey, {}, form) : s.id);
   const first: string[] = [];
@@ -52,31 +52,48 @@ export function describeChange(o: { lang: Lang; form: AddressForm; author: strin
       rest.push(tr('config.change.screenAdded', { screen: screenName(a) }));
       continue;
     }
-    if (id === after.home && b.areas.length !== a.areas.length) rest.push(tr('config.change.grid', { count: a.areas.length }));
+    const isHome = id === after.home;
+    // On another screen than home, the screen is named with what changed there (docs/plan-m4.md, G1).
+    const on = (key: string, params: Record<string, string | number>) => tr(isHome ? key : `${key}On`, { ...params, screen: screenName(a) });
+    const regrid = JSON.stringify(a.grid) !== JSON.stringify(b.grid);
+    if (regrid || (isHome && b.areas.length !== a.areas.length)) rest.push(tr(isHome ? 'config.change.grid' : 'config.change.gridOn', { count: a.areas.length, screen: screenName(a) }));
     const was = new Map(b.areas.map((x) => [x.id, x]));
     let other = false;
     for (const x of a.areas) {
       const y = was.get(x.id);
       was.delete(x.id);
       if (!y) {
-        rest.push(tr('config.change.added', { label: label(x) }));
+        rest.push(on('config.change.added', { label: label(x) }));
         continue;
       }
-      const moved = JSON.stringify(x.cell) !== JSON.stringify(y.cell) || JSON.stringify(a.grid) !== JSON.stringify(b.grid);
+      // Moved is where the person finds it: an area that stays in its corner on a new layout has not moved.
+      const moved = regrid ? where(b, y) !== where(a, x) : JSON.stringify(x.cell) !== JSON.stringify(y.cell);
       if (moved && x.action.type === 'help') first.push(tr('config.change.helpMoved', { position: where(a, x) }));
-      else if (moved && JSON.stringify(y.cell) !== JSON.stringify(x.cell)) rest.push(tr('config.change.moved', { label: label(x), position: where(a, x) }));
+      else if (moved) rest.push(tr('config.change.moved', { label: label(x), position: where(a, x) }));
       const acts = JSON.stringify(x.action) !== JSON.stringify(y.action);
       // An area that opens something else now, with its words: one sentence ("aus „Notizen" … „Kontakte" gemacht").
       if (acts && label(x) !== label(y)) rest.push(tr('config.change.function', { old: label(y), new: label(x) }));
       else if (label(x) !== label(y)) rest.push(tr('config.change.renamed', { old: label(y), new: label(x) }));
       if (x.color !== y.color) rest.push(tr('config.change.colour', { label: label(x) }));
       if (acts && label(x) === label(y)) rest.push(tr('config.change.action', { label: label(x) }));
+      // How an area is pressed: for the help area always said, and first (an area that sends help at one tap).
+      if ((x.activation ?? 'profile') !== (y.activation ?? 'profile')) {
+        const line = tr(x.activation === 'single_tap' ? 'config.change.singleTap' : 'config.change.profileTap', { label: label(x) });
+        if (x.action.type === 'help') first.push(line);
+        else rest.push(line);
+      }
       // A new function brings its own description: said with it.
-      if (x.description !== y.description || (!acts && x.descriptionKey !== y.descriptionKey) || x.earcon !== y.earcon || x.activation !== y.activation || x.vibrate !== y.vibrate || x.symbol !== y.symbol)
-        other = true;
+      if (x.description !== y.description || (!acts && x.descriptionKey !== y.descriptionKey)) rest.push(tr('config.change.description', { label: label(x) }));
+      if (x.earcon !== y.earcon) rest.push(tr('config.change.sound', { label: label(x) }));
+      if (x.vibrate !== y.vibrate) rest.push(tr(x.vibrate === false ? 'config.change.vibrateOff' : 'config.change.vibrateOn', { label: label(x) }));
+      if (x.symbol !== y.symbol) rest.push(tr(x.symbol ? 'config.change.symbol' : 'config.change.symbolOff', { label: label(x) }));
     }
-    for (const y of was.values()) rest.push(tr('config.change.removed', { label: label(y) }));
-    if (other || a.title !== b.title || a.titleKey !== b.titleKey) rest.push(tr('config.change.screen', { screen: screenName(a) }));
+    for (const y of was.values()) rest.push(on('config.change.removed', { label: label(y) }));
+    if (a.title !== b.title || a.titleKey !== b.titleKey) {
+      if (b.title && a.title) rest.push(tr('config.change.screenRenamed', { old: b.title, new: a.title }));
+      else other = true;
+    }
+    if (other) rest.push(tr('config.change.screen', { screen: screenName(a) }));
   }
   for (const [id, b] of Object.entries(before.screens)) if (!after.screens[id]) rest.push(tr('config.change.screenRemoved', { screen: screenName(b) }));
   if (VISUAL_LOOK.some((k) => before.visual[k] !== after.visual[k])) rest.push(tr('config.change.look'));

@@ -1,13 +1,14 @@
 /**
  * The person's devices (docs/plan.md, S2: device list, rename and revoke). Signing a device out ends its sessions at
- * once and closes its connection; it can only come back through the recovery words. Signing out this device also
- * removes its key.
+ * once and closes its connection; it can come back through the recovery words or a new link. Signing out this device
+ * also removes its key. A new device is added here by a code (docs/plan-m4.md, G3: `LinkOffer`).
  */
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Button, Form, Heading, Input, Label, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
 import { ApiError } from '../net/api.ts';
 import { useUi } from '../ui.tsx';
+import { LinkOffer } from './LinkOffer.tsx';
 
 interface DeviceRow {
   id: string;
@@ -22,7 +23,7 @@ interface DeviceRow {
 
 type Action = { kind: 'none' } | { kind: 'rename'; id: string; value: string } | { kind: 'revoke'; id: string };
 
-export function Devices(p: { session: Session; onSignedOut: () => void; onClose: () => void }) {
+export function Devices(p: { session: Session; serverName: string; onSignedOut: () => void; onClose: () => void }) {
   const { tr, say } = useUi();
   const [rows, setRows] = useState<DeviceRow[] | null>(null);
   const [current, setCurrent] = useState<string | null>(null);
@@ -98,6 +99,7 @@ export function Devices(p: { session: Session; onSignedOut: () => void; onClose:
         {status}
       </p>
       {!rows && <p>{tr('devices.loading')}</p>}
+      <LinkOffer session={p.session} serverName={p.serverName} onLinked={() => void load()} />
       <ul className="device-list">
         {active.map((row) => {
           const isThis = row.id === current;
