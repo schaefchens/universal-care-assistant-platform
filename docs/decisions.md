@@ -2182,3 +2182,44 @@ The plan: [plan-m4.md](plan-m4.md).
 - **G2, the helper's page per person ("Alles für Clara")**: what the helper may do, the person's devices with how their
   setup stands and whether the app lock is on (never more), voices and answers, care contacts, and the ways to the
   reminders, contacts, appointments, tasks and the device editor, each shown only with its permission.
+- **G5, new words without the old ones** come from an unlocked device of the person ("Ich habe meine Wörter
+  verloren" where new words are made): shown and checked like any words, then signed by the new key on a challenge for
+  that very device. They wait 24 hours as a job (a restart changes nothing); one change waits per person, a newer one
+  replaces it. Any unlocked device of the person stops it, and so do the old words (a recovery or a rotation with
+  them), which work until then. A locked device says it too and asks for the code before it stops it.
+- **G5, every device says it at once and at every start** until it took effect or was stopped, on a screen of its own
+  with "Abbrechen", "Das war ich" and help; "Abbrechen" said there stops the change (elsewhere it stops speech, as
+  before). The device that asked hears it as its own ("Ab … gelten deine neuen Wiederherstellungswörter").
+- **G5, "Später einrichten"** is offered only where a helper set the account up for someone (a supported person's
+  invitation), on that device, before its words were confirmed. The key of the words made at the start is retired
+  (they may have been seen), so the account has no identity until its first words; the device says so at start, once
+  a day. The first words need no wait (nobody could stop them with words that do not exist) and every device hears of
+  them; any unlocked device of the person may make them.
+- **G5, the operator's reset**: an administrator, never for their own account, with a reason of 3 to 300 characters
+  that the person hears; a link and a spoken code for a day, one at a time (a new one ends the old). The person's
+  devices hear at once that a code exists (without the administrator's name: events carry ids only; the name comes
+  with the waiting change). The new device first learns whose account the code is for, then makes new words and claims
+  the code with its own key, both signing; a device key that belongs to any account is refused. It has no session
+  while it waits (it is nobody's; 112 stays on its screen), and the job enrolls it (`reset`) when the day is over.
+  The admin page shows per account only that something waits, and until when.
+- **G6, a representative is one of the person's helpers when the person names them** (the person chooses on their own
+  device, unlocked, from the people who already help them, after hearing what it means); an administrator may name any
+  account but themselves, with a reason the person hears. One at a time: a new one ends the one before. The person
+  ends it, or the administrator who made it.
+- **G6, what a representative may do**: approve or decline helpers waiting, set and withdraw other helpers' permissions,
+  end connections, invite a helper for the person (the invitation is the person's, the act the representative's), and
+  sign out one of the person's devices. Never their own permissions upward; nothing of the person's data, no device
+  linking, no recovery, no consent to outside providers; the arrangement is no permission (a representative without
+  "Bedienung der Geräte einstellen" cannot set up the person's devices). Every act names the arrangement (in the
+  grant, the history and the event) and the person's devices say it as the representative's ("Maria hat als deine
+  Vertretung …"); the access overview names the representative first.
+- **G6, an account set up for someone** (M1: by an administrator only) is now offered on the admin page's invitation
+  form; that administrator becomes a helper once the person agrees (answering help requests and setting up devices).
+- **G7, trusted persons are named from the person's helpers** (an account the person already knows on this server),
+  each agreeing on their own device; the person says how many must agree (one to all; two suggested). No helper
+  permission comes with it, and no permission makes one.
+- **G7, a recovery through trusted persons**: the new device makes new words first (shown and checked), then shows a
+  six-digit code for half an hour and four pictures (as G3). A trusted person enters the code on their device (only
+  people who trust them can be meant; wrong codes are limited), compares the pictures, says whose device it is and
+  yes, signed by their device. When enough said yes, the new words wait a day (G5), every device of the person hears it
+  with "Abbrechen", and the new device waits as after an operator's reset. A trusted person who left counts no more.

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { type Browser, type BrowserContext, expect, type Page, test } from '@playwright/test';
 import { fromWords, toWords } from '@ucap/identity';
 import { appointmentReadback, appointmentWhen } from '@ucap/shared';
-import { axe, choose, clocks, heading, home, invitation, listen, mark, ORIGIN, said, setChoice, signUp, spoken, sql, talk, MESSAGING } from './app.ts';
+import { axe, ceremony, choose, clocks, heading, home, invitation, laterVoice, listen, mark, nameStep, ORIGIN, said, setChoice, signUp, spoken, sql, talk, MESSAGING } from './app.ts';
 import { type ChatRequest, type Engines, reply, startEngines } from './engines.ts';
 import { type Phone, phone, type SmsPhone, smsPhone } from './phone.ts';
 
@@ -25,6 +25,8 @@ const contexts: BrowserContext[] = [];
 let maria: Page;
 let clara: Page;
 let tom: Phone;
+/** The browser that takes Tom's reset code (G5b) and becomes his a day later (G5c). */
+let resetTablet: Page;
 /** Clara's phone, UCAP its SMS app (from 7b on). */
 let ph: SmsPhone;
 /** Each account's twelve words, in memory only: the recovery on a new device, and the phrase canary. */
@@ -1539,6 +1541,284 @@ test('15 · removed for good (docs/decisions.md, M3, 20: "we keep messages forev
   await home(clara);
 });
 
+test('G5 · new words that wait a day (docs/plan-m4.md, G5; acceptance 5, 12): Clara lost her card: new words from her tablet are said at once and at every start; "Abbrechen" stops them; asked again, help still works while they wait', async () => {
+  await home(clara);
+  const ask = async () => {
+    await clara.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+    await clara.getByRole('button', { name: 'Neue Wiederherstellungswörter', exact: true }).click();
+    await clara.getByRole('button', { name: 'Ich habe meine Wörter verloren', exact: true }).click();
+    return ceremony(clara);
+  };
+  let from = await mark(clara);
+  await ask();
+  await said(clara, /^Ab .+ Uhr gelten deine neuen Wiederherstellungswörter\. Bis dahin gelten die alten, und jedes deiner Geräte kann es stoppen\.$/, from);
+  // Said again at the next start, with "Abbrechen" and help on the same screen.
+  from = await mark(clara);
+  await clara.goto('/');
+  await expect(heading(clara)).toHaveText('Neue Wiederherstellungswörter');
+  await said(clara, /^Neue Wiederherstellungswörter\. Ab .+ Uhr gelten deine neuen Wiederherstellungswörter\./, from);
+  await axe(clara, 'Neue Wiederherstellungswörter');
+  // Stopped from the tablet.
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Abbrechen', exact: true }).click();
+  await said(clara, /^Gestoppt\. Es gelten weiter deine bisherigen Wiederherstellungswörter\.$/, from);
+  expect(sql(`select state || ' ' || stopped_how from identity_changes order by created_at desc limit 1`)).toBe('stopped device');
+  // Asked again (and heard asked, before the page goes); while it waits, help by touch reaches Maria (acceptance 12).
+  await home(clara);
+  from = await mark(clara);
+  words.set('Clara, neu', await ask());
+  await said(clara, /^Ab .+ Uhr gelten deine neuen Wiederherstellungswörter\./, from);
+  await clara.goto('/');
+  await clara.getByRole('button', { name: 'Verstanden', exact: true }).click();
+  from = await mark(clara);
+  await clara.getByRole('button', { name: 'Hilfe', exact: true }).click();
+  await said(clara, /^Dein Hilferuf wurde gesendet\. Ich benachrichtige jetzt deine Helfer\.$/, from);
+  await clara.getByRole('button', { name: 'Hilferuf abbrechen' }).click();
+  await clara.getByRole('button', { name: 'Ja, abbrechen' }).click();
+  await said(clara, /^Hilferuf abgebrochen\./, from);
+  // Back on the home screen (the help screen lets no reminder in): the notice comes at start, as always.
+  await clara.goto('/');
+  await clara.getByRole('button', { name: 'Verstanden', exact: true }).click();
+  await expect(heading(clara)).toHaveText('Startseite');
+});
+
+test('G5b · no words yet, and the operator’s reset (docs/plan-m4.md, G5; acceptance 11): Maria, as operator, sets an account up for Hans, who starts without words, and his device says so; she makes a reset code for Tom with a reason; Tom’s devices hear it at once; a new browser takes the code, makes new words and waits; Tom stops it; done again, it waits for its day', async ({ browser }) => {
+  await home(maria);
+  await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await maria.getByRole('button', { name: 'Server und Konten', exact: true }).click();
+  // Hans: an account Maria sets up for him, words later.
+  await maria.getByRole('textbox', { name: 'Für wen (nur als Erinnerung für dich)' }).fill('Hans');
+  await setChoice(maria.getByRole('checkbox', { name: /^Ich richte das Konto für diese Person ein/ }));
+  await maria.getByRole('button', { name: 'Einladung für ein neues Konto', exact: true }).click();
+  const hansLink = (await maria.locator('pre.command').last().innerText()).trim();
+  const hans = await open(browser, 'Hans');
+  await hans.goto('about:blank');
+  await hans.goto(hansLink.replace(/^https?:\/\/[^/]+/, ''));
+  await expect(heading(hans)).toHaveText('Einladung');
+  await hans.getByLabel('Dein Name').fill('Hans');
+  await hans.getByRole('button', { name: 'Weiter', exact: true }).click();
+  let from = await mark(hans);
+  await hans.getByRole('button', { name: 'Später einrichten', exact: true }).click();
+  await said(hans, /^Wörter später einrichten: Bis dahin kann das Konto nicht wiederhergestellt werden/, from);
+  await laterVoice(hans);
+  await nameStep(hans);
+  await said(hans, /^Für dein Konto gibt es noch keine Wiederherstellungswörter\. /, from);
+  expect(sql(`select recovery_state from users where display_name = 'Hans'`)).toBe('none');
+  await hans.close();
+  // Tom lost everything: a reset code with a reason; Tom's devices are told at once.
+  await maria.goto('/');
+  await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await maria.getByRole('button', { name: 'Server und Konten', exact: true }).click();
+  const tomRow = () => maria.locator('li.device').filter({ has: maria.getByRole('heading', { name: 'Tom', exact: true }) });
+  const resetCode = async () => {
+    await tomRow().getByRole('button', { name: 'Zurücksetzen', exact: true }).click();
+    await tomRow().getByRole('textbox', { name: 'Grund (die Person hört ihn)' }).fill('Telefon und Kärtchen verloren, am Telefon mit Tom besprochen.');
+    await tomRow().getByRole('button', { name: 'Code zum Zurücksetzen erstellen', exact: true }).click();
+    await expect(maria.getByText(/^Code für Tom\. /).first()).toBeVisible();
+    return (await maria.locator('[role=status] pre.command').innerText()).trim();
+  };
+  const link = await resetCode();
+  await expect.poll(() => sql(`select count(*) from user_events e join users u on u.id = e.user_id where u.display_name = 'Tom' and e.type = 'identity.reset'`)).toBe('1');
+  await axe(maria, 'Server und Konten, a reset code');
+  // A new browser takes it: whose account, new words, then the day.
+  const tablet = await open(browser, 'Toms neues Tablet');
+  const claim = async (url: string) => {
+    await tablet.goto('about:blank');
+    await tablet.goto(url.replace(/^https?:\/\/[^/]+/, ''));
+    await expect(heading(tablet)).toHaveText('Konto zurücksetzen lassen');
+    // What was said from here on: the record keeps the first claim's sentences too.
+    const at = await mark(tablet);
+    await tablet.getByRole('button', { name: 'Weiter', exact: true }).click();
+    await said(tablet, /^Der Code ist für das Konto von Tom\. /, at);
+    await tablet.getByRole('button', { name: 'Weiter', exact: true }).click();
+    await ceremony(tablet);
+    await said(tablet, /^Dieses Gerät gehört ab .+ Uhr zu Tom, wenn es bis dahin niemand stoppt\./, at);
+  };
+  await claim(link);
+  await axe(tablet, 'Konto zurücksetzen lassen, waiting');
+  // Tom's devices hear the waiting change with the reason; Tom stops it.
+  const waiting = (await tom.call<{ change: { id: string; kind: string; reason: string; byName: string } }>('GET', '/api/v1/identity/changes/current')).change;
+  expect(waiting).toMatchObject({ kind: 'reset', byName: 'Maria', reason: 'Telefon und Kärtchen verloren, am Telefon mit Tom besprochen.' });
+  await tom.call('POST', `/api/v1/identity/changes/${waiting.id}/stop`);
+  await tablet.getByRole('button', { name: 'Jetzt nachsehen', exact: true }).click();
+  await said(tablet, /^Gestoppt: Dieses Gerät gehört nicht zu Tom\./);
+  await tablet.getByRole('button', { name: 'Abbrechen', exact: true }).click();
+  // Done again: it waits for its day (G5c).
+  await maria.goto('/');
+  await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await maria.getByRole('button', { name: 'Server und Konten', exact: true }).click();
+  await claim(await resetCode());
+  resetTablet = tablet;
+});
+
+test('G5c · a day later (docs/plan-m4.md, G5; acceptance 5, 11): Clara’s new words are hers and her old ones recover nothing; the new browser is Tom’s, and his old devices hear it', async ({ browser }) => {
+  const from = await mark(clara);
+  await clocks.advance(24 * 3_600_000 + 60_000);
+  await said(clara, /^Ab jetzt gelten die neuen Wiederherstellungswörter\. Die alten funktionieren nicht mehr\.$/, from);
+  // The jump passed three in the afternoon: step 6's "Trinken" asks again, and Clara answers it.
+  await expect(heading(clara)).toHaveText('Trinken', { timeout: 30_000 });
+  await clara.getByRole('button', { name: 'Erledigt', exact: true }).click();
+  const old = words.get('Clara')!;
+  words.set('Clara', words.get('Clara, neu')!);
+  words.delete('Clara, neu');
+  // Tom's new browser is his now.
+  await resetTablet.getByRole('button', { name: 'Jetzt nachsehen', exact: true }).click();
+  await said(resetTablet, /^Dieses Gerät gehört jetzt zu Tom\. /);
+  await laterVoice(resetTablet);
+  await nameStep(resetTablet);
+  await expect(heading(resetTablet)).toHaveText('Startseite');
+  expect(sql(`select d.enrolled_via from devices d join users u on u.id = d.user_id where u.display_name = 'Tom' order by d.created_at desc limit 1`)).toBe('reset');
+  await resetTablet.close();
+  // Clara's old words recover nothing now; step 10 recovers with the new ones.
+  const other = await open(browser, 'Altes Kärtchen');
+  await other.goto('/');
+  await other.getByRole('button', { name: 'Ich habe Wiederherstellungswörter' }).click();
+  await other.getByRole('button', { name: 'Deutsch', exact: true }).click();
+  for (const w of old) {
+    await other.keyboard.type(w);
+    await other.keyboard.press('Enter');
+  }
+  const submit = other.getByRole('button', { name: 'Wiederherstellen', exact: true });
+  if (await submit.isVisible()) await submit.click();
+  await said(other, /^Mit diesen Wörtern gibt es kein Konto auf diesem Server\.$/);
+  await other.close();
+});
+
+test('G6 · representatives (docs/plan-m4.md, G6; acceptance 7): an operator names Maria as Tom’s representative, with a reason; Maria approves a new helper for Tom, told to Tom as her act as his representative; Clara names Maria herself after hearing what it means, and her tablet says what Maria then changes for Tom; Clara ends it', async ({ browser }) => {
+  // Invitations from Maria's admin page: the CLI's clock is not the walk's (two days ahead by now).
+  const adminInvite = async (label: string, admin: boolean) => {
+    await home(maria);
+    await maria.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+    await maria.getByRole('button', { name: 'Server und Konten', exact: true }).click();
+    await maria.getByRole('textbox', { name: 'Für wen (nur als Erinnerung für dich)' }).fill(label);
+    if (admin) await setChoice(maria.getByRole('checkbox', { name: 'Mit dem Recht, den Server zu verwalten' }));
+    await maria.getByRole('button', { name: 'Einladung für ein neues Konto', exact: true }).click();
+    return (await maria.locator('pre.command').last().innerText()).replace(/^.*#invite=/, '').trim();
+  };
+  // An operator besides Maria: an administrator never names themselves.
+  const operator = await open(browser, 'Betreiberin');
+  words.set('Olga', await signUp(operator, 'Olga', await adminInvite('Olga', true)));
+  await operator.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await operator.getByRole('button', { name: 'Server und Konten', exact: true }).click();
+  const tomRow = operator.locator('li.device').filter({ has: operator.getByRole('heading', { name: 'Tom', exact: true }) });
+  await tomRow.getByRole('button', { name: 'Vertretung bestimmen', exact: true }).click();
+  await choose(tomRow.getByRole('radiogroup', { name: 'Wer vertritt Tom?' }), 'Maria');
+  await tomRow.getByRole('textbox', { name: 'Grund (die Person hört ihn)' }).fill('Tom liegt im Krankenhaus und kann gerade nicht selbst entscheiden.');
+  await tomRow.getByRole('button', { name: 'Zur Vertretung bestimmen', exact: true }).click();
+  await expect(operator.getByText(/^Maria vertritt jetzt Tom\./).first()).toBeVisible();
+  await axe(operator, 'Server und Konten, a representative');
+  // Tom's devices know who and why.
+  expect((await tom.call<{ mine: unknown }>('GET', '/api/v1/representations')).mine).toMatchObject({
+    representative: { displayName: 'Maria' },
+    madeHow: 'admin',
+    madeBy: 'Olga',
+    reason: 'Tom liegt im Krankenhaus und kann gerade nicht selbst entscheiden.',
+  });
+  // Maria invites a new helper for Tom and approves her.
+  const represent = async (name: string) => {
+    await helpersPage(maria);
+    await maria.getByRole('button', { name: `Als Vertretung von ${name}`, exact: true }).click();
+    await expect(heading(maria)).toHaveText(`Als Vertretung von ${name}`);
+  };
+  await represent('Tom');
+  await maria.getByRole('button', { name: 'Einladung erstellen', exact: true }).click();
+  const code = (await maria.locator('pre.command').last().innerText()).replace(/^.*#invite=/, '').trim();
+  const lena = await phone('Lena', await adminInvite('Lena', false));
+  await lena.acceptInvite(code);
+  await represent('Tom');
+  const lenaItem = maria.locator('li.device').filter({ has: maria.getByRole('heading', { name: 'Lena', exact: true }) });
+  await lenaItem.getByRole('button', { name: 'Erlauben', exact: true }).click();
+  await expect(maria.getByText(/^Lena darf Tom jetzt helfen\./).first()).toBeVisible();
+  await axe(maria, 'Als Vertretung von Tom');
+  // Told to Tom as Maria's act, as his representative.
+  await expect
+    .poll(() => sql(`select e.data ->> 'by' = m.id::text and e.data ->> 'representation' is not null from user_events e join users u on u.id = e.user_id, users m where u.display_name = 'Tom' and m.display_name = 'Maria' and e.type = 'relationship.changed' order by e.seq desc limit 1`))
+    .toBe('t');
+  await lena.close();
+  // Clara names Maria herself, hearing first what it means.
+  await helpersPage(clara);
+  let from = await mark(clara);
+  await choose(clara.getByRole('radiogroup', { name: 'Wer soll dich vertreten?' }), 'Maria');
+  await said(clara, /^Maria kann dann für dich entscheiden, wer dir helfen darf und was\. Deine Nachrichten und Notizen sieht Maria dadurch nicht\.$/, from);
+  await clara.getByRole('button', { name: 'Maria zur Vertretung bestimmen', exact: true }).click();
+  await said(clara, /^Maria ist jetzt deine Vertretung\.$/, from);
+  // What Maria changes for Tom is said on Clara's tablet as her representative's act.
+  from = await mark(clara);
+  await represent('Clara');
+  const tomItem = maria.locator('li.device').filter({ has: maria.getByRole('heading', { name: 'Tom', exact: true }) });
+  await tomItem.getByRole('button', { name: 'Ändern', exact: true }).click();
+  await setChoice(tomItem.getByRole('checkbox', { name: 'Erinnerungen verwalten' }));
+  await tomItem.getByRole('button', { name: 'Speichern', exact: true }).click();
+  await said(clara, /^Maria hat als deine Vertretung geändert, was Tom darf: .*Erinnerungen verwalten/, from);
+  // Ended by Clara.
+  from = await mark(clara);
+  await helpersPage(clara);
+  await clara.getByRole('button', { name: 'Vertretung durch Maria beenden', exact: true }).click();
+  await said(clara, /^Maria ist nicht mehr deine Vertretung\.$/, from);
+  await operator.close();
+});
+
+test('G7 · trusted persons (docs/plan-m4.md, G7; acceptance 6): Clara asks Maria and Tom, two must agree, each agrees on their own device; a new tablet without words shows a code and four pictures; Maria and Tom say yes; Clara’s tablet hears it at once; a day later the new tablet is Clara’s, with new words', async ({ browser }) => {
+  await helpersPage(clara);
+  let from = await mark(clara);
+  await clara.getByRole('button', { name: 'Maria fragen', exact: true }).click();
+  await clara.getByRole('button', { name: 'Tom fragen', exact: true }).click();
+  await choose(clara.getByRole('radiogroup', { name: 'Wie viele müssen zustimmen?' }), '2 von 2');
+  await axe(clara, 'Helfer, trusted persons');
+  // Each agrees on their own device: Maria on her page, Tom on his phone.
+  await helpersPage(maria);
+  await maria.getByRole('button', { name: 'Zustimmen', exact: true }).click();
+  await expect(maria.getByText(/^Du bist jetzt Vertrauensperson für Clara\./).first()).toBeVisible();
+  const asked = (await tom.call<{ trustedBy: { id: string; state: string }[] }>('GET', '/api/v1/trustees')).trustedBy.find((t) => t.state === 'asked')!;
+  await tom.call('POST', `/api/v1/trustees/${asked.id}/answer`, { yes: true });
+  await said(clara, /^Maria ist jetzt deine Vertrauensperson\.$/, from);
+  await said(clara, /^Tom ist jetzt deine Vertrauensperson\.$/, from);
+  // A new tablet without words: new words first, then a code and four pictures.
+  const tablet = await open(browser, 'Claras Ersatztablet');
+  await tablet.goto('/');
+  await tablet.getByRole('button', { name: 'Ich habe Wiederherstellungswörter' }).click();
+  await tablet.getByRole('button', { name: 'Ich habe keine Wörter mehr', exact: true }).click();
+  await tablet.getByRole('button', { name: 'Mit meinen Vertrauenspersonen', exact: true }).click();
+  const newWords = await ceremony(tablet);
+  await expect(heading(tablet)).toHaveText('Mit Vertrauenspersonen wiederherstellen');
+  const code = (await tablet.locator('.link-code').innerText()).replace(/\s/g, '');
+  const pictures = (page: Page) => page.getByRole('list', { name: 'Die vier Bilder' }).getByRole('listitem');
+  await expect(pictures(tablet)).toHaveCount(4);
+  await axe(tablet, 'Mit Vertrauenspersonen wiederherstellen');
+  // Maria enters the code, sees the same pictures and says yes for Clara.
+  const trust = maria.locator('section').filter({ has: maria.getByRole('heading', { name: 'Vertrauenspersonen', exact: true }) });
+  await trust.getByRole('textbox', { name: 'Code eines neuen Geräts bestätigen' }).fill(code);
+  await trust.getByRole('button', { name: 'Weiter', exact: true }).click();
+  await expect(pictures(maria)).toHaveCount(4);
+  expect(await pictures(maria).allInnerTexts()).toEqual(await pictures(tablet).allInnerTexts());
+  await maria.getByRole('button', { name: 'Ja, das ist das neue Gerät von Clara', exact: true }).click();
+  await expect(maria.getByText(/^Danke\. 1 von 2 haben zugestimmt\./).first()).toBeVisible();
+  // Tom says yes from his phone, signed by it.
+  from = await mark(clara);
+  const claraId = sql(`select id from users where display_name = 'Clara'`);
+  const seen = await tom.call<{ id: string; djkt: string }>('POST', '/api/v1/trusted-recoveries/lookup', { code });
+  const proof = await tom.sign('trusted.approve', { srv: tom.srv, org: ORIGIN, rid: seen.id, uid: claraId, djkt: seen.djkt });
+  expect(await tom.call<{ approvals: number; effectiveAt: string | null }>('POST', `/api/v1/trusted-recoveries/${seen.id}/approve`, { personId: claraId, org: ORIGIN, proof })).toMatchObject({ approvals: 2 });
+  // Clara's tablet hears it at once, with the way to stop it.
+  await expect(heading(clara)).toHaveText('Neue Wiederherstellungswörter');
+  await said(clara, /^Neue Wiederherstellungswörter\. Deine Vertrauenspersonen haben ein neues Gerät bestätigt\. /, from);
+  await clara.getByRole('button', { name: 'Das war ich', exact: true }).click();
+  // The tablet waits for its day; then it is Clara's. The jump passes three in the afternoon again ("Trinken").
+  await expect(tablet.getByText(/^Dieses Gerät gehört ab .+ Uhr zu Clara/)).toBeVisible({ timeout: 30_000 });
+  from = await mark(clara);
+  await clocks.advance(24 * 3_600_000 + 60_000);
+  await expect(heading(clara)).toHaveText('Trinken', { timeout: 30_000 });
+  await clara.getByRole('button', { name: 'Erledigt', exact: true }).click();
+  await tablet.getByRole('button', { name: 'Jetzt nachsehen', exact: true }).click();
+  await said(tablet, /^Dieses Gerät gehört jetzt zu Clara\. /);
+  await laterVoice(tablet);
+  await nameStep(tablet);
+  await expect(heading(tablet)).toHaveText('Startseite');
+  await said(clara, /^Ein neues Gerät gehört jetzt zu dir: /, from);
+  words.set('Clara', newWords);
+  await tablet.close();
+});
+
 test('10 · recovery: on a new device the English words recover the same account; the other device is told; signed out, it loses its connection at once', async ({ browser }) => {
   const german = words.get('Clara')!;
   const phrase = fromWords(german);
@@ -1583,7 +1863,7 @@ test('ID-02 · the phrase canary: no three recovery words in a row in anything t
     if (!('error' in p)) phrases.push(toWords(p.entropy, 'en'));
   }
   const received = [...engines.seen.chat.map((c) => `${c.system}\n${c.messages.map((m) => m.content).join('\n')}`), ...engines.seen.speech, ...engines.seen.transcribed.map((t) => t.text)];
-  const logs = execFileSync('docker', ['compose', '--profile', 'e2e', 'logs', '--no-color', 'core-e2e', 'assistant-e2e', 'connectors-e2e'], { cwd: REPO }).toString();
+  const logs = execFileSync('docker', ['compose', '--profile', 'e2e', 'logs', '--no-color', 'core-e2e', 'assistant-e2e', 'connectors-e2e'], { cwd: REPO, maxBuffer: 512 * 1024 * 1024 }).toString();
   // Only whether: a match is never printed.
   const leaked = phrases.some((p) => received.some((r) => phraseIn(r, p)) || phraseIn(logs, p));
   expect(leaked, 'recovery words found in what the stand-ins received or the servers logged').toBe(false);
@@ -1592,7 +1872,7 @@ test('ID-02 · the phrase canary: no three recovery words in a row in anything t
 
 test('L-02 · LIVE’s privacy canary: what it overheard and dropped is kept nowhere, not in a log, not in any table', async () => {
   const overheard = 'Wetter für morgen';
-  const logs = execFileSync('docker', ['compose', '--profile', 'e2e', 'logs', '--no-color', 'core-e2e', 'assistant-e2e', 'connectors-e2e'], { cwd: REPO }).toString();
+  const logs = execFileSync('docker', ['compose', '--profile', 'e2e', 'logs', '--no-color', 'core-e2e', 'assistant-e2e', 'connectors-e2e'], { cwd: REPO, maxBuffer: 512 * 1024 * 1024 }).toString();
   expect(logs.includes(overheard), 'the servers logged what LIVE overheard').toBe(false);
   const dump = execFileSync('docker', ['compose', 'exec', '-T', 'db', 'pg_dump', '-U', 'ucap', '--data-only', 'ucap_e2e'], { cwd: REPO, maxBuffer: 256 * 1024 * 1024 }).toString();
   expect(dump.includes(overheard), 'a table holds what LIVE overheard').toBe(false);

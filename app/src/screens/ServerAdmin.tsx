@@ -5,7 +5,7 @@
  * devices; and invitations for new accounts, shown once. Nothing here shows what anyone said or wrote (CONCEPT §7).
  */
 import { type FormEvent, useEffect, useState } from 'react';
-import { Button, Checkbox, Form, Heading, Input, Label, TextField } from 'react-aria-components';
+import { Button, Checkbox, Form, Heading, Input, Label, Radio, RadioGroup, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
 import { ApiError } from '../net/api.ts';
 import { useUi } from '../ui.tsx';
@@ -36,6 +36,10 @@ interface Account {
   recoveryState: string;
   devices: number;
   lastSeenAt: string | null;
+  /** New words waiting to take effect (G5): their kind and until when, nothing more. */
+  waiting: { kind: string; until: string } | null;
+  /** Who represents the account (G6), by name. */
+  representative: string | null;
 }
 
 const size = (bytes: number, lang: string) => new Intl.NumberFormat(lang, { style: 'unit', unit: bytes > 1e9 ? 'gigabyte' : 'megabyte', maximumFractionDigits: 1 }).format(bytes > 1e9 ? bytes / 1e9 : bytes / 1e6);
@@ -48,7 +52,16 @@ export function ServerAdmin(p: { session: Session; serverUrl: string; onClose: (
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [label, setLabel] = useState('');
   const [asAdmin, setAsAdmin] = useState(false);
+  const [forSomeone, setForSomeone] = useState(false);
   const [invite, setInvite] = useState<{ code: string; spoken: string | null; expiresAt: string } | null>(null);
+  // The operator's reset (G5): for whom, why, and the code made.
+  const [resetFor, setResetFor] = useState<Account | null>(null);
+  const [reason, setReason] = useState('');
+  const [reset, setReset] = useState<{ name: string; link: string; spoken: string } | null>(null);
+  // A representative named by this administrator (G6): for whom, who, and why.
+  const [repFor, setRepFor] = useState<Account | null>(null);
+  const [repWho, setRepWho] = useState<string | null>(null);
+  const [repReason, setRepReason] = useState('');
   const [status, setStatus] = useState('');
 
   const tell = (text: string) => {
@@ -72,11 +85,47 @@ export function ServerAdmin(p: { session: Session; serverUrl: string; onClose: (
   async function makeInvite(e: FormEvent) {
     e.preventDefault();
     try {
-      const r = await p.session.call<{ code: string; spoken: string | null; expiresAt: string }>('/api/v1/admin/account-invites', { method: 'POST', body: { label: label.trim() || undefined, admin: asAdmin, spoken: true } });
+      // For someone this administrator sets the account up for and helps: they become the helper once the person agrees.
+      const r = forSomeone
+        ? await p.session.call<{ code: string; spoken: string | null; expiresAt: string }>('/api/v1/invites', { method: 'POST', body: { kind: 'supported_person', proposedScopes: ['care.respond', 'device.configure'], label: label.trim() || undefined } })
+        : await p.session.call<{ code: string; spoken: string | null; expiresAt: string }>('/api/v1/admin/account-invites', { method: 'POST', body: { label: label.trim() || undefined, admin: asAdmin, spoken: true } });
       setInvite(r);
       setLabel('');
       setAsAdmin(false);
+      setForSomeone(false);
       tell(tr('admin.accounts.invited'));
+    } catch (err) {
+      tell(tr(`error.${err instanceof ApiError ? err.code : 'internal'}`));
+    }
+  }
+
+  async function makeReset(e: FormEvent) {
+    e.preventDefault();
+    if (!resetFor) return;
+    try {
+      const r = await p.session.call<{ code: string; spoken: string }>(`/api/v1/admin/accounts/${resetFor.id}/reset`, { method: 'POST', body: { reason: reason.trim() } });
+      const made = { name: resetFor.name, link: `${p.serverUrl}/#reset=${r.code}`, spoken: r.spoken.replace(/(\d{3})(?=\d)/g, '$1 ') };
+      setReset(made);
+      setResetFor(null);
+      setReason('');
+      tell(tr('admin.reset.made', made));
+      await load();
+    } catch (err) {
+      tell(tr(`error.${err instanceof ApiError ? err.code : 'internal'}`));
+    }
+  }
+
+  async function makeRepresentative(e: FormEvent) {
+    e.preventDefault();
+    const who = accounts.find((x) => x.id === repWho);
+    if (!repFor || !who) return;
+    try {
+      await p.session.call(`/api/v1/admin/accounts/${repFor.id}/representative`, { method: 'POST', body: { representativeId: who.id, reason: repReason.trim() } });
+      tell(tr('admin.rep.made', { rep: who.name, name: repFor.name }));
+      setRepFor(null);
+      setRepWho(null);
+      setRepReason('');
+      await load();
     } catch (err) {
       tell(tr(`error.${err instanceof ApiError ? err.code : 'internal'}`));
     }
@@ -149,6 +198,50 @@ export function ServerAdmin(p: { session: Session; serverUrl: string; onClose: (
                 {a.admin ? ` · ${tr('admin.accounts.admin')}` : ''}
                 {a.lastSeenAt ? ` · ${tr('admin.accounts.lastSeen', { time: new Date(a.lastSeenAt) })}` : ''}
               </p>
+              {a.waiting && <p className="status warning">{tr('admin.accounts.waiting', { time: new Date(a.waiting.until) })}</p>}
+              {/* Never one's own account: an administrator who lost their words asks another. */}
+              {a.id !== p.session.ref.userId && (
+                <Button className="button" onPress={() => setResetFor(a)}>
+                  {tr('admin.reset.open')}
+                </Button>
+              )}
+              {a.representative && <p className="muted">{tr('admin.rep.current', { rep: a.representative })}</p>}
+              <Button className="button" onPress={() => setRepFor(a)}>
+                {tr('admin.rep.open')}
+              </Button>
+              {repFor?.id === a.id && (
+                <Form className="stack" onSubmit={makeRepresentative}>
+                  {/* Never the administrator themselves, never the person. */}
+                  <RadioGroup className="choice" value={repWho} onChange={setRepWho} isRequired>
+                    <Label className="choice-label">{tr('admin.rep.who', { name: a.name })}</Label>
+                    {accounts
+                      .filter((x) => x.id !== a.id && x.id !== p.session.ref.userId)
+                      .map((x) => (
+                        <Radio key={x.id} value={x.id} className="choice-option">
+                          {x.name}
+                        </Radio>
+                      ))}
+                  </RadioGroup>
+                  <TextField className="field" value={repReason} onChange={setRepReason} isRequired minLength={3}>
+                    <Label>{tr('admin.rep.reason')}</Label>
+                    <Input maxLength={300} />
+                  </TextField>
+                  <Button type="submit" className="button primary">
+                    {tr('admin.rep.make')}
+                  </Button>
+                </Form>
+              )}
+              {resetFor?.id === a.id && (
+                <Form className="stack" onSubmit={makeReset}>
+                  <TextField className="field" value={reason} onChange={setReason} isRequired minLength={3}>
+                    <Label>{tr('admin.reset.reason')}</Label>
+                    <Input maxLength={300} />
+                  </TextField>
+                  <Button type="submit" className="button primary">
+                    {tr('admin.reset.make')}
+                  </Button>
+                </Form>
+              )}
             </li>
           ))}
         </ul>
@@ -157,13 +250,24 @@ export function ServerAdmin(p: { session: Session; serverUrl: string; onClose: (
             <Label>{tr('admin.accounts.label')}</Label>
             <Input maxLength={60} />
           </TextField>
-          <Checkbox className="choice-option checkbox" isSelected={asAdmin} onChange={setAsAdmin}>
-            {tr('admin.accounts.asAdmin')}
+          <Checkbox className="choice-option checkbox" isSelected={forSomeone} onChange={setForSomeone}>
+            {tr('admin.accounts.forSomeone')}
           </Checkbox>
+          {!forSomeone && (
+            <Checkbox className="choice-option checkbox" isSelected={asAdmin} onChange={setAsAdmin}>
+              {tr('admin.accounts.asAdmin')}
+            </Checkbox>
+          )}
           <Button type="submit" className="button primary">
             {tr('admin.accounts.invite')}
           </Button>
         </Form>
+        {reset && (
+          <div className="stack" role="status">
+            <p>{tr('admin.reset.made', reset)}</p>
+            <pre className="command">{reset.link}</pre>
+          </div>
+        )}
         {invite && (
           <div className="stack">
             <p>{tr('admin.accounts.inviteLink')}</p>

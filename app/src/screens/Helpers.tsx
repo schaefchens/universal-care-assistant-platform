@@ -18,6 +18,8 @@ import { type AuditEvent, type Invitation, type InvitePreview, people, previewIn
 import { overviewSummary, scopeLabel } from '../people/summary.ts';
 import type { ServerRef } from '../state/store.ts';
 import { useUi } from '../ui.tsx';
+import { RepresentationSetting } from './RepresentationSetting.tsx';
+import { TrustSection } from './TrustSection.tsx';
 
 /** Changes whenever a list of relationships does: who, in which state, with which scopes. */
 const relKey = (rels: Relationship[]) => rels.map((r) => `${r.id}:${r.state}:${r.scopes.join('+')}`).join(',');
@@ -26,7 +28,7 @@ const relKey = (rels: Relationship[]) => rels.map((r) => `${r.id}:${r.state}:${r
 const spokenDigits = (code: string) => [code.slice(0, 3), code.slice(3, 6), code.slice(6)].map((g) => g.split('').join(' ')).join(', ');
 const grouped = (code: string) => `${code.slice(0, 3)} ${code.slice(3, 6)} ${code.slice(6)}`;
 
-function ScopeChoice(p: { label: string; value: Scope[]; onChange: (s: Scope[]) => void }) {
+export function ScopeChoice(p: { label: string; value: Scope[]; onChange: (s: Scope[]) => void }) {
   const { tr } = useUi();
   return (
     <CheckboxGroup className="choice" value={p.value} onChange={(v) => p.onChange(v as Scope[])}>
@@ -76,6 +78,8 @@ export function Helpers(p: {
   onContacts?: (person: { id: string; displayName: string }) => void;
   /** A person's appointments and tasks, with agenda.manage (K7). */
   onAgenda?: (person: { id: string; displayName: string }, which: 'appointments' | 'tasks') => void;
+  /** Managing access for someone this account represents (docs/plan-m4.md, G6). */
+  onRepresent?: (person: { id: string; displayName: string }) => void;
 }) {
   const ui = useUi();
   const { tr, say } = ui;
@@ -254,6 +258,10 @@ export function Helpers(p: {
           {tr('people.overview.read')}
         </Button>
       </section>
+
+      <RepresentationSetting session={p.session} helpers={mine.filter((r) => r.state === 'active').map((r) => r.helper)} refresh={p.refresh} onManage={(person) => p.onRepresent?.(person)} />
+
+      <TrustSection session={p.session} server={p.server} helpers={mine.filter((r) => r.state === 'active').map((r) => r.helper)} refresh={p.refresh} />
 
       <EscalationSetting session={p.session} personId={p.session.ref.userId} refresh={relKey(mine)} />
       <PhoneFallbackSetting session={p.session} />

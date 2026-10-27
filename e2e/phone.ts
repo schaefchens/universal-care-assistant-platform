@@ -134,10 +134,14 @@ export async function phone(name: string, accountInvite: string, origin = ORIGIN
     name,
     userId,
     deviceId,
+    /** The server this phone signs for. */
+    srv,
     pushed,
     call,
     /** Accepts a helper invitation (the code the person read out); the person still approves it. */
     acceptInvite: (code: string) => call<{ relationshipId: string }>('POST', '/api/v1/invites/accept', { code }),
+    /** A statement signed by this phone's device key (a trusted person's yes, G7). */
+    sign: (purpose: Purpose, payload: Record<string, Json>) => key.sign(purpose, payload),
     /** "Annehmen" on the alarm. */
     accept: (rid: string, ep: number) => signed('POST', '/api/v1/push/actions', { rid, ep, action: 'accept' }),
     resolve: (rid: string, ep: number) => call('POST', `/api/v1/care/requests/${rid}/resolve`, { episode: ep }),

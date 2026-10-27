@@ -119,7 +119,7 @@ export function Settings(p: {
       <Section title={tr('settings.account')}>
         {p.me && (
           <p className={p.me.recoveryState === 'confirmed' ? 'status' : 'status warning'}>
-            {p.me.displayName} · {tr(p.me.recoveryState === 'confirmed' ? 'settings.recovery.confirmed' : 'settings.recovery.unconfirmed')}
+            {p.me.displayName} · {tr(p.me.recoveryState === 'confirmed' ? 'settings.recovery.confirmed' : p.me.recoveryState === 'none' ? 'settings.recovery.none' : 'settings.recovery.unconfirmed')}
           </p>
         )}
         <Button className="button" onPress={p.onPeople}>

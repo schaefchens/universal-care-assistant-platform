@@ -32,14 +32,22 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
     {
       schema: {
         body: Type.Object({
-          purpose: Type.Union([Type.Literal('device.proof'), Type.Literal('session'), Type.Literal('device.recover'), Type.Literal('identity.rotate'), Type.Literal('identity.reissue'), Type.Literal('session.unlock')]),
+          purpose: Type.Union([
+            Type.Literal('device.proof'),
+            Type.Literal('session'),
+            Type.Literal('device.recover'),
+            Type.Literal('identity.rotate'),
+            Type.Literal('identity.reissue'),
+            Type.Literal('session.unlock'),
+            Type.Literal('identity.change'),
+          ]),
           deviceId: Type.Optional(Uuid),
           identityKey: Type.Optional(B64),
         }),
       },
     },
     async (req) => {
-      const b = req.body as { purpose: 'device.proof' | 'session' | 'device.recover' | 'identity.rotate' | 'identity.reissue' | 'session.unlock'; deviceId?: string; identityKey?: string };
+      const b = req.body as { purpose: 'device.proof' | 'session' | 'device.recover' | 'identity.rotate' | 'identity.reissue' | 'session.unlock' | 'identity.change'; deviceId?: string; identityKey?: string };
       if (b.purpose === 'device.recover') {
         if (!b.identityKey) throw new AppError('bad_request');
         return identity.recoveryChallenge(b.identityKey, req.ip);
@@ -48,8 +56,9 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
         auth(req);
         return identity.newChallenge(b.purpose);
       }
-      // Android's unlock key (G4) proves itself on a challenge bound to this very device.
-      if (b.purpose === 'session.unlock') return identity.newChallenge('session.unlock', { deviceId: auth(req).deviceId });
+      // Android's unlock key (G4) and new words without the old ones (G5) prove themselves on a challenge bound to this
+      // very device.
+      if (b.purpose === 'session.unlock' || b.purpose === 'identity.change') return identity.newChallenge(b.purpose, { deviceId: auth(req).deviceId });
       // Asked without a session: limited per address (help needs none: care commands are signed by the device).
       await identity.limitChallenges(req.ip);
       if (b.purpose === 'session') return identity.newChallenge('session', { deviceId: b.deviceId });
@@ -198,6 +207,86 @@ export function registerIdentityRoutes(app: AnyApp, o: { identity: IdentityServi
       await identity.reissueIdentity(auth(req), req.body as Parameters<IdentityService['reissueIdentity']>[1]);
       return reply.code(204).send();
     },
+  );
+
+  // —— New words without the old ones, and the day they wait (docs/plan-m4.md, G5) ——
+
+  app.post(
+    '/api/v1/identity/changes',
+    { preHandler: requireAuth, schema: { body: Type.Object({ org: Type.String({ maxLength: 200 }), challengeId: Uuid, nonce: B64, newKey: B64, newProof: B64 }) } },
+    async (req) => identity.changes.request(auth(req), req.body as Parameters<IdentityService['changes']['request']>[1]),
+  );
+  // Said on every device at start until it took effect or was stopped: a locked device too.
+  app.get('/api/v1/identity/changes/current', { preHandler: requireAuth, config: OPEN }, async (req) => ({ change: await identity.changes.current(auth(req).userId, auth(req).deviceId) }));
+  app.post('/api/v1/identity/changes/:id/stop', { preHandler: requireAuth, schema: { params: Type.Object({ id: Uuid }) } }, async (req, reply) => {
+    await identity.changes.stop(auth(req), (req.params as { id: string }).id);
+    return reply.code(204).send();
+  });
+  // "Später einrichten": an account set up for someone starts without words.
+  app.post('/api/v1/identity/later', { preHandler: requireAuth }, async (req, reply) => {
+    await identity.recoveryLater(auth(req));
+    return reply.code(204).send();
+  });
+
+  // The operator's reset: a new device takes the code (no session; limited as invitations are).
+  const Code = Type.String({ minLength: 4, maxLength: 80 });
+  app.post('/api/v1/identity/reset/check', { schema: { body: Type.Object({ code: Code }) } }, async (req) => identity.checkReset((req.body as { code: string }).code, req.ip));
+  app.post(
+    '/api/v1/identity/reset/claim',
+    { schema: { body: Type.Object({ code: Code, org: Type.String({ maxLength: 200 }), challengeId: Uuid, nonce: B64, identityKey: B64, identityProof: B64, device: Device }) } },
+    async (req) => identity.claimReset({ ...(req.body as Omit<Parameters<IdentityService['claimReset']>[0], 'ip'>), ip: req.ip }),
+  );
+  app.post(
+    '/api/v1/identity/reset/:id/poll',
+    { schema: { params: Type.Object({ id: Uuid }), body: Type.Object({ jkt: Type.String({ pattern: '^[A-Za-z0-9_-]{43}$' }) }) } },
+    async (req) => identity.pollReset((req.params as { id: string }).id, (req.body as { jkt: string }).jkt),
+  );
+  // —— Trusted persons (docs/plan-m4.md, G7) ——
+  const elevated = (req: Parameters<typeof auth>[0]) => {
+    const a = auth(req);
+    if (!a.scopes.includes('elevated')) throw new AppError('locked', { status: 403 });
+    return a;
+  };
+  app.get('/api/v1/trustees', { preHandler: requireAuth }, async (req) => identity.trusted.list(auth(req).userId));
+  app.post('/api/v1/trustees', { preHandler: requireAuth, schema: { body: Type.Object({ trusteeId: Uuid }) } }, async (req, reply) =>
+    reply.code(201).send(await identity.trusted.ask(elevated(req).userId, (req.body as { trusteeId: string }).trusteeId)),
+  );
+  app.post('/api/v1/trustees/:id/answer', { preHandler: requireAuth, schema: { params: Type.Object({ id: Uuid }), body: Type.Object({ yes: Type.Boolean() }) } }, async (req, reply) => {
+    await identity.trusted.answer(elevated(req).userId, (req.params as { id: string }).id, (req.body as { yes: boolean }).yes);
+    return reply.code(204).send();
+  });
+  app.delete('/api/v1/trustees/:id', { preHandler: requireAuth, schema: { params: Type.Object({ id: Uuid }) } }, async (req, reply) => {
+    await identity.trusted.end(elevated(req).userId, (req.params as { id: string }).id);
+    return reply.code(204).send();
+  });
+  app.put('/api/v1/trustees/threshold', { preHandler: requireAuth, schema: { body: Type.Object({ k: Type.Integer({ minimum: 1, maximum: 20 }) }) } }, async (req, reply) => {
+    await identity.trusted.setThreshold(elevated(req).userId, (req.body as { k: number }).k);
+    return reply.code(204).send();
+  });
+  // A new device starts a recovery (no session); a trusted person looks its code up and says yes (with one).
+  app.post(
+    '/api/v1/trusted-recoveries',
+    { schema: { body: Type.Object({ org: Type.String({ maxLength: 200 }), challengeId: Uuid, nonce: B64, identityKey: B64, identityProof: B64, device: Device }) } },
+    async (req, reply) => reply.code(201).send(await identity.trusted.start({ ...(req.body as Omit<Parameters<IdentityService['trusted']['start']>[0], 'ip'>), ip: req.ip })),
+  );
+  app.post('/api/v1/trusted-recoveries/lookup', { preHandler: requireAuth, schema: { body: Type.Object({ code: Type.String({ minLength: 6, maxLength: 12 }) }) } }, async (req) =>
+    identity.trusted.lookup(elevated(req).userId, (req.body as { code: string }).code),
+  );
+  app.post(
+    '/api/v1/trusted-recoveries/:id/approve',
+    { preHandler: requireAuth, schema: { params: Type.Object({ id: Uuid }), body: Type.Object({ personId: Uuid, org: Type.String({ maxLength: 200 }), proof: B64 }) } },
+    async (req) => identity.trusted.approve(elevated(req), (req.params as { id: string }).id, req.body as { personId: string; org: string; proof: string }),
+  );
+  app.post(
+    '/api/v1/trusted-recoveries/:id/poll',
+    { schema: { params: Type.Object({ id: Uuid }), body: Type.Object({ jkt: Type.String({ pattern: '^[A-Za-z0-9_-]{43}$' }) }) } },
+    async (req) => identity.trusted.poll((req.params as { id: string }).id, (req.body as { jkt: string }).jkt),
+  );
+
+  app.post(
+    '/api/v1/admin/accounts/:id/reset',
+    { preHandler: requireAdmin(identity), schema: { params: Type.Object({ id: Uuid }), body: Type.Object({ reason: Type.String({ minLength: 3, maxLength: 300 }) }) } },
+    async (req, reply) => reply.code(201).send(await identity.offerReset(auth(req), (req.params as { id: string }).id, (req.body as { reason: string }).reason.trim())),
   );
 
   app.post(

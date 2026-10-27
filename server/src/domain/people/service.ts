@@ -95,9 +95,33 @@ export function createPeopleService(d: PeopleDeps) {
     }));
   }
 
-  /** Both sides hear about every change of a relationship (ids only; the app fetches what it may see). */
-  const changed = (exec: Exec, rel: { id: string; person_id: string; helper_id: string }, state: string, by: string) =>
-    emit(exec, { kind: 'relationship.changed', recipients: [rel.person_id, rel.helper_id], payload: { relationshipId: rel.id, state, by } });
+  /** Both sides hear about every change of a relationship (ids only; the app fetches what it may see), and a
+   *  representative's act names the arrangement, so the person's devices say "als deine Vertretung" (G6). */
+  const changed = (exec: Exec, rel: { id: string; person_id: string; helper_id: string }, state: string, by: string, representation: string | null = null) =>
+    emit(exec, {
+      kind: 'relationship.changed',
+      recipients: [rel.person_id, rel.helper_id, ...(representation && by !== rel.helper_id ? [by] : [])],
+      payload: { relationshipId: rel.id, state, by, ...(representation ? { representation } : {}) },
+    });
+
+  // —— Representatives (docs/plan-m4.md, G6): an arrangement of its own, not a permission ——
+
+  async function representationOf(exec: Exec, personId: string) {
+    const r = await sql<{ id: string; representative_id: string; made_how: 'person' | 'admin'; made_by: string; reason: string | null; started_at: Date }>`
+      select id, representative_id, made_how, made_by, reason, started_at from representations where person_id = ${personId} and ended_at is null`.execute(exec);
+    return r.rows[0] ?? null;
+  }
+
+  /**
+   * Who manages access for the person: the person, or their representative (the arrangement's id). Anyone else learns
+   * nothing (404), as for anything of someone else's.
+   */
+  async function actingFor(exec: Exec, actorId: string, personId: string): Promise<{ representation: string | null }> {
+    if (actorId === personId) return { representation: null };
+    const rep = await representationOf(exec, personId);
+    if (rep?.representative_id === actorId) return { representation: rep.id };
+    throw new AppError('not_found');
+  }
 
   /** Opens a pending relationship from an invitation; called when a helper accepts or creates an account with it. */
   async function openFromInvite(exec: Exec, o: { personId: string; helperId: string; inviteId: string; proposed: readonly string[] }) {
@@ -198,55 +222,152 @@ export function createPeopleService(d: PeopleDeps) {
 
     openFromInvite,
 
-    /** The person approves who accepted, with the scopes they choose (a subset of the M1 scopes). */
-    async approve(personId: string, relationshipId: string, scopes: readonly string[]) {
+    /**
+     * The person approves who accepted, with the scopes they choose (a subset of the M1 scopes); or their representative
+     * does (G6), never for themselves.
+     */
+    async approve(actorId: string, relationshipId: string, scopes: readonly string[]) {
       return d.db.transaction().execute(async (trx) => {
         const rel = await relationshipRow(trx, relationshipId, true);
-        if (!rel || rel.person_id !== personId) throw new AppError('not_found');
+        if (!rel) throw new AppError('not_found');
+        const { representation } = await actingFor(trx, actorId, rel.person_id);
+        if (representation && rel.helper_id === actorId) throw new AppError('forbidden', { params: { reason: 'own' } });
         if (rel.state !== 'pending') throw new AppError('conflict', { params: { reason: rel.state } });
         const chosen = onlyScopes(scopes);
         if (chosen.length === 0) throw new AppError('bad_request', { params: { reason: 'scopes' } });
         await sql`update relationships set state = 'active', approved_at = ${now()} where id = ${rel.id}`.execute(trx);
         for (const scope of chosen)
-          await sql`insert into grants (id, relationship_id, scope, granted_by_user, created_at) values (${uuidv7(d.clock())}, ${rel.id}, ${scope}, ${personId}, ${now()})`.execute(trx);
-        await audit(trx, d.clock, { actorUser: personId, subjectUser: personId, action: 'relationship.approved', targetType: 'relationship', targetId: rel.id, detail: { scopes: chosen } });
-        await changed(trx, rel, 'active', personId);
+          await sql`insert into grants (id, relationship_id, scope, granted_by_user, representation_ref, created_at) values (${uuidv7(d.clock())}, ${rel.id}, ${scope}, ${actorId}, ${representation}, ${now()})`.execute(trx);
+        await audit(trx, d.clock, { actorUser: actorId, subjectUser: rel.person_id, action: 'relationship.approved', targetType: 'relationship', targetId: rel.id, detail: { scopes: chosen, ...(representation ? { representation } : {}) } });
+        await changed(trx, rel, 'active', actorId, representation);
       });
     },
 
-    /** The person declines, or either side ends: grants end with it. */
+    /** The person declines, or either side ends, or the person's representative (G6): grants end with it. */
     async end(actorId: string, relationshipId: string) {
       return d.db.transaction().execute(async (trx) => {
         const rel = await relationshipRow(trx, relationshipId, true);
-        if (!rel || (rel.person_id !== actorId && rel.helper_id !== actorId)) throw new AppError('not_found');
+        if (!rel) throw new AppError('not_found');
+        const representation = rel.person_id === actorId || rel.helper_id === actorId ? null : (await actingFor(trx, actorId, rel.person_id)).representation;
         if (rel.state === 'ended') return;
         await sql`update relationships set state = 'ended', ended_at = ${now()}, ended_by = ${actorId} where id = ${rel.id}`.execute(trx);
         await sql`update grants set revoked_at = ${now()}, revoked_by = ${actorId} where relationship_id = ${rel.id} and revoked_at is null`.execute(trx);
-        const action = rel.state === 'pending' && actorId === rel.person_id ? 'relationship.declined' : 'relationship.ended';
-        await audit(trx, d.clock, { actorUser: actorId, subjectUser: rel.person_id, action, targetType: 'relationship', targetId: rel.id, detail: { by: actorId === rel.person_id ? 'person' : 'helper' } });
-        await changed(trx, rel, 'ended', actorId);
+        const action = rel.state === 'pending' && (actorId === rel.person_id || representation) ? 'relationship.declined' : 'relationship.ended';
+        const by = actorId === rel.person_id ? 'person' : representation ? 'representative' : 'helper';
+        await audit(trx, d.clock, { actorUser: actorId, subjectUser: rel.person_id, action, targetType: 'relationship', targetId: rel.id, detail: { by, ...(representation ? { representation } : {}) } });
+        await changed(trx, rel, 'ended', actorId, representation);
       });
     },
 
-    /** The person sets the scopes; a helper may only give scopes back. */
+    /**
+     * The person sets the scopes, or their representative (G6) for other helpers; a helper may only give scopes back,
+     * and a representative never adds to their own.
+     */
     async setScopes(actorId: string, relationshipId: string, scopes: readonly string[]) {
       return d.db.transaction().execute(async (trx) => {
         const rel = await relationshipRow(trx, relationshipId, true);
-        if (!rel || (rel.person_id !== actorId && rel.helper_id !== actorId)) throw new AppError('not_found');
+        if (!rel) throw new AppError('not_found');
+        const representation = rel.person_id === actorId || rel.helper_id === actorId ? null : (await actingFor(trx, actorId, rel.person_id)).representation;
         if (rel.state !== 'active') throw new AppError('conflict', { params: { reason: rel.state } });
         const current = await activeScopes(trx, rel.id);
         const wanted = onlyScopes(scopes);
         const added = wanted.filter((s) => !current.includes(s));
         const removed = current.filter((s) => !wanted.includes(s));
-        if (added.length > 0 && actorId !== rel.person_id) throw new AppError('forbidden', { params: { reason: 'person_only' } });
+        if (added.length > 0 && actorId !== rel.person_id && !representation) throw new AppError('forbidden', { params: { reason: 'person_only' } });
         for (const scope of removed)
           await sql`update grants set revoked_at = ${now()}, revoked_by = ${actorId} where relationship_id = ${rel.id} and scope = ${scope} and revoked_at is null`.execute(trx);
         for (const scope of added)
-          await sql`insert into grants (id, relationship_id, scope, granted_by_user, created_at) values (${uuidv7(d.clock())}, ${rel.id}, ${scope}, ${actorId}, ${now()})`.execute(trx);
+          await sql`insert into grants (id, relationship_id, scope, granted_by_user, representation_ref, created_at) values (${uuidv7(d.clock())}, ${rel.id}, ${scope}, ${actorId}, ${representation}, ${now()})`.execute(trx);
         if (added.length + removed.length === 0) return;
-        await audit(trx, d.clock, { actorUser: actorId, subjectUser: rel.person_id, action: 'grants.changed', targetType: 'relationship', targetId: rel.id, detail: { added, removed } });
-        await changed(trx, rel, 'active', actorId);
+        await audit(trx, d.clock, { actorUser: actorId, subjectUser: rel.person_id, action: 'grants.changed', targetType: 'relationship', targetId: rel.id, detail: { added, removed, ...(representation ? { representation } : {}) } });
+        await changed(trx, rel, 'active', actorId, representation);
       });
+    },
+
+    /** A representative invites a helper for the person (G6): the invitation is the person's, the act names them. */
+    async inviteHelperFor(actorId: string, personId: string, o: { proposedScopes: readonly string[]; label?: string }) {
+      const { representation } = await actingFor(d.db, actorId, personId);
+      const scopes = onlyScopes(o.proposedScopes);
+      if (scopes.length === 0) throw new AppError('bad_request', { params: { reason: 'scopes' } });
+      const inv = await d.identity.createInvite(d.db, { kind: 'helper', createdBy: personId, proposedScopes: scopes, label: o.label, spoken: true });
+      await audit(d.db, d.clock, { actorUser: actorId, subjectUser: personId, action: 'invite.created', targetType: 'invite', targetId: inv.id, detail: { kind: 'helper', scopes, ...(representation ? { representation } : {}) } });
+      return inv;
+    },
+
+    /** The person's helpers as their representative sees them (G6). */
+    async relationshipsOf(actorId: string, personId: string) {
+      await actingFor(d.db, actorId, personId);
+      const all = await views(d.db, sql`r.person_id = ${personId} and r.state <> 'ended'`);
+      return { relationships: all };
+    },
+
+    /** Whether the actor is the person's representative, for signing out the person's devices (G6). */
+    async represents(actorId: string, personId: string) {
+      const rep = await representationOf(d.db, personId);
+      return rep?.representative_id === actorId ? rep.id : null;
+    },
+
+    /**
+     * A representative named (G6): by the person on their own device, from their active helpers, after hearing what it
+     * means; or by an administrator when the person cannot, with a reason, never naming themselves. One at a time: a
+     * new one ends the one before. Both sides and every device of the person hear it.
+     */
+    async appoint(o: { personId: string; representativeId: string; by: string; how: 'person' | 'admin'; reason?: string }) {
+      if (o.representativeId === o.personId) throw new AppError('bad_request', { params: { reason: 'self' } });
+      if (o.how === 'admin' && o.by === o.representativeId) throw new AppError('forbidden', { params: { reason: 'admin_self' } });
+      if (o.how === 'admin' && !o.reason?.trim()) throw new AppError('bad_request', { params: { reason: 'reason' } });
+      return d.db.transaction().execute(async (trx) => {
+        if (o.how === 'person') {
+          const helper = await sql`select 1 from relationships where person_id = ${o.personId} and helper_id = ${o.representativeId} and state = 'active'`.execute(trx);
+          if (!helper.rows.length) throw new AppError('bad_request', { params: { reason: 'not_helper' } });
+        } else {
+          const user = await sql`select 1 from users where id = ${o.representativeId} and deleted_at is null`.execute(trx);
+          if (!user.rows.length) throw new AppError('not_found');
+        }
+        const before = await representationOf(trx, o.personId);
+        if (before) {
+          await sql`update representations set ended_at = ${now()}, ended_by = ${o.by} where id = ${before.id}`.execute(trx);
+          await emit(trx, { kind: 'representation.changed', recipients: [o.personId, before.representative_id], payload: { id: before.id, state: 'ended', by: o.by } });
+        }
+        const id = uuidv7(d.clock());
+        await sql`
+          insert into representations (id, person_id, representative_id, made_by, made_how, reason, started_at)
+          values (${id}, ${o.personId}, ${o.representativeId}, ${o.by}, ${o.how}, ${o.reason?.trim() ?? null}, ${now()})`.execute(trx);
+        await audit(trx, d.clock, { actorUser: o.by, subjectUser: o.personId, action: 'representation.started', targetType: 'representation', targetId: id, detail: { how: o.how } });
+        await emit(trx, { kind: 'representation.changed', recipients: [o.personId, o.representativeId], payload: { id, state: 'active', by: o.by } });
+        return { id };
+      });
+    },
+
+    /** Ended by the person, or by the administrator who made it (G6). */
+    async endRepresentation(actorId: string, id: string) {
+      await d.db.transaction().execute(async (trx) => {
+        const r = await sql<{ person_id: string; representative_id: string; made_by: string; made_how: string }>`
+          select person_id, representative_id, made_by, made_how from representations where id = ${id} and ended_at is null for update`.execute(trx);
+        const x = r.rows[0];
+        if (!x || (actorId !== x.person_id && !(x.made_how === 'admin' && x.made_by === actorId))) throw new AppError('not_found');
+        await sql`update representations set ended_at = ${now()}, ended_by = ${actorId} where id = ${id}`.execute(trx);
+        await audit(trx, d.clock, { actorUser: actorId, subjectUser: x.person_id, action: 'representation.ended', targetType: 'representation', targetId: id });
+        await emit(trx, { kind: 'representation.changed', recipients: [x.person_id, x.representative_id], payload: { id, state: 'ended', by: actorId } });
+      });
+    },
+
+    /** The arrangements a user is part of: their own representative, and whom they represent. */
+    async representations(userId: string) {
+      const r = await sql<{ id: string; person_id: string; person_name: string; representative_id: string; representative_name: string; made_how: 'person' | 'admin'; made_by_name: string; reason: string | null; started_at: Date }>`
+        select x.id, x.person_id, p.display_name as person_name, x.representative_id, r.display_name as representative_name, x.made_how, m.display_name as made_by_name, x.reason, x.started_at
+        from representations x join users p on p.id = x.person_id join users r on r.id = x.representative_id join users m on m.id = x.made_by
+        where x.ended_at is null and (x.person_id = ${userId} or x.representative_id = ${userId}) order by x.started_at`.execute(d.db);
+      const view = (x: (typeof r.rows)[number]) => ({
+        id: x.id,
+        person: { id: x.person_id, displayName: x.person_name },
+        representative: { id: x.representative_id, displayName: x.representative_name },
+        madeHow: x.made_how,
+        madeBy: x.made_by_name,
+        reason: x.reason,
+        startedAt: x.started_at.toISOString(),
+      });
+      return { mine: r.rows.filter((x) => x.person_id === userId).map(view)[0] ?? null, represented: r.rows.filter((x) => x.representative_id === userId).map(view) };
     },
 
     /** The relationships a user is part of, from either side; ended ones only on request. */
@@ -305,10 +426,13 @@ export function createPeopleService(d: PeopleDeps) {
       return r.rows.length > 0;
     },
 
-    /** Who may do what for this person, for the access overview the app reads aloud. */
+    /** Who may do what for this person, for the access overview the app reads aloud; the representative first (G6). */
     async accessOverview(personId: string) {
       const all = await views(d.db, sql`r.person_id = ${personId} and r.state <> 'ended'`);
+      const rep = await representationOf(d.db, personId);
+      const repName = rep ? (await sql<{ name: string }>`select display_name as name from users where id = ${rep.representative_id}`.execute(d.db)).rows[0]?.name ?? '' : null;
       return {
+        representative: rep ? { id: rep.representative_id, displayName: repName!, madeHow: rep.made_how } : null,
         helpers: all.filter((r) => r.state === 'active').map((r) => ({ relationshipId: r.id, helper: r.helper, scopes: r.scopes })),
         pending: all.filter((r) => r.state === 'pending').map((r) => ({ relationshipId: r.id, helper: r.helper, proposedScopes: r.proposedScopes })),
       };

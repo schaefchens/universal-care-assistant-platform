@@ -20,7 +20,9 @@ import type { Db, Exec, Trx } from '../../lib/db.ts';
 import { AppError } from '../../lib/errors.ts';
 import { emit } from '../../lib/outbox.ts';
 import { checkLimit, countFailure } from '../../lib/rate-limit.ts';
+import { createIdentityChanges, type NewDevice } from './changes.ts';
 import { isP256Jwk, jwkThumbprint, mac, type P256Jwk, verifyDevice } from './crypto.ts';
+import { createTrusted } from './trusted.ts';
 import { LOCKED_SCOPES, UNLOCKED_SCOPES } from './lock.ts';
 
 export const SESSION_TTL_S = 900;
@@ -30,6 +32,8 @@ export const SPOKEN_CODE_TTL_S = 86_400;
 export const BOOTSTRAP_TTL_S = 3_600;
 /** Device linking (docs/plan-m4.md, G3): a code lives ten minutes. */
 export const LINK_TTL_S = 600;
+/** An operator's reset code (G5): a day, its spoken form as long. */
+export const RESET_TTL_S = 86_400;
 /** Wrong link codes: ten per address in ten minutes, fifty on the whole server (then claims wait). */
 const LINK_LIMIT_IP = { windowS: 600, max: 10 };
 const LINK_LIMIT_ALL = { bucket: 'link:all', windowS: 600, max: 50 };
@@ -59,7 +63,7 @@ export interface IdentityDeps {
   publicOrigins: string[];
 }
 
-export type ChallengePurpose = 'device.proof' | 'device.recover' | 'session' | 'identity.rotate' | 'identity.reissue' | 'session.unlock';
+export type ChallengePurpose = 'device.proof' | 'device.recover' | 'session' | 'identity.rotate' | 'identity.reissue' | 'session.unlock' | 'identity.change';
 
 export interface DeviceInput {
   jwk: unknown;
@@ -139,7 +143,7 @@ export function createIdentityService(d: IdentityDeps) {
     return { jwk, jkt };
   }
 
-  async function insertDevice(trx: Trx, userId: string, dev: Omit<DeviceInput, 'jwk' | 'proof'>, key: { jwk: P256Jwk; jkt: string }, via: 'create' | 'recover' | 'link', proof: Record<string, Json>, linkedBy: string | null = null) {
+  async function insertDevice(trx: Trx, userId: string, dev: Omit<DeviceInput, 'jwk' | 'proof'>, key: { jwk: P256Jwk; jkt: string }, via: 'create' | 'recover' | 'link' | 'trusted' | 'reset', proof: Record<string, Json>, linkedBy: string | null = null) {
     const id = uuidv7(d.clock());
     try {
       await sql`
@@ -154,21 +158,21 @@ export function createIdentityService(d: IdentityDeps) {
   }
 
   /** A link code (from an invitation link) or a spoken code (ten digits, read out on the phone). */
-  async function redeemInvite(trx: Trx, rawCode: string, userId: string, ip: string, kinds: readonly string[]) {
+  async function redeemInvite(trx: Trx, rawCode: string, userId: string | null, ip: string, kinds: readonly string[]) {
     const limit = { bucket: `invite:ip:${ip}`, windowS: 3600, max: 10 };
     await checkLimit(trx, d.clock, limit);
     const spoken = normaliseSpokenCode(rawCode);
     const r = spoken
       ? await sql<InviteRow>`
-          update invites set used_at = ${now()}, used_by = ${userId}
+          update invites set used_at = ${now()}, used_by = coalesce(for_user, ${userId}::uuid)
           where spoken_mac = ${mac(d.pepper, 'invite-spoken', spoken)} and used_at is null and revoked_at is null
             and spoken_expires_at > ${now()} and expires_at > ${now()}
-          returning id, kind, grants_admin, created_by, preset, proposed_scopes`.execute(trx)
+          returning id, kind, grants_admin, created_by, preset, proposed_scopes, for_user`.execute(trx)
       : await sql<InviteRow>`
-          update invites set used_at = ${now()}, used_by = ${userId}
+          update invites set used_at = ${now()}, used_by = coalesce(for_user, ${userId}::uuid)
           where code_mac = ${mac(d.pepper, 'invite', normaliseLinkCode(rawCode))} and used_at is null and revoked_at is null
             and expires_at > ${now()}
-          returning id, kind, grants_admin, created_by, preset, proposed_scopes`.execute(trx);
+          returning id, kind, grants_admin, created_by, preset, proposed_scopes, for_user`.execute(trx);
     const invite = r.rows[0];
     if (!invite || !kinds.includes(invite.kind)) {
       // Counted outside this transaction, which is about to roll back.
@@ -176,6 +180,39 @@ export function createIdentityService(d: IdentityDeps) {
       throw new AppError('unauthorised', { params: { reason: 'invite' } });
     }
     return invite;
+  }
+
+  async function useChallenge(challengeId: string, nonce: string, purpose: ChallengePurpose, deviceId: string): Promise<boolean> {
+    try {
+      const row = await d.db.transaction().execute((trx) => consumeChallenge(trx, challengeId, nonce, purpose));
+      return row.device_id === deviceId;
+    } catch {
+      return false;
+    }
+  }
+
+  // New words that wait a day (G5): asked from a device, by trusted persons or an operator's reset.
+  const changes = createIdentityChanges({ db: d.db, clock: d.clock, serverId: d.serverId, publicOrigins: d.publicOrigins, useChallenge });
+  // Trusted persons (G7): their yeses start such a change for a new device.
+  const trusted = createTrusted({
+    db: d.db,
+    clock: d.clock,
+    pepper: d.pepper,
+    serverId: d.serverId,
+    publicOrigins: d.publicOrigins,
+    changes,
+    linkWords,
+    newDevice: async (trx, input) => {
+      await consumeChallenge(trx, input.challengeId, input.nonce, 'device.proof');
+      return checkDevice(input.device as DeviceInput, input.org, input.nonce);
+    },
+  });
+
+  /** A device that came with a waiting change, enrolled when the change takes effect (the job). */
+  async function enrollWaiting(trx: Trx, userId: string, dev: NewDevice, via: 'trusted' | 'reset', proof: Record<string, unknown>) {
+    const deviceId = await insertDevice(trx, userId, { name: dev.name, platform: dev.platform, formFactor: dev.formFactor, keyStore: dev.keyStore, appVersion: dev.appVersion }, { jwk: dev.jwk, jkt: dev.jkt }, via, proof as Record<string, Json>);
+    await audit(trx, d.clock, { subjectUser: userId, actorDevice: deviceId, action: 'device.enrolled', targetType: 'device', targetId: deviceId, detail: { via } });
+    return deviceId;
   }
 
   return {
@@ -186,14 +223,14 @@ export function createIdentityService(d: IdentityDeps) {
     newChallenge: (purpose: ChallengePurpose, bind?: { deviceId?: string; identityKey?: Uint8Array }) => newChallenge(d.db, purpose, bind),
 
     /** Uses up a challenge bound to this device (Android's unlock key, G4): true when it was valid. */
-    async useChallenge(challengeId: string, nonce: string, purpose: ChallengePurpose, deviceId: string): Promise<boolean> {
-      try {
-        const row = await d.db.transaction().execute((trx) => consumeChallenge(trx, challengeId, nonce, purpose));
-        return row.device_id === deviceId;
-      } catch {
-        return false;
-      }
-    },
+    useChallenge,
+
+    /** New words that wait a day (G5). */
+    changes,
+    /** Trusted persons (G7). */
+    trusted,
+    /** The job: a waiting change whose day is over takes effect. */
+    applyChange: (id: string) => changes.apply(id, enrollWaiting),
 
     /** Recovery starts from the identity's public key: the challenge is bound to it. Unknown keys get one too, so
      *  nobody learns from the answer whether an identity exists here. */
@@ -204,17 +241,17 @@ export function createIdentityService(d: IdentityDeps) {
       return newChallenge(d.db, 'device.recover', { identityKey: fromB64url(identityKeyB64) });
     },
 
-    async createInvite(exec: Exec, o: { kind: 'account' | 'helper' | 'supported_person'; createdBy: string | null; grantsAdmin?: boolean; label?: string; proposedScopes?: string[]; preset?: Record<string, unknown>; ttlS?: number; spoken?: boolean }) {
+    async createInvite(exec: Exec, o: { kind: 'account' | 'helper' | 'supported_person' | 'reset'; createdBy: string | null; grantsAdmin?: boolean; label?: string; proposedScopes?: string[]; preset?: Record<string, unknown>; ttlS?: number; spoken?: boolean; forUser?: string }) {
       const code = newLinkCode();
       const spoken = o.spoken ? newSpokenCode() : null;
       const ttl = o.ttlS ?? LINK_CODE_TTL_S;
       const id = uuidv7(d.clock());
       await sql`
-        insert into invites (id, kind, code_mac, spoken_mac, spoken_expires_at, created_by, preset, proposed_scopes, grants_admin, label, expires_at, created_at)
+        insert into invites (id, kind, code_mac, spoken_mac, spoken_expires_at, created_by, preset, proposed_scopes, grants_admin, label, expires_at, created_at, for_user)
         values (${id}, ${o.kind}, ${mac(d.pepper, 'invite', code)}, ${spoken ? mac(d.pepper, 'invite-spoken', spoken) : null},
                 ${spoken ? new Date(d.clock() + Math.min(ttl, SPOKEN_CODE_TTL_S) * 1000) : null}, ${o.createdBy},
                 ${JSON.stringify(o.preset ?? {})}::jsonb, ${o.proposedScopes ?? []}, ${o.grantsAdmin ?? false}, ${o.label ?? null},
-                ${new Date(d.clock() + ttl * 1000)}, ${now()})`.execute(exec);
+                ${new Date(d.clock() + ttl * 1000)}, ${now()}, ${o.forUser ?? null})`.execute(exec);
       return { id, code, spoken, expiresAt: new Date(d.clock() + ttl * 1000).toISOString() };
     },
 
@@ -278,6 +315,8 @@ export function createIdentityService(d: IdentityDeps) {
         // The same answer for "no such identity" as for a bad proof.
         if (!userId) throw bad();
         const deviceId = await insertDevice(trx, userId, input.device, key, 'recover', { purpose: 'device.recover', payload, proof: input.identityProof });
+        // Whoever holds the words is the person: new words waiting without them stop (G5).
+        await changes.stopWaiting(trx, userId, 'words', { userId, deviceId });
         await audit(trx, d.clock, { actorUser: userId, actorDevice: deviceId, subjectUser: userId, action: 'device.recovered', targetType: 'device', targetId: deviceId });
         // Recovering with the words proves the person holds them.
         await sql`update users set recovery_state = 'confirmed' where id = ${userId}`.execute(trx);
@@ -368,7 +407,7 @@ export function createIdentityService(d: IdentityDeps) {
         // The public half only: the app checks typed words against it before anything is changed.
         identityKey: u.public_key ? b64url(new Uint8Array(u.public_key)) : null,
         // Whether this device may replace words that were never confirmed (see reissueIdentity).
-        canReissue: u.recovery_state === 'unconfirmed' && u.enrolled_via === 'create',
+        canReissue: (u.recovery_state === 'unconfirmed' && u.enrolled_via === 'create') || u.recovery_state === 'none',
         // LIVE mode (docs/plan-m2.md): the assistant's name, and the keyword when the person chose another.
         assistantName: u.assistant_name,
         keyword: u.keyword,
@@ -452,6 +491,8 @@ export function createIdentityService(d: IdentityDeps) {
                   ${JSON.stringify({ payload, oldProof: input.oldProof, newProof: input.newProof })}::jsonb, ${now()})`.execute(trx);
         await sql`update users set recovery_state = 'unconfirmed' where id = ${userId}`.execute(trx);
         await audit(trx, d.clock, { actorUser: userId, subjectUser: userId, action: 'identity.rotated', targetType: 'identity_key', targetId: old.id });
+        // A rotation with the old words replaces whatever waited without them (G5).
+        await changes.stopWaiting(trx, userId, 'words', { userId });
       });
     },
 
@@ -460,15 +501,21 @@ export function createIdentityService(d: IdentityDeps) {
      * ran out). Nobody can hold unconfirmed words, so the device that created the account may replace them, signed by
      * the new key alone; once the words are confirmed, only a rotation with the old words can change them.
      */
-    async reissueIdentity(a: { userId: string; deviceId: string }, input: { org: string; challengeId: string; nonce: string; newKey: string; newProof: string }) {
+    async reissueIdentity(a: { userId: string; deviceId: string; scopes?: string[] }, input: { org: string; challengeId: string; nonce: string; newKey: string; newProof: string }) {
       checkOrigin(input.org);
       return d.db.transaction().execute(async (trx) => {
         await consumeChallenge(trx, input.challengeId, input.nonce, 'identity.reissue');
-        const u = await sql<{ recovery_state: string; enrolled_via: string }>`
-          select u.recovery_state, dv.enrolled_via from users u join devices dv on dv.user_id = u.id
+        const u = await sql<{ recovery_state: string; enrolled_via: string; reissued_here: boolean }>`
+          select u.recovery_state, dv.enrolled_via,
+            exists (select 1 from identity_keys k where k.user_id = u.id and k.status = 'active' and k.rotation_proof -> 'payload' ->> 'did' = ${a.deviceId}) as reissued_here
+          from users u join devices dv on dv.user_id = u.id
           where u.id = ${a.userId} and dv.id = ${a.deviceId} and dv.revoked_at is null for update of u`.execute(trx);
         const row = u.rows[0];
-        if (!row || row.recovery_state !== 'unconfirmed' || row.enrolled_via !== 'create') throw new AppError('forbidden', { params: { reason: 'recovery_confirmed' } });
+        // Unconfirmed words, from the device that made them; or the first words of an account that has none (G5), from
+        // any device of the person that is unlocked.
+        const first = row?.recovery_state === 'none' && (a.scopes ?? []).includes('elevated');
+        const again = row?.recovery_state === 'unconfirmed' && (row.enrolled_via === 'create' || row.reissued_here);
+        if (!row || !(first || again)) throw new AppError('forbidden', { params: { reason: 'recovery_confirmed' } });
         const payload = { srv: d.serverId, org: input.org, uid: a.userId, did: a.deviceId, new_ipk: input.newKey, nonce: input.nonce };
         if (!verifyIdentity(fromB64url(input.newKey), 'identity.reissue', payload, fromB64url(input.newProof))) throw bad();
         const cur = await sql<{ id: string }>`
@@ -483,7 +530,110 @@ export function createIdentityService(d: IdentityDeps) {
           throw e;
         }
         await audit(trx, d.clock, { actorUser: a.userId, actorDevice: a.deviceId, subjectUser: a.userId, action: 'identity.reissued', targetType: 'identity_key', targetId: cur.rows[0]?.id });
+        if (first) {
+          await sql`update users set recovery_state = 'unconfirmed' where id = ${a.userId}`.execute(trx);
+          // No wait for first words (nobody could stop them with words that do not exist), but every device hears it.
+          await emit(trx, { kind: 'identity.change', recipients: [a.userId], payload: { state: 'done', kind: 'first' } });
+        }
       });
+    },
+
+    /**
+     * "Später einrichten" (G5): an account set up for someone with a supported person's invitation starts without
+     * words. The words made at the start may have been seen, so their key is retired: until the first words, nobody
+     * can recover the account, and every device of the person reminds them.
+     */
+    async recoveryLater(a: { userId: string; deviceId: string }) {
+      await d.db.transaction().execute(async (trx) => {
+        const r = await sql<{ recovery_state: string; enrolled_via: string; invite_kind: string | null }>`
+          select u.recovery_state, dv.enrolled_via, (select i.kind from invites i where i.used_by = u.id and i.kind <> 'reset' order by i.used_at limit 1) as invite_kind
+          from users u join devices dv on dv.user_id = u.id
+          where u.id = ${a.userId} and dv.id = ${a.deviceId} and dv.revoked_at is null for update of u`.execute(trx);
+        const row = r.rows[0];
+        if (!row || row.recovery_state !== 'unconfirmed' || row.enrolled_via !== 'create' || row.invite_kind !== 'supported_person') throw new AppError('forbidden', { params: { reason: 'recovery_later' } });
+        await sql`update identity_keys set status = 'retired', retired_at = ${now()} where user_id = ${a.userId} and status = 'active'`.execute(trx);
+        await sql`update users set recovery_state = 'none' where id = ${a.userId}`.execute(trx);
+        await audit(trx, d.clock, { actorUser: a.userId, actorDevice: a.deviceId, subjectUser: a.userId, action: 'identity.later', targetType: 'user', targetId: a.userId });
+      });
+    },
+
+    // —— The operator's reset (G5): for someone who lost words and devices ——
+
+    /**
+     * An administrator, with a reason, makes a reset code for someone else: a link and a spoken code, one at a time,
+     * for a day. Every device of the person hears it at once.
+     */
+    async offerReset(admin: { userId: string; deviceId: string }, userId: string, reason: string) {
+      if (admin.userId === userId) throw new AppError('forbidden', { params: { reason: 'reset_self' } });
+      return d.db.transaction().execute(async (trx) => {
+        const u = await sql`select 1 from users where id = ${userId} and deleted_at is null`.execute(trx);
+        if (!u.rows.length) throw new AppError('not_found');
+        await sql`update invites set revoked_at = ${now()} where kind = 'reset' and for_user = ${userId} and used_at is null and revoked_at is null`.execute(trx);
+        const inv = await this.createInvite(trx, { kind: 'reset', createdBy: admin.userId, ttlS: RESET_TTL_S, spoken: true, forUser: userId, preset: { reason } });
+        await audit(trx, d.clock, { actorUser: admin.userId, actorDevice: admin.deviceId, subjectUser: userId, action: 'identity.reset.offered', targetType: 'invite', targetId: inv.id });
+        await emit(trx, { kind: 'identity.reset', recipients: [userId], payload: { state: 'offered', by: admin.userId } });
+        return inv;
+      });
+    },
+
+    /** Before new words are made: whose account a reset code is for. Limited as invitations are; nothing is used up. */
+    async checkReset(rawCode: string, ip: string) {
+      const limit = { bucket: `invite:ip:${ip}`, windowS: 3600, max: 10 };
+      await checkLimit(d.db, d.clock, limit);
+      const spoken = normaliseSpokenCode(rawCode);
+      const r = spoken
+        ? await sql<{ name: string }>`
+            select u.display_name as name from invites i join users u on u.id = i.for_user
+            where i.kind = 'reset' and i.spoken_mac = ${mac(d.pepper, 'invite-spoken', spoken)} and i.used_at is null and i.revoked_at is null
+              and i.spoken_expires_at > ${now()} and i.expires_at > ${now()}`.execute(d.db)
+        : await sql<{ name: string }>`
+            select u.display_name as name from invites i join users u on u.id = i.for_user
+            where i.kind = 'reset' and i.code_mac = ${mac(d.pepper, 'invite', normaliseLinkCode(rawCode))} and i.used_at is null and i.revoked_at is null
+              and i.expires_at > ${now()}`.execute(d.db);
+      if (!r.rows[0]) {
+        await countFailure(d.db, d.clock, limit);
+        throw new AppError('unauthorised', { params: { reason: 'invite' } });
+      }
+      return { name: r.rows[0].name };
+    },
+
+    /**
+     * A new device takes the reset code with a key of its own and new words (both sign): the new identity waits a day
+     * (G5), and the device becomes the person's only then. A device that belongs to anyone already is refused: the
+     * reset makes no one else's device the person's, the administrator's least of all.
+     */
+    async claimReset(input: { code: string; org: string; challengeId: string; nonce: string; device: DeviceInput; identityKey: string; identityProof: string; ip: string }) {
+      checkOrigin(input.org);
+      return d.db.transaction().execute(async (trx) => {
+        await consumeChallenge(trx, input.challengeId, input.nonce, 'device.proof');
+        const key = checkDevice(input.device, input.org, input.nonce);
+        const ipk = fromB64url(input.identityKey);
+        const payload = { srv: d.serverId, org: input.org, inv: inviteDigest(input.code), ipk: input.identityKey, djkt: key.jkt };
+        if (ipk.length !== 32 || !verifyIdentity(ipk, 'identity.reset', payload, fromB64url(input.identityProof))) throw bad();
+        const known = await sql`select 1 from devices where jkt = ${key.jkt}`.execute(trx);
+        if (known.rows.length) throw new AppError('conflict', { params: { reason: 'device_key_known' } });
+        const invite = await redeemInvite(trx, input.code, null, input.ip, ['reset']);
+        if (!invite.for_user) throw bad();
+        const dev = input.device;
+        const r = await changes.begin(trx, {
+          userId: invite.for_user,
+          kind: 'reset',
+          newKey: ipk,
+          proof: { payload, identityProof: input.identityProof, deviceProof: dev.proof },
+          newDevice: { jwk: key.jwk, jkt: key.jkt, name: dev.name, platform: dev.platform, formFactor: dev.formFactor, keyStore: dev.keyStore, appVersion: dev.appVersion },
+          byUser: invite.created_by,
+          reason: typeof invite.preset.reason === 'string' ? invite.preset.reason : null,
+        });
+        const who = await sql<{ name: string }>`select display_name as name from users where id = ${invite.for_user}`.execute(trx);
+        return { ...r, name: who.rows[0]?.name ?? '' };
+      });
+    },
+
+    /** How a reset device's change stands; once done, where it starts reading the person's events. */
+    async pollReset(id: string, jkt: string) {
+      const r = await changes.poll(id, jkt);
+      if (r.state !== 'done') return r;
+      return { ...r, seq: await d.db.transaction().execute((trx) => eventHead(trx, r.userId)) };
     },
 
     // —— Device linking (docs/plan-m4.md, G3) ——
@@ -646,6 +796,8 @@ interface InviteRow {
   created_by: string | null;
   preset: Record<string, unknown>;
   proposed_scopes: string[];
+  /** A reset code's person (G5). */
+  for_user: string | null;
 }
 
 export type IdentityService = ReturnType<typeof createIdentityService>;

@@ -240,6 +240,164 @@ export async function reissueWords(session: Session, server: ServerRef, newEntro
   }
 }
 
+// —— New words without the old ones, and the day they wait (docs/plan-m4.md, G5) ——
+
+export interface WaitingChange {
+  id: string;
+  kind: 'device' | 'trusted' | 'reset';
+  effectiveAt: string;
+  createdAt: string;
+  /** The person's device that asked (kind `device`), by its name. */
+  byDevice: string | null;
+  /** The administrator of a reset. */
+  byName: string | null;
+  reason: string | null;
+  /** Asked for on this very device. */
+  own: boolean;
+}
+
+/** New words from this device, without the old ones: the new key signs on a challenge for this device; they wait a day. */
+export async function requestNewWords(session: Session, server: ServerRef, newEntropy: Uint8Array): Promise<{ id: string; effectiveAt: string }> {
+  const next = deriveIdentity(newEntropy);
+  try {
+    const ch = await session.call<{ challengeId: string; nonce: string }>('/api/v1/identity/challenge', { body: { purpose: 'identity.change' } });
+    const newKey = b64url(next.publicKey);
+    const payload = { srv: server.serverId, org: org(server), uid: session.ref.userId, did: session.ref.deviceId, new_ipk: newKey, nonce: ch.nonce };
+    return await session.call('/api/v1/identity/changes', { body: { org: org(server), challengeId: ch.challengeId, nonce: ch.nonce, newKey, newProof: b64url(signIdentity(next.seed, 'identity.change', payload)) } });
+  } finally {
+    wipe(next.seed);
+  }
+}
+
+/** What waits for this person, if anything (said at every start until it took effect or was stopped). */
+export const currentChange = (session: Session) => session.call<{ change: WaitingChange | null }>('/api/v1/identity/changes/current').then((r) => r.change);
+
+/** Stopped from this device (it must be unlocked when the app lock is on). */
+export const stopChange = (session: Session, id: string) => session.call(`/api/v1/identity/changes/${id}/stop`, { method: 'POST' });
+
+/** "Später einrichten": an account set up for someone starts without words. */
+export const recoveryLater = (session: Session) => session.call('/api/v1/identity/later', { method: 'POST' });
+
+// —— The operator's reset, on a new device (G5) ——
+
+/** A claimed reset this device waits for, kept across restarts of the app. */
+export interface PendingReset {
+  serverUrl: string;
+  id: string;
+  jkt: string;
+  name: string;
+  effectiveAt: string;
+}
+
+const PENDING_RESET = 'ucap.pendingReset';
+
+export function loadPendingReset(serverUrl: string): PendingReset | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(PENDING_RESET) ?? 'null') as PendingReset | null;
+    return p && p.serverUrl === serverUrl ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingReset() {
+  try {
+    localStorage.removeItem(PENDING_RESET);
+  } catch {
+    // Nothing kept.
+  }
+}
+
+/** Whose account a reset code is for, before any words are made. */
+export const checkReset = (server: ServerRef, code: string) => api<{ name: string }>(server.url, '/api/v1/identity/reset/check', { body: { code: code.trim() } });
+
+/** This device takes the code with a key of its own and the new words (both sign); it waits a day to be the person's. */
+export async function claimReset(o: { server: ServerRef; code: string; entropy: Uint8Array; device: DeviceInfo }): Promise<PendingReset> {
+  const id = deriveIdentity(o.entropy);
+  try {
+    const code = o.code.trim();
+    const ch = await api<{ challengeId: string; nonce: string }>(o.server.url, '/api/v1/identity/challenge', { body: { purpose: 'device.proof' } });
+    const dev = await deviceProof(o.server, ch.nonce);
+    const ipk = b64url(id.publicKey);
+    const identityProof = b64url(signIdentity(id.seed, 'identity.reset', { srv: o.server.serverId, org: org(o.server), inv: inviteDigest(code), ipk, djkt: dev.djkt }));
+    const r = await api<{ id: string; effectiveAt: string; name: string }>(o.server.url, '/api/v1/identity/reset/claim', {
+      body: { code, org: org(o.server), challengeId: ch.challengeId, nonce: ch.nonce, identityKey: ipk, identityProof, device: { jwk: dev.jwk, ...o.device, keyStore: deviceKey.keyStore, proof: dev.proof } },
+    });
+    const pending = { serverUrl: o.server.url, id: r.id, jkt: dev.djkt, name: r.name, effectiveAt: r.effectiveAt };
+    try {
+      localStorage.setItem(PENDING_RESET, JSON.stringify(pending));
+    } catch {
+      // Kept in memory only: a restart would ask for the code again.
+    }
+    return pending;
+  } finally {
+    wipe(id.seed);
+  }
+}
+
+/** How the reset stands. Once the day is over, this device is the person's and signs in with its own key. */
+export async function pollReset(o: { server: ServerRef; pending: PendingReset }): Promise<{ state: 'waiting' | 'stopped' } | { state: 'done'; session: Session }> {
+  const r = await api<{ state: 'waiting' | 'stopped' } | { state: 'done'; userId: string; deviceId: string; seq: number }>(o.server.url, `/api/v1/identity/reset/${o.pending.id}/poll`, { body: { jkt: o.pending.jkt } });
+  if (r.state !== 'done') return { state: r.state };
+  clearPendingReset();
+  const ref = { serverUrl: o.server.url, serverId: o.server.serverId, userId: r.userId, deviceId: r.deviceId };
+  saveDeviceRef(ref);
+  startEventsAt(r.deviceId, r.seq);
+  return { state: 'done', session: new Session(ref) };
+}
+
+// —— Trusted persons (docs/plan-m4.md, G7) ——
+
+/** A recovery through trusted persons this new device started: its code and four words, until they said yes. */
+export interface TrustedStart {
+  id: string;
+  code: string;
+  words: number[];
+  jkt: string;
+  expiresAt: string;
+}
+
+/** This new device asks the person's trusted persons: its own key and the new words (both sign); nobody's yet. */
+export async function startTrusted(o: { server: ServerRef; entropy: Uint8Array; device: DeviceInfo }): Promise<TrustedStart> {
+  const id = deriveIdentity(o.entropy);
+  try {
+    const ch = await api<{ challengeId: string; nonce: string }>(o.server.url, '/api/v1/identity/challenge', { body: { purpose: 'device.proof' } });
+    const dev = await deviceProof(o.server, ch.nonce);
+    const ipk = b64url(id.publicKey);
+    const identityProof = b64url(signIdentity(id.seed, 'identity.trusted', { srv: o.server.serverId, org: org(o.server), nonce: ch.nonce, ipk, djkt: dev.djkt }));
+    const r = await api<{ id: string; code: string; words: number[]; expiresAt: string }>(o.server.url, '/api/v1/trusted-recoveries', {
+      body: { org: org(o.server), challengeId: ch.challengeId, nonce: ch.nonce, identityKey: ipk, identityProof, device: { jwk: dev.jwk, ...o.device, keyStore: deviceKey.keyStore, proof: dev.proof } },
+    });
+    return { ...r, jkt: dev.djkt };
+  } finally {
+    wipe(id.seed);
+  }
+}
+
+/** How the trusted persons' answers stand; once enough said yes, the day's wait is a pending change like a reset's. */
+export async function pollTrusted(o: { server: ServerRef; start: TrustedStart }): Promise<{ state: 'open'; approvals: number } | { state: 'declined' | 'expired' } | { state: 'waiting'; pending: PendingReset }> {
+  const r = await api<{ state: 'open'; approvals: number } | { state: 'declined' | 'expired' } | { state: 'waiting'; changeId: string; name: string; effectiveAt: string }>(
+    o.server.url,
+    `/api/v1/trusted-recoveries/${o.start.id}/poll`,
+    { body: { jkt: o.start.jkt } },
+  );
+  if (r.state !== 'waiting') return r;
+  const pending = { serverUrl: o.server.url, id: r.changeId, jkt: o.start.jkt, name: r.name, effectiveAt: r.effectiveAt };
+  try {
+    localStorage.setItem('ucap.pendingReset', JSON.stringify(pending));
+  } catch {
+    // Kept in memory only.
+  }
+  return { state: 'waiting', pending };
+}
+
+/** A trusted person's yes for the person whose new device shows these words: signed by this device. */
+export async function approveTrusted(session: Session, server: ServerRef, o: { id: string; personId: string; djkt: string }): Promise<{ approvals: number; needed: number; effectiveAt: string | null }> {
+  const payload = { srv: server.serverId, org: org(server), rid: o.id, uid: o.personId, djkt: o.djkt };
+  const proof = await deviceKey.sign('trusted.approve', payload);
+  return session.call(`/api/v1/trusted-recoveries/${o.id}/approve`, { body: { personId: o.personId, org: org(server), proof } });
+}
+
 /** A signed-in device. The token stays in memory; a new one is signed for whenever it is about to expire. */
 export class Session {
   readonly ref: DeviceRef;

@@ -22,6 +22,13 @@ export const PURPOSES = [
   'device.link',
   // The app lock (G4): Android's key, bound to the phone's own lock, unlocks a session.
   'session.unlock',
+  // New words without the old ones (G5): the new identity key signs, from one of the person's devices or a new device
+  // with an operator's reset code.
+  'identity.change',
+  'identity.reset',
+  // Trusted persons (G7): the new device's words sign its recovery; a trusted person's device signs their yes.
+  'identity.trusted',
+  'trusted.approve',
 ] as const;
 export type Purpose = (typeof PURPOSES)[number];
 

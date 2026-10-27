@@ -36,6 +36,8 @@ export interface CeremonyProps {
   onVerified: () => Promise<string | null>;
   onDone: () => void;
   onCancel?: () => void;
+  /** "Später einrichten" (G5): offered before any word is shown, where a helper set the account up for someone. */
+  onLater?: () => void;
 }
 
 export function WordCeremony(p: CeremonyProps) {
@@ -151,8 +153,12 @@ export function WordCeremony(p: CeremonyProps) {
         <ChoiceGrid
           id="intro"
           config={p.config}
-          choices={[{ id: 'start', label: tr('onboard.area.start'), role: 'assistant' }, ...(p.onCancel ? [{ id: 'cancel', label: tr('onboard.area.cancel'), role: 'nav' as const }] : [])]}
-          onChoose={(id) => (id === 'start' ? setStep({ kind: 'word', i: 0, backTo: null }) : p.onCancel?.())}
+          choices={[
+            { id: 'start', label: tr('onboard.area.start'), role: 'assistant' },
+            ...(p.onLater ? [{ id: 'later', label: tr('onboard.words.later'), role: 'nav' as const }] : []),
+            ...(p.onCancel ? [{ id: 'cancel', label: tr('onboard.area.cancel'), role: 'nav' as const }] : []),
+          ]}
+          onChoose={(id) => (id === 'start' ? setStep({ kind: 'word', i: 0, backTo: null }) : id === 'later' ? p.onLater?.() : p.onCancel?.())}
         />,
       );
 

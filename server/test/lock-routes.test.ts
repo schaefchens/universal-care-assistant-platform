@@ -13,6 +13,8 @@ import { fakeClock, SECRETS, testConfig, testDb } from './helpers.ts';
 const OPEN_WHILE_LOCKED = [
   // Who the device is, and signing out.
   'GET /api/v1/me',
+  // New words waiting to take effect (G5): said on every device at start, a locked one too; stopping needs the unlock.
+  'GET /api/v1/identity/changes/current',
   'DELETE /api/v1/sessions/current',
   // The lock itself.
   'GET /api/v1/lock',

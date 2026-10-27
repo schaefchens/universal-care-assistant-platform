@@ -127,6 +127,15 @@ export async function signUp(page: Page, name: string, code: string, voice: (pag
   await expect(heading(page)).toHaveText('Einladung');
   await page.getByLabel('Dein Name').fill(name);
   await page.getByRole('button', { name: 'Weiter', exact: true }).click();
+  const words = await ceremony(page);
+  await voice(page);
+  await nameStep(page, assistantName);
+  await expect(heading(page)).toHaveText('Startseite');
+  return words;
+}
+
+/** New words shown one by one and three of them checked, from the screen before the first word; returns them. */
+export async function ceremony(page: Page): Promise<string[]> {
   await page.getByRole('button', { name: 'Wörter anzeigen' }).click();
   const main = page.locator('main');
   const words: string[] = [];
@@ -150,9 +159,6 @@ export async function signUp(page: Page, name: string, code: string, voice: (pag
     asked = n;
     await page.getByRole('button', { name: words[n - 1], exact: true }).click();
   }
-  await voice(page);
-  await nameStep(page, assistantName);
-  await expect(heading(page)).toHaveText('Startseite');
   return words;
 }
 

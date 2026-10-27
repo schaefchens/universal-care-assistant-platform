@@ -37,6 +37,8 @@ export interface WordEntryProps {
   /** Receives the phrase; returns an error to show, or null when done. The entropy is wiped afterwards. */
   onWords: (entropy: Uint8Array, lang: WordLang) => Promise<string | null>;
   onCancel?: () => void;
+  /** Another way, offered with the language (G5): the words were lost. */
+  other?: { label: string; onChoose: () => void };
 }
 
 type Mode = { kind: 'language' } | { kind: 'entry'; editing: number | null } | { kind: 'review'; error: string } | { kind: 'busy' };
@@ -161,10 +163,12 @@ export function WordEntry(p: WordEntryProps) {
         choices={[
           { id: 'de', label: 'Deutsch', role: lang === 'de' ? 'assistant' : 'neutral' },
           { id: 'en', label: 'English', role: lang === 'en' ? 'assistant' : 'neutral' },
+          ...(p.other ? [{ id: 'other', label: p.other.label, role: 'notes' as const }] : []),
           ...(p.onCancel ? [{ id: 'cancel', label: tr('onboard.area.cancel'), role: 'nav' as const }] : []),
         ]}
         onChoose={(id) => {
           if (id === 'cancel') return p.onCancel?.();
+          if (id === 'other') return p.other?.onChoose();
           setLang(id as WordLang);
           setMode({ kind: 'entry', editing: null });
         }}

@@ -71,7 +71,7 @@ describe('hardening', () => {
     const status = (await get(anna, '/api/v1/admin/status')).json() as Record<string, unknown>;
     expect(status).toMatchObject({ db: true, accounts: 1, devices: 1, jobs: { dead: 0 }, migrations: expect.any(Number) });
     const accounts = (await get(anna, '/api/v1/admin/accounts')).json() as { accounts: Record<string, unknown>[] };
-    expect(accounts.accounts).toEqual([{ id: anna.userId, name: 'Anna', admin: true, createdAt: expect.any(String), recoveryState: expect.any(String), devices: 1, lastSeenAt: expect.any(String) }]);
+    expect(accounts.accounts).toEqual([{ id: anna.userId, name: 'Anna', admin: true, createdAt: expect.any(String), recoveryState: expect.any(String), devices: 1, lastSeenAt: expect.any(String), waiting: null, representative: null }]);
   });
 
   it('survives the database ending its connections (a restart): the pool opens new ones', async () => {

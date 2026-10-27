@@ -16,7 +16,7 @@ import { type AssistiveMode, modeFrom, watchAssistive } from './a11y/assistive.t
 import { createEarcons } from './audio/earcons.ts';
 import { ClipPlayer, speakAs, voiceLabel, voicesApi } from './audio/voices.ts';
 import { pickBackend, SpeechOut } from './audio/speech.ts';
-import { loadDeviceRef, type Me, restoreDevice, Session } from './identity/account.ts';
+import { currentChange, loadDeviceRef, type Me, restoreDevice, Session, stopChange, type WaitingChange } from './identity/account.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { CareClient, type CareState } from './care/client.ts';
 import { helperCare } from './care/helper.ts';
@@ -27,7 +27,7 @@ import { deviceKey, shareRefWithWorker } from './identity/device-key.ts';
 import { people } from './people/api.ts';
 import type { A11yState } from './native/plugins.ts';
 import { Alerts, has, Info, Keys, Previews, Reminders, Sms } from './native/plugins.ts';
-import { deviceRevoked } from './net/api.ts';
+import { ApiError, deviceRevoked } from './net/api.ts';
 import { emitAppEvent } from './net/events.ts';
 import { Realtime } from './net/realtime.ts';
 import { defaultServerUrl, fetchServerInfo } from './net/server.ts';
@@ -58,6 +58,8 @@ import { PersonPage } from './screens/PersonPage.tsx';
 import { DeletedSetting } from './screens/DeletedSetting.tsx';
 import { HelpKeySetting } from './screens/HelpKey.tsx';
 import { Helpers } from './screens/Helpers.tsx';
+import { IdentityChangeScreen } from './screens/IdentityChange.tsx';
+import { RepresentedAccess } from './screens/RepresentedAccess.tsx';
 import { NewWords } from './screens/NewWords.tsx';
 import { Onboarding } from './screens/Onboarding.tsx';
 import { AiAdmin } from './screens/AiAdmin.tsx';
@@ -83,6 +85,7 @@ import { wordLanguage } from './screens/words/common.ts';
 import { loadDeviceConfig, loadPrefs, loadServer, type Prefs, saveDeviceConfig, savePrefs, saveServer, type ServerRef } from './state/store.ts';
 import { applyTheme, platformPrefs } from './theme/apply.ts';
 import { resolveTheme } from './theme/themes.ts';
+import { scopeLabel } from './people/summary.ts';
 import { makeUi, UiProvider } from './ui.tsx';
 import { VoiceController, type VoiceState } from './voice/controller.ts';
 import { LiveController, type LiveState } from './voice/live.ts';
@@ -155,6 +158,10 @@ type Page =
   | { configChanged: Change }
   /** A helper setting up a person's device (S11). */
   | { configOf: { id: string; displayName: string } }
+  /** Managing access for someone this account represents (G6). */
+  | { representing: { id: string; displayName: string } }
+  /** New words waiting to take effect (G5), and whether "Abbrechen" was asked for (it may wait for the code). */
+  | { identityChange: WaitingChange; stopping?: boolean }
   /** A helper's page for one person they help (docs/plan-m4.md, G2). */
   | { personOf: { id: string; displayName: string; scopes: Scope[] } };
 /** How long "Rückgängig" puts back a change of speech or the screen made by voice (L5). */
@@ -168,6 +175,26 @@ const busy = (p: Page) => p === 'care' || (typeof p === 'object' && ('alert' in 
 function takeInviteFromUrl(): string | null {
   if (typeof location === 'undefined' || !location.hash.includes('invite=')) return null;
   const code = new URLSearchParams(location.hash.slice(1)).get('invite');
+  history.replaceState(null, '', location.pathname + location.search);
+  return code && /^[0-9A-Za-z -]{10,64}$/.test(code) ? code : null;
+}
+
+/** True once per day for this key on this device (said at start, not at every start). */
+function onceToday(key: string): boolean {
+  const today = new Date().toLocaleDateString('sv-SE');
+  try {
+    if (localStorage.getItem(key) === today) return false;
+    localStorage.setItem(key, today);
+  } catch {
+    // Without storage: at every start.
+  }
+  return true;
+}
+
+/** An operator's reset code opened as a link (`…/#reset=CODE`, G5): taken the same way. */
+function takeResetFromUrl(): string | null {
+  if (typeof location === 'undefined' || !location.hash.includes('reset=')) return null;
+  const code = new URLSearchParams(location.hash.slice(1)).get('reset');
   history.replaceState(null, '', location.pathname + location.search);
   return code && /^[0-9A-Za-z -]{10,64}$/.test(code) ? code : null;
 }
@@ -191,6 +218,7 @@ export function App() {
   meRef.current = me;
   const [notice, setNotice] = useState<string | null>(null);
   const [linkInvite, setLinkInvite] = useState(takeInviteFromUrl);
+  const [linkReset] = useState(takeResetFromUrl);
   const [a11y, setA11y] = useState<A11yState | null>(null);
   const [fontScale, setFontScale] = useState(1);
   const [stack, setStack] = useState<string[]>(() => [config.home]);
@@ -274,6 +302,11 @@ export function App() {
         if (cancelled) return;
         setMe(m);
         if (m.recoveryState === 'unconfirmed') ui.say(ui.tr('settings.recovery.reminder'), 'notice');
+        // No words at all ("Später einrichten", G5): said at start, once a day.
+        if (m.recoveryState === 'none' && onceToday('ucap.noWordsSaid')) ui.say(ui.tr('settings.recovery.noneReminder'), 'notice');
+        // New words waiting to take effect (G5): said at every start until then.
+        const c = await currentChange(session).catch(() => null);
+        if (c && !cancelled) setPage((pg) => (busy(pg) ? pg : { identityChange: c }));
       } catch (e) {
         // Offline: the device keeps working with what it has. Revoked elsewhere: back to onboarding.
         if (!cancelled && deviceRevoked(e)) {
@@ -301,6 +334,21 @@ export function App() {
           // A device linked by a code (docs/plan-m4.md, G3): every device of the person hears it, and through which.
           ui.earcons.play('screen');
           ui.say(ui.tr('devices.addedLink', { name: String(e.data.name ?? ''), by: String(e.data.by ?? '') }), 'notice');
+        } else if (e.type === 'device.added' && e.data.deviceId !== session.ref.deviceId && (e.data.via === 'reset' || e.data.via === 'trusted')) {
+          // A device that waited its day (G5): every device of the person hears it.
+          ui.earcons.play('screen');
+          ui.say(ui.tr('devices.addedWaited', { name: String(e.data.name ?? '') }), 'notice');
+        } else if (e.type === 'trustee.changed') {
+          setPeopleRev((n) => n + 1);
+          if (e.data.by !== session.ref.userId) void trusteeNews(String(e.data.id), String(e.data.state));
+        } else if (e.type === 'representation.changed') {
+          setPeopleRev((n) => n + 1);
+          if (e.data.by !== session.ref.userId) void representationNews(String(e.data.state));
+        } else if (e.type === 'identity.change') {
+          void identityNews(e.data);
+        } else if (e.type === 'identity.reset') {
+          ui.earcons.play('screen');
+          ui.say(ui.tr('change.resetOffered'), 'notice');
         } else if (e.type === 'device.revoked' && e.data.deviceId === session.ref.deviceId) {
           void session.forget().then(() => signedOut(ui.tr('devices.signedOut')));
         } else if (e.type === 'speech.changed' || e.type === 'preferences.changed') {
@@ -315,7 +363,7 @@ export function App() {
         } else if (e.type === 'relationship.changed') {
           setPeopleRev((n) => n + 1);
           // Whoever acted already heard what they did.
-          if (e.data.by !== session.ref.userId) void relationshipNews(String(e.data.relationshipId), String(e.data.state));
+          if (e.data.by !== session.ref.userId) void relationshipNews(String(e.data.relationshipId), String(e.data.state), e.data.representation ? String(e.data.by) : null);
           void people(session)
             .relationships()
             .then((r) => setIsHelper(r.asHelper.some((x) => x.state === 'active' && x.scopes.includes('care.respond'))), () => {});
@@ -927,6 +975,8 @@ export function App() {
       case 'stop':
         u.speech.stopAll();
         player.stop();
+        // On the notice of new words (G5), "Abbrechen" stops them.
+        setPage((pg) => (typeof pg === 'object' && 'identityChange' in pg ? { ...pg, stopping: true } : pg));
         return;
       case 'repeat':
         if (!u.speech.repeat()) u.say(u.tr('voice.nothingToRepeat'), 'system');
@@ -1142,6 +1192,68 @@ export function App() {
     u.say(`${lines.join(' ')} ${u.tr('speech.changed.undo')}`, 'notice');
   }
 
+  /** Trusted persons (G7): asked (to the one asked), agreed (to the person), ended (to both). */
+  async function trusteeNews(id: string, state: string) {
+    if (!session) return;
+    const u = uiRef.current;
+    const t = await session.call<{ trustees: { id: string; trustee: { displayName: string } }[]; trustedBy: { id: string; person: { displayName: string } }[] }>('/api/v1/trustees').catch(() => null);
+    if (!t) return;
+    const asked = t.trustedBy.find((x) => x.id === id);
+    const mine = t.trustees.find((x) => x.id === id);
+    u.earcons.play('screen');
+    if (state === 'asked' && asked) u.say(u.tr('trusted.news.request', { name: asked.person.displayName }), 'notice');
+    else if (state === 'accepted' && mine) u.say(u.tr('trusted.news.accepted', { name: mine.trustee.displayName }), 'notice');
+    else if (state === 'ended') u.say(u.tr('trusted.news.ended'), 'notice');
+  }
+
+  /** A representative named or ended (G6): the person and the representative each hear it in their terms. */
+  async function representationNews(state: string) {
+    if (!session) return;
+    const u = uiRef.current;
+    const r = await session.call<{ mine: { representative: { displayName: string }; madeHow: string; madeBy: string; reason: string | null } | null; represented: { person: { displayName: string } }[] }>('/api/v1/representations').catch(() => null);
+    if (!r) return;
+    u.earcons.play('screen');
+    if (state === 'active' && r.mine) {
+      const m = r.mine;
+      u.say(m.madeHow === 'admin' ? u.tr('rep.mine.admin', { name: m.representative.displayName, by: m.madeBy, reason: m.reason ?? '' }) : u.tr('rep.news.active', { name: m.representative.displayName }), 'notice');
+    } else if (state === 'active' && r.represented.length) u.say(u.tr('rep.news.youActive', { name: r.represented.at(-1)!.person.displayName }), 'notice');
+    else if (state === 'ended') u.say(u.tr('rep.news.endedAny'), 'notice');
+  }
+
+  /** "Abbrechen" on the notice of new words (G5): a locked device asks for the code first, then stops them. */
+  async function stopIdentityChange(c: WaitingChange) {
+    if (!session) return;
+    const u = uiRef.current;
+    try {
+      await stopChange(session, c.id);
+      // Every device of the person, this one too, hears that it stopped.
+      setPage('areas');
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'locked') {
+        u.say(u.tr('change.unlockFirst'), 'system');
+        setPage({ identityChange: c, stopping: true });
+      } else if (e instanceof ApiError && e.code === 'not_found') setPage('areas');
+      else u.say(u.tr(`error.${e instanceof ApiError ? e.code : 'internal'}`), 'system');
+    }
+  }
+
+  /** New words (G5): waiting, said with "Abbrechen"; stopped; done; first words. */
+  async function identityNews(data: Record<string, unknown>) {
+    if (!session) return;
+    const u = uiRef.current;
+    if (data.state === 'waiting') {
+      // The device that asked has said it already; it hears it again at its next start, as every device does.
+      const c = await currentChange(session).catch(() => null);
+      if (c && !c.own) setPage((pg) => (busy(pg) ? pg : { identityChange: c }));
+      return;
+    }
+    setPage((pg) => (typeof pg === 'object' && 'identityChange' in pg ? 'areas' : pg));
+    u.earcons.play('screen');
+    if (data.state === 'stopped') u.say(u.tr(data.how === 'words' ? 'change.stopped.words' : data.kind === 'reset' ? 'change.stopped.reset' : 'change.stopped'), 'notice');
+    else if (data.state === 'done') u.say(u.tr(data.kind === 'first' ? 'change.first' : 'change.done'), 'notice');
+    refreshMe();
+  }
+
   async function carePlanNews(data: Record<string, unknown>) {
     const u = uiRef.current;
     const name = await helperName(data.by);
@@ -1217,12 +1329,22 @@ export function App() {
   }
 
   /** What a change in a relationship means for this person, said once (the event carries ids only). */
-  async function relationshipNews(id: string, state: string) {
+  async function relationshipNews(id: string, state: string, representative: string | null = null) {
     if (!session) return;
     const r = await people(session).relationship(id).catch(() => null);
     if (!r) return;
     const iAmPerson = r.person.id === session.ref.userId;
     const other = iAmPerson ? r.helper.displayName : r.person.displayName;
+    // Done by the person's representative (G6): said as such, with what the helper may do now.
+    if (representative && iAmPerson) {
+      const reps = await session.call<{ mine: { representative: { id: string; displayName: string } } | null }>('/api/v1/representations').catch(() => null);
+      const rep = reps?.mine?.representative.id === representative ? reps.mine.representative.displayName : '';
+      const scopes = r.scopes.map((s) => scopeLabel(s, ui.tr)).join(', ');
+      ui.earcons.play('screen');
+      if (state === 'active') ui.say(ui.tr(r.approvedAt && Date.now() - Date.parse(r.approvedAt) < 120_000 ? 'rep.news.approved' : 'rep.news.changed', { rep, helper: other, scopes }), 'notice');
+      else if (state === 'ended') ui.say(ui.tr('rep.news.ended.helper', { rep, helper: other }), 'notice');
+      return;
+    }
     if (state === 'pending' && iAmPerson) {
       ui.earcons.play('screen');
       ui.say(ui.tr('people.event.pending', { name: other }), 'notice');
@@ -1275,6 +1397,7 @@ export function App() {
         prefs={prefs}
         config={config}
         inviteFromLink={linkInvite}
+        resetFromLink={linkReset}
         notice={notice}
         onSignedIn={(s) => {
           setNotice(null);
@@ -1325,6 +1448,7 @@ export function App() {
         onAgenda={(person, which) => setPage({ agendaOf: { ...person, which } })}
         onConfigure={(person) => setPage({ configOf: person })}
         onPerson={(person) => setPage({ personOf: person })}
+        onRepresent={(person) => setPage({ representing: person })}
         onClose={() => setPage('settings')}
       />
     );
@@ -1552,6 +1676,24 @@ export function App() {
         onAgenda={(which) => setPage({ agendaOf: { ...person, which } })}
       />
     );
+  } else if (typeof page === 'object' && 'representing' in page) {
+    content = <RepresentedAccess session={session} person={page.representing} serverUrl={server.url} refresh={peopleRev} onClose={() => setPage('helpers')} />;
+  } else if (typeof page === 'object' && 'identityChange' in page) {
+    const c = page.identityChange;
+    content = (
+      <IdentityChangeScreen
+        config={config}
+        change={c}
+        ownDevice={c.own}
+        autoStop={!!page.stopping}
+        onStop={() => void stopIdentityChange(c)}
+        onKeep={() => setPage('areas')}
+        onHelp={() => {
+          void careRef.current?.press('touch');
+          setPage('care');
+        }}
+      />
+    );
   } else if (typeof page === 'object' && 'configOf' in page)
     content = <DeviceEditor session={session} person={page.configOf} myName={me?.displayName ?? ''} refresh={configRev} onClose={() => setPage('helpers')} />;
   else if (typeof page === 'object' && 'approve' in page) content = <Approve session={session} relationshipId={page.approve} config={config} onDone={() => setPage('helpers')} />;
@@ -1570,7 +1712,7 @@ export function App() {
         session={session}
         server={server}
         me={me}
-        mode={me.canReissue ? 'reissue' : 'rotate'}
+        mode={me.recoveryState === 'none' ? 'first' : me.canReissue ? 'reissue' : 'rotate'}
         lang={wordLanguage(prefs.lang, server.development ?? false)}
         config={config}
         onDone={() => {
@@ -1642,7 +1784,9 @@ export function App() {
   // The app lock (G4): locked, only help, the person's areas, a help request, a reminder and a helper's alert are there;
   // anything else asks for the code first, and opens once it is right.
   const lockedNow = session !== null && !!lock?.locked && !lock.unlocked;
-  const openWhileLocked = typeof page === 'string' ? ['areas', 'care', 'inbox'].includes(page) : 'alert' in page || 'reminder' in page || 'help' in page || 'configChanged' in page;
+  // The notice of new words is said while locked too; stopping them waits for the code (G5).
+  const openWhileLocked =
+    typeof page === 'string' ? ['areas', 'care', 'inbox'].includes(page) : 'alert' in page || 'reminder' in page || 'help' in page || 'configChanged' in page || ('identityChange' in page && !page.stopping);
   if (session && lockedNow && !openWhileLocked)
     content = (
       <UnlockScreen

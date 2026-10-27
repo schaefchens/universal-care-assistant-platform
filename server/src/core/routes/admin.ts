@@ -46,11 +46,14 @@ export function registerAdminRoutes(app: AnyApp, o: { db: Db; clock: Clock; iden
   });
 
   app.get('/api/v1/admin/accounts', { preHandler: admin }, async () => {
-    const r = await sql<{ id: string; display_name: string; is_admin: boolean; created_at: Date; recovery_state: string; devices: number; last_seen_at: Date | null }>`
+    const r = await sql<{ id: string; display_name: string; is_admin: boolean; created_at: Date; recovery_state: string; devices: number; last_seen_at: Date | null; waiting_kind: string | null; waiting_until: Date | null; representative: string | null }>`
       select u.id, u.display_name, u.is_admin, u.created_at, u.recovery_state,
+        c.kind as waiting_kind, c.effective_at as waiting_until,
+        (select rv.display_name from representations x join users rv on rv.id = x.representative_id where x.person_id = u.id and x.ended_at is null) as representative,
         (select count(*)::int from devices d where d.user_id = u.id and d.revoked_at is null) as devices,
         (select max(d.last_seen_at) from devices d where d.user_id = u.id) as last_seen_at
-      from users u where u.deleted_at is null order by u.created_at`.execute(o.db);
+      from users u left join identity_changes c on c.user_id = u.id and c.state = 'waiting'
+      where u.deleted_at is null order by u.created_at`.execute(o.db);
     return {
       accounts: r.rows.map((x) => ({
         id: x.id,
@@ -60,6 +63,10 @@ export function registerAdminRoutes(app: AnyApp, o: { db: Db; clock: Clock; iden
         recoveryState: x.recovery_state,
         devices: x.devices,
         lastSeenAt: x.last_seen_at?.toISOString() ?? null,
+        // New words waiting to take effect (G5), by kind and when: never whose or why beyond that.
+        waiting: x.waiting_kind ? { kind: x.waiting_kind, until: x.waiting_until!.toISOString() } : null,
+        // Who represents the account (G6), by name.
+        representative: x.representative,
       })),
     };
   });

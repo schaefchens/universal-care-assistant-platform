@@ -10,11 +10,13 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { Button, Form, Input, Label, TextField } from 'react-aria-components';
 import { ChoiceGrid } from '../areas/ChoiceGrid.tsx';
 import { call } from '../care/phone.ts';
-import { confirmWords, createAccount, recoverAccount, type Session } from '../identity/account.ts';
+import { confirmWords, createAccount, loadPendingReset, recoverAccount, recoveryLater, type Session } from '../identity/account.ts';
 import { ApiError } from '../net/api.ts';
 import type { Prefs, ServerRef } from '../state/store.ts';
 import { useUi } from '../ui.tsx';
 import { LinkDevice } from './LinkDevice.tsx';
+import { ResetDevice } from './ResetDevice.tsx';
+import { TrustedRecovery } from './TrustedRecovery.tsx';
 import { deviceInfo, localVoiceFor, useWipeOnUnmount, wordLanguage } from './words/common.ts';
 import { WordCeremony } from './words/WordCeremony.tsx';
 import { WordEntry } from './words/WordEntry.tsx';
@@ -22,13 +24,15 @@ import { WordEntry } from './words/WordEntry.tsx';
 /** The emergency number before any server is known (docs/plan.md, Appendix D: {sos} from the locale, 112 in DE). */
 const SOS = '112';
 
-type Step = { kind: 'welcome' } | { kind: 'invite' } | { kind: 'words'; entropy: Uint8Array; session: Session; handoverTo?: string } | { kind: 'recover' } | { kind: 'link' };
+type Step = { kind: 'welcome' } | { kind: 'invite' } | { kind: 'words'; entropy: Uint8Array; session: Session; handoverTo?: string } | { kind: 'recover' } | { kind: 'link' } | { kind: 'reset' } | { kind: 'noWords' } | { kind: 'trusted' };
 
 export interface OnboardingProps {
   server: ServerRef;
   prefs: Prefs;
   config: DeviceConfig;
   inviteFromLink: string | null;
+  /** An operator's reset code opened as a link (`…/#reset=CODE`, G5). */
+  resetFromLink?: string | null;
   /** Why this device is here again, e.g. it was signed out; shown and spoken first. */
   notice?: string | null;
   onSignedIn: (s: Session) => void;
@@ -41,7 +45,8 @@ export interface OnboardingProps {
 export function Onboarding(p: OnboardingProps) {
   const ui = useUi();
   const { tr, say } = ui;
-  const [step, setStep] = useState<Step>(p.inviteFromLink ? { kind: 'invite' } : { kind: 'welcome' });
+  // A reset this device waits for (G5) comes back at every start until it is done or stopped.
+  const [step, setStep] = useState<Step>(p.resetFromLink || loadPendingReset(p.server.url) ? { kind: 'reset' } : p.inviteFromLink ? { kind: 'invite' } : { kind: 'welcome' });
   const [invite, setInvite] = useState(p.inviteFromLink ?? '');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +169,28 @@ export function Onboarding(p: OnboardingProps) {
   }
 
   if (step.kind === 'link') return <LinkDevice server={p.server} onSignedIn={p.onSignedIn} onCancel={() => setStep({ kind: 'welcome' })} />;
+  if (step.kind === 'trusted') return <TrustedRecovery server={p.server} lang={lang} config={p.config} onSignedIn={p.onSignedIn} onCancel={() => setStep({ kind: 'welcome' })} />;
+  if (step.kind === 'noWords')
+    return (
+      <main className="area-screen" aria-label={tr('reset.none')}>
+        <header className="onboard-header">
+          <h1>{tr('reset.none')}</h1>
+          <p>{tr('reset.none.choose')}</p>
+        </header>
+        <ChoiceGrid
+          id="no-words"
+          config={p.config}
+          choices={[
+            { id: 'trusted', label: tr('reset.none.trusted'), role: 'assistant' },
+            { id: 'operator', label: tr('reset.none.operator'), role: 'notes' },
+            { id: 'cancel', label: tr('onboard.area.cancel'), role: 'nav' },
+          ]}
+          onChoose={(id) => setStep(id === 'trusted' ? { kind: 'trusted' } : id === 'operator' ? { kind: 'reset' } : { kind: 'welcome' })}
+        />
+      </main>
+    );
+  if (step.kind === 'reset')
+    return <ResetDevice server={p.server} lang={lang} config={p.config} code={p.resetFromLink ?? undefined} onSignedIn={p.onSignedIn} onCancel={() => setStep({ kind: 'welcome' })} />;
 
   if (step.kind === 'words') {
     const { entropy, session } = step;
@@ -174,6 +201,20 @@ export function Onboarding(p: OnboardingProps) {
         server={p.server}
         config={p.config}
         handoverTo={step.handoverTo}
+        // Set up by a helper for someone (G5): the words may wait; until then nobody can recover the account.
+        onLater={
+          step.handoverTo
+            ? () =>
+                void recoveryLater(session).then(
+                  () => {
+                    wipe(entropy);
+                    say(tr('onboard.words.laterSaid'), 'system');
+                    p.onSignedIn(session);
+                  },
+                  (err) => say(tr(`error.${err instanceof ApiError ? err.code : 'internal'}`), 'system'),
+                )
+            : undefined
+        }
         onVerified={async () => {
           try {
             await confirmWords(session, p.server, entropy);
@@ -199,6 +240,7 @@ export function Onboarding(p: OnboardingProps) {
       config={p.config}
       chooseLanguage
       onCancel={() => setStep({ kind: 'welcome' })}
+      other={{ label: tr('reset.none'), onChoose: () => setStep({ kind: 'noWords' }) }}
       onWords={async (entropy) => {
         try {
           const r = await recoverAccount({ server: p.server, entropy, device: await deviceInfo() });

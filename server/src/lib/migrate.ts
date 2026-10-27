@@ -50,6 +50,9 @@ export const MIGRATIONS: { id: string; url: URL }[] = [
   { id: '0031_preview_handles.sql', url: new URL('0031_preview_handles.sql', SERVER) },
   { id: '0032_device_links.sql', url: new URL('0032_device_links.sql', SERVER) },
   { id: '0033_app_lock.sql', url: new URL('0033_app_lock.sql', SERVER) },
+  { id: '0034_identity_changes.sql', url: new URL('0034_identity_changes.sql', SERVER) },
+  { id: '0035_representations.sql', url: new URL('0035_representations.sql', SERVER) },
+  { id: '0036_trusted_persons.sql', url: new URL('0036_trusted_persons.sql', SERVER) },
 ];
 
 const checksum = (text: string) => createHash('sha256').update(text).digest('hex');

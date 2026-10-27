@@ -135,6 +135,8 @@ export async function buildCore(o: {
     'push.soak': async (job) => void (await heartbeats.soak(job.payload as unknown as Soak)),
     'reminders.materialise': async () => reminders.materialiseAll(),
     'reminder.prompt': async (job) => reminders.tick(String(job.payload.occurrenceId)),
+    // New words that waited a day (G5) take effect, unless stopped meanwhile.
+    'identity.change': async (job) => identity.applyChange(String(job.payload.id)),
   };
   const jobs = createJobRunner({ db: o.db, queue: 'core', handlers, clock: o.clock, log });
   jobsRef = jobs;
@@ -150,7 +152,7 @@ export async function buildCore(o: {
   registerIdentityRoutes(app, { identity, closeDevice: (deviceId) => hub.closeDevice(deviceId, CLOSE.revoked) });
   // The app lock (docs/plan-m4.md, G4).
   registerLockRoutes(app, { lock: createLock({ db: o.db, clock: o.clock, serverId, publicOrigins: o.config.publicOrigins }), identity });
-  registerPeopleRoutes(app, { people });
+  registerPeopleRoutes(app, { people, identity, closeDevice: (deviceId) => hub.closeDevice(deviceId, CLOSE.revoked) });
   registerCareRoutes(app, { db: o.db, clock: o.clock, pepper: o.secrets.pepper, care, people, push, heartbeats, reminders, requireSigned, log });
   registerReminderRoutes(app, { reminders, requireSigned });
   registerContactRoutes(app, { contacts });
