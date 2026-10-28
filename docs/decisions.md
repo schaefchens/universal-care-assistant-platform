@@ -2065,10 +2065,12 @@ The plan: [plan-m4.md](plan-m4.md).
    Anrufen, Abbrechen oder Hilfe."), and the call goes out only when the person chooses "Anrufen", as they would press
    call in a dialler; nothing calls 112 by itself. The other choice: UCAP hands the emergency number to the system's
    own dialler even then (which, as no longer the phone app, may not be able to place it).
+   **Confirmed by the owner, 2026-10-28.**
 10. **The server keeps the person's calls** (G10): number, the name the phone's contacts give it, in or out, answered,
    missed or declined, when and how long; never what was said. The plan: "what the server keeps (who, when, how)
    reaches it signed by the phone". Read only by the person's own devices; kept 90 days (G11), as a phone's own call
    list keeps months. The other choice: calls stay on the phone, and "Wer hat angerufen?" works there only.
+   **Confirmed by the owner, 2026-10-28.**
 
 ### Decided (within the plan)
 
