@@ -201,9 +201,16 @@ export function createConfigs(d: { db: Db; clock: Clock; people: PeopleService }
       return out;
     },
 
-    /** The device's own report (G8): what it can open, whether it is the home screen. */
-    async describe(deviceId: string, o: { apps: { package: string; label: string }[]; home: boolean; kiosk?: { mode: string; owner: boolean } }) {
-      await sql`update devices set apps = ${JSON.stringify(o.apps)}::jsonb, home = ${o.home}, kiosk = ${o.kiosk ? JSON.stringify(o.kiosk) : null}::jsonb where id = ${deviceId}`.execute(d.db);
+    /**
+     * The device's own report (G8, G9): whether it is the home screen, what its kiosk does, and what it can open. That
+     * list is kept only while a helper may see it (the owner, 2026-10-28), and the answer tells the device whether to
+     * send it: a report without it keeps the one there is.
+     */
+    async describe(personId: string, deviceId: string, o: { apps?: { package: string; label: string }[]; home: boolean; kiosk?: { mode: string; owner: boolean } }) {
+      const sendApps = await d.people.appsSeen(personId);
+      const apps = !sendApps ? sql`null` : o.apps ? sql`${JSON.stringify(o.apps)}::jsonb` : sql`apps`;
+      await sql`update devices set apps = ${apps}, home = ${o.home}, kiosk = ${o.kiosk ? JSON.stringify(o.kiosk) : null}::jsonb where id = ${deviceId}`.execute(d.db);
+      return { sendApps };
     },
 
     /** A configuration with its current body, its last versions and the device's state. */

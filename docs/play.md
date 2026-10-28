@@ -207,11 +207,19 @@ chooses it from the apps the device reports.
 **How:** a `<queries>` entry for `MAIN`/`LAUNCHER` activities, so UCAP sees only what a launcher sees; **no
 `QUERY_ALL_PACKAGES`**. The home role (`ROLE_HOME`) is asked for through Android's own question.
 
-**What goes to the server:** the names and package names of those apps, whether UCAP is the home screen, and the
-kiosk's state, at every start and after a change; shown to the person and to helpers with "Bedienung der Geräte
-einstellen". **Open for the release:** Play counts this as "Installed apps"; whether a disclosure before the first
-report and the person's consent are needed (the report could then wait until an area is to open an app) is to be
-decided with the owner before M9.
+**What goes to the server:** whether UCAP is the home screen and the kiosk's state, at every start and after a change;
+the names and package names of those apps **only while a helper of the person holds "Bedienung der Geräte einstellen"
+or "Kiosk-Modus einstellen"**, the two permissions that show them (the owner, 2026-10-28: "it should be bound to
+that"). The server's answer to each report says whether to send the list; it removes the lists when the last such
+permission ends (and a daily sweep any left over). Shown only to helpers with one of them; the person's own setup reads
+the list on the device.
+
+**Disclosure and consent** (Play's User Data policy counts the "inventory of other apps on the device" as personal and
+sensitive data): wherever one of the two is granted, the person hears it before anything is sent, in the app's normal
+use. On the approval screen: "Maria möchte dir helfen. Maria darf … die Bedienung deiner Geräte einstellen. Dafür
+sieht Maria, welche Apps auf deinen Geräten sind. Maria darf nicht deine Nachrichten lesen …", then "Erlauben" or
+"Ablehnen"; under the choice of permissions; and in a representative's news to the person. The person's "Erlauben"
+(or their representative's, G6) is the explicit yes; leaving the screen grants nothing.
 
 ## Data safety form (M3's part)
 
@@ -233,7 +241,7 @@ M4 adds (check the type names against Play's list at the release):
 | Data type (Play's names) | When | Shared with third parties | Purpose | Optional | Encrypted in transit | Deleted |
 |---|---|---|---|---|---|---|
 | Calls (who, when, how long; nearest: Contacts / App activity) | UCAP is the phone app | no | app functionality | yes | yes | after 90 days |
-| App activity: Installed apps | every start (the apps a launcher shows) | no | app functionality | no (see above) | yes | with the device |
+| App activity: Installed apps | while a helper may set up the devices or the kiosk (the apps a launcher shows) | no | app functionality | yes | yes | when no helper may see them any more, or with the device |
 
 ## Open until a real phone with a SIM
 

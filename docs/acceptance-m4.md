@@ -6,7 +6,7 @@ the emulator are recorded in [decisions.md](decisions.md), M4, under "Decided (w
 [acceptance.md](acceptance.md), M3's in [acceptance-m3.md](acceptance-m3.md). State of 2026-10-27.
 
 ```sh
-npm run typecheck && npm test        # 641 tests (M4: config, links, lock and its route matrix, changes, representatives,
+npm run typecheck && npm test        # 643 tests (M4: config, links, lock and its route matrix, changes, representatives,
                                      # trusted persons, kiosk, calls, LIVE's news, retention and limits)
 npm run test:e2e                     # the browser walk: M1's, M3's and M4's scripts, axe on each new screen, the canaries
 npm run test:android                 # the app's JVM tests (42, CallsTest among them)
@@ -103,6 +103,8 @@ servers' clock is moved where the script waits (a day for new words and recoveri
 | The editor's app choice and rules (an app area needs the app on that device) | `packages/shared/test/config.test.ts`, `server/test/kiosk.test.ts` | test |
 | The role, an app opened and each way back, a restart | G8 on the emulator (decisions) | emulator |
 | The editor's part | step G1, G9 (the editor) | e2e |
+| The list of apps only while a helper may see it (setting up the devices or the kiosk), gone with the last such permission and in the daily sweep; said wherever they are granted (the owner, 2026-10-28) | `server/test/kiosk.test.ts`, `app/test/people.test.ts`; step 3 (the approval question says it) | test, e2e |
+| On the emulator: no list without such a helper; sent once one is allowed, gone when helping ends | the shared emulator, 2026-10-28 (decisions, "The list of apps, bound to the permissions that show it") | emulator |
 
 ## G9 The kiosk lock
 

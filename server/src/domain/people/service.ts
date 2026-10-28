@@ -12,7 +12,7 @@
  * - `can(actor, scope, person)`: the person always, a helper only through an active grant. Admin rights grant
  *   nothing here (CONCEPT §7).
  */
-import { isScope, SCOPES, type Scope, uuidv7 } from '@ucap/shared';
+import { isScope, SCOPES, SCOPES_SEEING_APPS, type Scope, uuidv7 } from '@ucap/shared';
 import { sql } from 'kysely';
 import { audit } from '../../lib/audit.ts';
 import type { Clock } from '../../lib/clock.ts';
@@ -95,14 +95,27 @@ export function createPeopleService(d: PeopleDeps) {
     }));
   }
 
+  /** Whether a helper may see which apps are on the person's devices (SCOPES_SEEING_APPS: setting them up, the kiosk). */
+  const appsSeen = async (exec: Exec, personId: string) =>
+    (
+      await sql`
+        select 1 from relationships r join grants g on g.relationship_id = r.id
+        where r.person_id = ${personId} and r.state = 'active' and g.revoked_at is null and g.scope in (${sql.join([...SCOPES_SEEING_APPS])})
+        limit 1`.execute(exec)
+    ).rows.length > 0;
+
   /** Both sides hear about every change of a relationship (ids only; the app fetches what it may see), and a
-   *  representative's act names the arrangement, so the person's devices say "als deine Vertretung" (G6). */
-  const changed = (exec: Exec, rel: { id: string; person_id: string; helper_id: string }, state: string, by: string, representation: string | null = null) =>
-    emit(exec, {
+   *  representative's act names the arrangement, so the person's devices say "als deine Vertretung" (G6). The
+   *  person's devices then report again, and their apps are kept only while a helper may see them (the owner,
+   *  2026-10-28): gone with the last permission that shows them. */
+  const changed = async (exec: Exec, rel: { id: string; person_id: string; helper_id: string }, state: string, by: string, representation: string | null = null) => {
+    await emit(exec, {
       kind: 'relationship.changed',
       recipients: [rel.person_id, rel.helper_id, ...(representation && by !== rel.helper_id ? [by] : [])],
       payload: { relationshipId: rel.id, state, by, ...(representation ? { representation } : {}) },
     });
+    if (!(await appsSeen(exec, rel.person_id))) await sql`update devices set apps = null where user_id = ${rel.person_id} and apps is not null`.execute(exec);
+  };
 
   // —— Representatives (docs/plan-m4.md, G6): an arrangement of its own, not a permission ——
 
@@ -415,6 +428,9 @@ export function createPeopleService(d: PeopleDeps) {
         await emit(trx, { kind: 'preferences.changed', recipients: [personId], payload: { by: actorId, changed, after, before: Object.fromEntries(changed.map((k) => [k, before[k]])) } });
       });
     },
+
+    /** Whether a helper may see which apps are on the person's devices: only then does a device send them (G8). */
+    appsSeen: (personId: string) => appsSeen(d.db, personId),
 
     /** Whether the actor may act on the person's behalf within this scope. */
     async can(actorId: string, scope: Scope, personId: string): Promise<boolean> {

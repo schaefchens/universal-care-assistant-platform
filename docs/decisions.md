@@ -2057,6 +2057,10 @@ The plan: [plan-m4.md](plan-m4.md).
    and every device of the person is told. Later new words without the old ones wait 24 hours.
 7. **The apps a device can open are listed in its device editor** for helpers with `device.configure` (names only, as
    Android shows them), so they can put an app on an area. The other choice: the person's device alone chooses apps.
+   **Confirmed by the owner, 2026-10-28, bound to the permissions:** asked whether a device should ask before its list
+   leaves it (Play counts it as "Installed apps"): "the helper in itself gets rights to administer, we should inform
+   when a helper is assigned or created. dont we already have roles what helpers are allowed? it should be bound to that
+   then". Built: see "The list of apps, bound to the permissions that show it" below.
 8. **A screen has at most nine areas** (G1): one, two stacked or side by side, three, four, six in three rows or two,
    eight, nine. Up to nine, every area keeps at least a ninth of the screen, as the help area must (S11). CONCEPT §6:
    "including one, two, six, or more areas". The other choice: more areas, with the help area spanning several cells.
@@ -2332,8 +2336,36 @@ The plan: [plan-m4.md](plan-m4.md).
 - **G11, Play** (play.md): the phone role needs no call log permission (UCAP keeps its own record), device
   administration is inactive unless an operator made UCAP the device owner, and the list of apps uses `<queries>` for
   launchers only. The phone page now says what goes to the server ("Wer dich anruft und wen du anrufst … Was gesprochen
-  wird, nie."). Open for the release: the list of apps is "Installed apps" for Play, sent at every start; whether it
-  needs a disclosure and the person's consent first is for the owner to decide before M9. Seen once and not again
-  after a restart: the kiosk's "Beenden" missing although the person has a code (the app's own state of the lock);
-  for G11. Capacitor's debug builds write every plugin result to Android's log (`loggingBehavior` defaults to debug):
+  wird, nie."). The list of apps, "Installed apps" for Play, was sent at every start; the owner decided on 2026-10-28
+  (To confirm 7, and the last entry here). Seen once and not again after a restart: the kiosk's "Beenden" missing
+  although the person has a code (the app's own state of the lock); for G11. Capacitor's debug builds write every plugin result to Android's log (`loggingBehavior` defaults to debug):
   for G11's log checks, as the SMS and preview plugins' results hold content.
+- **The list of apps, bound to the permissions that show it** (the owner, 2026-10-28; To confirm 7). Two
+  permissions show a helper which apps are on the person's devices: "Bedienung der Geräte einstellen" (an app on an
+  area) and, since G9, "Kiosk-Modus einstellen" (the apps allowed inside), whose editor reads the same list
+  (`SCOPES_SEEING_APPS`). So:
+  - **Said wherever they are granted:** the approval question and the overview add "Dafür sieht Maria, welche Apps auf
+    deinen Geräten sind." after what Maria may do; a representative's news adds it to what they allowed; the choice of
+    permissions says under its boxes "Wer die Bedienung der Geräte oder den Kiosk-Modus einstellen darf, sieht dafür,
+    welche Apps auf den Geräten sind." Every way a helper gets a permission passes one of these (the person's own
+    approval, also after an administrator's setup; a representative's, told to the person).
+  - **Sent only while someone holds one:** the device reports its home screen and kiosk state as before; the answer
+    says whether to send its apps, and only then does it send them. A report of apps nobody may see is not kept.
+  - **Gone with the last such permission:** every change of a relationship removes the person's lists when no helper
+    holds one any more, and the person's devices report again (they hear of every change); the daily sweep removes any
+    left over. The person's own setup on the device reads the list there and needs none of this.
+  - For Play this is the disclosure and consent its User Data policy asks for ("inventory of other apps on the device"):
+    said in the app's normal use before anything is sent, with the person's "Erlauben" (or their representative's) as
+    the explicit yes; play.md. Permissions granted before 2026-10-28 were granted without the sentence; no release had
+    them.
+  - **On the shared emulator (2026-10-28)**, the person's own phone, its reports watched over DevTools (whether a list
+    was in each and its size, never its names): at start two reports (the start's and the kiosk's), both told not to
+    send the list, none kept. An invitation with "Bedienung der Geräte einstellen" alone, the line under the choice
+    shown; a test helper accepting it from a fresh browser profile made the phone report again, still told no (the
+    relationship waited). The approval said and showed "Erika Test darf die Bedienung deiner Geräte einstellen. Dafür
+    sieht Erika Test, welche Apps auf deinen Geräten sind. …"; after "Erlauben" the phone reported, was asked for the
+    list and sent it (22 apps). The helper ended it: the list gone from the server at once, "Die Verbindung mit Erika
+    Test ist beendet." said, and the next report told no. The person's history keeps the test helper's invitation,
+    approval and end.
+  - The browser walk: 42 of 42, step 3's approval with the sentence. A first run lost G7 to a press made 2 ms after
+    another had reloaded the list it stood in ("Tom fragen" had moved): the step now waits for the list.

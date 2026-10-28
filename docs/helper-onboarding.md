@@ -20,7 +20,7 @@ What you may do is one permission each, and none implies another:
 | Benachrichtigung bei Hilferufen einstellen | changing who is alerted when (the escalation plan) |
 | Erinnerungen verwalten | making and changing the person's reminders |
 | Antworten auf Erinnerungen sehen | seeing what the person answered ("Anna hat angegeben: getrunken") |
-| Bedienung der Geräte einstellen | setting up the person's device: how it looks, touch, the home screen's areas |
+| Bedienung der Geräte einstellen | setting up the person's device: how it looks, touch, the home screen's areas; you see which apps are on the person's devices, to put one on an area |
 | Kontakte verwalten | listing, adding, changing and deleting the person's saved contacts |
 | Termine und Aufgaben verwalten | the person's appointments (with their reminders) and tasks: adding, changing, deleting, marking done |
 
@@ -128,7 +128,8 @@ an area says when a finger rests on it. On a phone or tablet with UCAP, an area 
 ## The kiosk (M4)
 
 With **"Kiosk-Modus einstellen"** (a permission of its own, apart from setting up the device) you can lock a device into
-UCAP and the apps you allow, and say who may end it there: the person (with their code) and you, or helpers only.
+UCAP and the apps you allow (you see which apps are on it), and say who may end it there: the person (with their code)
+and you, or helpers only. The person hears, when allowing either permission, that it shows you their apps.
 On a dedicated device (operator.md) it is a real lock; on any other phone or tablet it is Android's screen pinning,
 which one gesture ends. A browser cannot be locked. Help always works inside it.
 

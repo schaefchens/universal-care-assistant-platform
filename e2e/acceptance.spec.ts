@@ -185,9 +185,10 @@ test('3 · Maria is invited with the spoken code, sees what Maria may do, and is
   await expect(maria.getByText(/Hilferufe beantworten, Erinnerungen verwalten und Bedienung der Geräte einstellen/)).toBeVisible();
   let from = await mark(clara);
   await maria.getByRole('button', { name: 'Annehmen', exact: true }).click();
-  // Said the same way every time: what Maria may do, and that Maria may not read messages or notes.
+  // Said the same way every time: what Maria may do, that it shows Maria Clara's apps (the owner, 2026-10-28), and that
+  // Maria may not read messages or notes.
   expect(await approve(clara, 'Maria', from)).toBe(
-    'Maria möchte dir helfen. Maria darf auf deine Hilferufe antworten, deine Erinnerungen anlegen und ändern und die Bedienung deiner Geräte einstellen. Maria darf nicht deine Nachrichten lesen oder deine Notizen lesen.',
+    'Maria möchte dir helfen. Maria darf auf deine Hilferufe antworten, deine Erinnerungen anlegen und ändern und die Bedienung deiner Geräte einstellen. Dafür sieht Maria, welche Apps auf deinen Geräten sind. Maria darf nicht deine Nachrichten lesen oder deine Notizen lesen.',
   );
   // Tom answers help requests only, and accepts on the phone.
   const forTom = await invite(clara, ['Hilferufe beantworten']);
@@ -1787,6 +1788,8 @@ test('G7 · trusted persons (docs/plan-m4.md, G7; acceptance 6): Clara asks Mari
   await helpersPage(clara);
   let from = await mark(clara);
   await clara.getByRole('button', { name: 'Maria fragen', exact: true }).click();
+  // The list loads again and the page moves as it grows: a press at once landed where "Tom fragen" had been.
+  await expect(clara.getByRole('button', { name: 'Maria fragen', exact: true })).toBeHidden();
   await clara.getByRole('button', { name: 'Tom fragen', exact: true }).click();
   await choose(clara.getByRole('radiogroup', { name: 'Wie viele müssen zustimmen?' }), '2 von 2');
   await axe(clara, 'Helfer, trusted persons');
@@ -1852,7 +1855,8 @@ test('G9 · the kiosk permission (docs/plan-m4.md, G9; acceptance 9): Clara lets
   await mariaItem.getByRole('button', { name: 'Ändern', exact: true }).click();
   await setChoice(mariaItem.getByRole('checkbox', { name: 'Kiosk-Modus einstellen' }));
   await mariaItem.getByRole('button', { name: 'Speichern', exact: true }).click();
-  await expect(mariaItem.getByText(/Kiosk-Modus einstellen/)).toBeVisible();
+  // The saved list ("… · Kiosk-Modus einstellen"), not the line under the choice that names what it shows.
+  await expect(mariaItem.getByText(/· Kiosk-Modus einstellen/)).toBeVisible();
   await home(clara);
   const kiosk = async (on: boolean) => {
     await home(maria);

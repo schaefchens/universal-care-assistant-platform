@@ -297,6 +297,8 @@
   "people.may": "{name} may {list}.",
   "people.mayNot": "{name} may not {list}.",
   "people.nobody": "Nobody may {list}.",
+  "people.seesApps": "For that, {name} sees which apps are on your devices.",
+  "people.scopes.seesApps": "Anyone who may set up the devices or kiosk mode sees, for that, which apps are on the devices.",
   "people.overview.none": "Nobody helps you yet.",
   "people.overview.pending": "{name} is waiting for your approval.",
   "people.overview.read": "Who may do what?",

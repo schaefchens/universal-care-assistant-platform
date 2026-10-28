@@ -91,7 +91,7 @@ import { wordLanguage } from './screens/words/common.ts';
 import { loadDeviceConfig, loadPrefs, loadServer, type Prefs, saveDeviceConfig, savePrefs, saveServer, type ServerRef } from './state/store.ts';
 import { applyTheme, platformPrefs } from './theme/apply.ts';
 import { resolveTheme } from './theme/themes.ts';
-import { scopeLabel } from './people/summary.ts';
+import { appsSentence, scopeLabel } from './people/summary.ts';
 import { makeUi, UiProvider } from './ui.tsx';
 import { VoiceController, type VoiceState } from './voice/controller.ts';
 import { LiveController, type LiveState } from './voice/live.ts';
@@ -384,6 +384,8 @@ export function App() {
           );
         } else if (e.type === 'relationship.changed') {
           setPeopleRev((n) => n + 1);
+          // A helper may now see this device's apps, or nobody may any more: reported again (the server keeps them so).
+          void reportDevice(session).catch(() => {});
           // Whoever acted already heard what they did.
           if (e.data.by !== session.ref.userId) void relationshipNews(String(e.data.relationshipId), String(e.data.state), e.data.representation ? String(e.data.by) : null);
           void people(session)
@@ -1352,11 +1354,17 @@ export function App() {
     for (const c of calls) u.say(sentenceOf(u, c), 'notice');
   }
 
-  /** What this device can open and whether it is the home screen (G8), for the editors of its areas. */
+  /**
+   * Whether this device is the home screen and what its kiosk does (G8, G9), and what it can open for the editors of
+   * its areas: that list leaves the device only while a helper may see it, which the server answers (the owner,
+   * 2026-10-28: bound to the permissions that show it, said when they are granted).
+   */
   async function reportDevice(s: Session) {
     if (!has('Launcher')) return;
-    const [a, st, kiosk] = await Promise.all([Launcher.apps(), Launcher.state(), has('Kiosk') ? Kiosk.state() : Promise.resolve(undefined)]);
-    await s.call('/api/v1/devices/current/apps', { method: 'PUT', body: { apps: a.apps.slice(0, 400), home: st.home, ...(kiosk ? { kiosk } : {}) } });
+    const [st, kiosk] = await Promise.all([Launcher.state(), has('Kiosk') ? Kiosk.state() : Promise.resolve(undefined)]);
+    const state = { home: st.home, ...(kiosk ? { kiosk } : {}) };
+    const { sendApps } = await s.call<{ sendApps: boolean }>('/api/v1/devices/current/apps', { method: 'PUT', body: state });
+    if (sendApps) await s.call('/api/v1/devices/current/apps', { method: 'PUT', body: { ...state, apps: (await Launcher.apps()).apps.slice(0, 400) } });
   }
 
   /** "Abbrechen" on the notice of new words (G5): a locked device asks for the code first, then stops them. */
@@ -1480,8 +1488,10 @@ export function App() {
       const rep = reps?.mine?.representative.id === representative ? reps.mine.representative.displayName : '';
       const scopes = r.scopes.map((s) => scopeLabel(s, ui.tr)).join(', ');
       ui.earcons.play('screen');
-      if (state === 'active') ui.say(ui.tr(r.approvedAt && Date.now() - Date.parse(r.approvedAt) < 120_000 ? 'rep.news.approved' : 'rep.news.changed', { rep, helper: other, scopes }), 'notice');
-      else if (state === 'ended') ui.say(ui.tr('rep.news.ended.helper', { rep, helper: other }), 'notice');
+      if (state === 'active') {
+        const news = ui.tr(r.approvedAt && Date.now() - Date.parse(r.approvedAt) < 120_000 ? 'rep.news.approved' : 'rep.news.changed', { rep, helper: other, scopes });
+        ui.say([news, appsSentence({ name: other, scopes: r.scopes, tr: ui.tr })].filter(Boolean).join(' '), 'notice');
+      } else if (state === 'ended') ui.say(ui.tr('rep.news.ended.helper', { rep, helper: other }), 'notice');
       return;
     }
     if (state === 'pending' && iAmPerson) {

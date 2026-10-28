@@ -25,6 +25,13 @@ export const RESERVED_SCOPES = ['access.manage', 'messaging.read', 'notes.read',
 /** Named in every summary as what a helper may not do, unless granted (not possible in M1). */
 export const ALWAYS_NAMED_DENIED = ['messaging.read', 'notes.read'] as const;
 
+/**
+ * Who holds one of these sees which apps are on the person's devices: to put an app on an area (G8) or allow one in
+ * the kiosk (G9). The list is said wherever they are granted, and leaves a device only while someone holds one (the
+ * owner, 2026-10-28: "it should be bound to that").
+ */
+export const SCOPES_SEEING_APPS: readonly Scope[] = ['device.configure', 'device.kiosk'];
+
 export const isScope = (s: unknown): s is Scope => typeof s === 'string' && (SCOPES as readonly string[]).includes(s);
 
 /** What a helper invitation proposes unless the person chooses otherwise. */

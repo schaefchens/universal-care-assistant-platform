@@ -292,6 +292,8 @@ node tools/backup/backup.ts restore <dir> --into <new database> --files --connec
 - **Calls**, while UCAP is the person's phone app: the number and the name the phone's contacts give it, in or out,
   answered, missed or declined, when and how long, sent by the phone as each call ends; never what was said. Only the
   person's own devices read them. Kept 90 days.
+- **A device's list of apps** (names only, as Android's home screen shows them): only while a helper of the person may
+  set up the devices or the kiosk, the two permissions that show it; gone when the last of them ends.
 - A code for a new device a day after it was used or expired; a recovery through trusted persons a day after it
   expired or was declined; new words, done or stopped, 30 days after (the history keeps who did what). An operator's
   reset code is an invitation: 30 days after it expired.

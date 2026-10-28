@@ -7,10 +7,12 @@
  *   they expired (an operator's reset code too), finished jobs after a week and dead ones after 30 days;
  * - core, M4 (docs/plan-m4.md, G11): a code for a new device a day after it ended or expired; a recovery through trusted
  *   persons a day after it expired or was declined, and with its change of words; a change of words, done or stopped,
- *   30 days after it ended (the history keeps who did what); the phone's calls after 90 days;
+ *   30 days after it ended (the history keeps who did what); the phone's calls after 90 days; a device's list of apps
+ *   once no helper may see it (a change of permissions removes it at once; this catches the rest);
  * - assistant: a conversation's last exchanges (the person's own words) once it was quiet for 30 minutes, its focus
  *   after a day; turns (timings and outcomes, never words) and finished actions after 30 days.
  */
+import { SCOPES_SEEING_APPS } from '@ucap/shared';
 import { sql } from 'kysely';
 import type { Clock } from './clock.ts';
 import type { Exec } from './db.ts';
@@ -36,6 +38,10 @@ export async function pruneCore(db: Exec, clock: Clock): Promise<void> {
     delete from identity_changes c where c.state <> 'waiting' and c.ended_at < ${ago(30 * DAY)}
       and not exists (select 1 from trusted_recoveries r where r.change_id = c.id)`.execute(db);
   await sql`delete from calls where at < ${ago(90 * DAY)}`.execute(db);
+  await sql`
+    update devices d set apps = null where apps is not null and not exists (
+      select 1 from relationships r join grants g on g.relationship_id = r.id
+      where r.person_id = d.user_id and r.state = 'active' and g.revoked_at is null and g.scope in (${sql.join([...SCOPES_SEEING_APPS])}))`.execute(db);
 }
 
 export async function pruneAssistant(db: Exec, clock: Clock): Promise<void> {

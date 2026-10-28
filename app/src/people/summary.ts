@@ -3,11 +3,19 @@
  * The sentences use the helper's name, never a pronoun (nobody's pronouns are guessed), and always say what the
  * helper may not do: read messages or notes (CONCEPT §3: personal communication stays apart from care).
  */
-import { ALWAYS_NAMED_DENIED, SCOPES, type Scope } from '@ucap/shared';
+import { ALWAYS_NAMED_DENIED, SCOPES, SCOPES_SEEING_APPS, type Scope } from '@ucap/shared';
 
 type Tr = (key: string, params?: Record<string, string | number | Date>) => string;
 
 const list = (lang: string, items: string[], type: 'conjunction' | 'disjunction') => new Intl.ListFormat(lang, { style: 'long', type }).format(items);
+
+/**
+ * "Dafür sieht {name}, welche Apps auf deinen Geräten sind." after what a helper may do, when it shows them the
+ * person's apps (the owner, 2026-10-28: said wherever such a permission is granted); otherwise nothing.
+ */
+export function appsSentence(o: { name: string; scopes: readonly Scope[]; tr: Tr }): string {
+  return SCOPES_SEEING_APPS.some((s) => o.scopes.includes(s)) ? o.tr('people.seesApps', { name: o.name }) : '';
+}
 
 /** "{name} darf: … {name} darf nicht: …" for the person who is asked or who listens to the overview. */
 export function scopeSentences(o: { name: string; scopes: readonly Scope[]; lang: string; tr: Tr }): string {
@@ -15,7 +23,7 @@ export function scopeSentences(o: { name: string; scopes: readonly Scope[]; lang
   // What matters most and is easy to follow by ear: messages and notes (docs/plan.md: "sie darf nicht: deine
   // Nachrichten lesen"). Every other permission not given is simply not named.
   const denied = ALWAYS_NAMED_DENIED.map((s) => o.tr(`scope.${s}.self`));
-  return [allowed.length ? o.tr('people.may', { name: o.name, list: list(o.lang, allowed, 'conjunction') }) : '', o.tr('people.mayNot', { name: o.name, list: list(o.lang, denied, 'disjunction') })]
+  return [allowed.length ? o.tr('people.may', { name: o.name, list: list(o.lang, allowed, 'conjunction') }) : '', appsSentence(o), o.tr('people.mayNot', { name: o.name, list: list(o.lang, denied, 'disjunction') })]
     .filter(Boolean)
     .join(' ');
 }
@@ -32,6 +40,8 @@ export function overviewSummary(o: { helpers: { name: string; scopes: readonly S
   for (const h of o.helpers) {
     const allowed = SCOPES.filter((s) => h.scopes.includes(s)).map((s) => o.tr(`scope.${s}.self`));
     parts.push(o.tr('people.may', { name: h.name, list: list(o.lang, allowed, 'conjunction') }));
+    const apps = appsSentence({ ...h, tr: o.tr });
+    if (apps) parts.push(apps);
   }
   for (const name of o.pending) parts.push(o.tr('people.overview.pending', { name }));
   parts.push(o.tr('people.nobody', { list: list(o.lang, ALWAYS_NAMED_DENIED.map((s) => o.tr(`scope.${s}.self`)), 'disjunction') }));

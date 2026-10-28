@@ -4,9 +4,11 @@
  * "Bedienung der Geräte einstellen", the person both; the person's code is checked without unlocking anything.
  */
 import { DEFAULT_DEVICE_CONFIG, type DeviceConfig } from '@ucap/shared';
+import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildCore } from '../src/core/app.ts';
 import type { Db } from '../src/lib/db.ts';
+import { pruneCore } from '../src/lib/retention.ts';
 import { type Account, accountClient } from './accounts.ts';
 import { SECRETS, testConfig, testDb } from './helpers.ts';
 
@@ -50,8 +52,38 @@ describe('the kiosk and the device’s apps', () => {
 
   it('the device reports its apps, its home role and its kiosk; the editor sees them', async () => {
     const r = await as(anna, 'PUT', '/api/v1/devices/current/apps', { apps: [{ package: 'org.radio.app', label: 'Radio' }], home: true, kiosk: { mode: 'off', owner: true } });
-    expect(r.statusCode).toBe(204);
+    expect(r.json()).toEqual({ sendApps: true });
     expect((await current(maria)).device).toEqual({ apps: [{ package: 'org.radio.app', label: 'Radio' }], home: true, kiosk: { mode: 'off', owner: true } });
+    // A report without them (the device asks first) keeps the list there is.
+    expect((await as(anna, 'PUT', '/api/v1/devices/current/apps', { home: true, kiosk: { mode: 'off', owner: true } })).json()).toEqual({ sendApps: true });
+    expect((await current(tom)).device.apps).toEqual([{ package: 'org.radio.app', label: 'Radio' }]);
+  });
+
+  it('keeps a device’s apps only while a helper may see them: set up the devices or the kiosk (the owner, 2026-10-28)', async () => {
+    const paula = await c.create((await core.identity.createInvite(db, { kind: 'account', createdBy: null })).code, 'Paula');
+    const apps = [{ package: 'org.radio.app', label: 'Radio' }];
+    const stored = async () => (await db.selectFrom('devices').select(sql<boolean>`apps is not null`.as('kept')).where('user_id', '=', paula.userId).executeTakeFirstOrThrow()).kept;
+    // Nobody may see them: the answer says not to send them, and what comes anyway is not kept.
+    expect((await as(paula, 'PUT', '/api/v1/devices/current/apps', { home: false })).json()).toEqual({ sendApps: false });
+    expect((await as(paula, 'PUT', '/api/v1/devices/current/apps', { apps, home: false })).json()).toEqual({ sendApps: false });
+    expect(await stored()).toBe(false);
+    // Helping with reminders shows no apps; the kiosk does.
+    await relate(paula, maria, ['care.respond', 'reminders.manage']);
+    expect((await as(paula, 'PUT', '/api/v1/devices/current/apps', { home: false })).json()).toEqual({ sendApps: false });
+    await relate(paula, tom, ['device.kiosk']);
+    expect((await as(paula, 'PUT', '/api/v1/devices/current/apps', { home: false })).json()).toEqual({ sendApps: true });
+    expect((await as(paula, 'PUT', '/api/v1/devices/current/apps', { apps, home: false })).json()).toEqual({ sendApps: true });
+    expect(await stored()).toBe(true);
+    // Paula takes the kiosk back from Tom: the list goes at once, and the next report is told so.
+    const rel = (await db.selectFrom('relationships').select('id').where('person_id', '=', paula.userId).where('helper_id', '=', tom.userId).executeTakeFirstOrThrow()).id;
+    expect((await as(paula, 'PUT', `/api/v1/relationships/${rel}/grants`, { scopes: ['care.respond'] })).statusCode).toBe(204);
+    expect(await stored()).toBe(false);
+    expect((await as(paula, 'PUT', '/api/v1/devices/current/apps', { home: false })).json()).toEqual({ sendApps: false });
+    // The sweep (retention.ts) removes a list nobody may see however it got there, never one a helper may see.
+    await sql`update devices set apps = ${JSON.stringify(apps)}::jsonb where user_id in (${paula.userId}, ${anna.userId})`.execute(db);
+    await pruneCore(db, Date.now);
+    expect(await stored()).toBe(false);
+    expect((await current(maria)).device.apps).toEqual(apps);
   });
 
   it('the kiosk needs "Kiosk-Modus einstellen", the rest "Bedienung der Geräte einstellen"; the person may change both', async () => {

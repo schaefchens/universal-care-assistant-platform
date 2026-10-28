@@ -8,7 +8,7 @@
  */
 import { DEFAULT_HELPER_SCOPES, hasMessage, SCOPES, type Scope } from '@ucap/shared';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, TextField } from 'react-aria-components';
+import { Button, Checkbox, CheckboxGroup, Form, Heading, Input, Label, Text, TextField } from 'react-aria-components';
 import type { Session } from '../identity/account.ts';
 import { EscalationSetting } from '../care/EscalationSetting.tsx';
 import { PhoneFallbackSetting } from '../care/PhoneFallbackSetting.tsx';
@@ -38,6 +38,10 @@ export function ScopeChoice(p: { label: string; value: Scope[]; onChange: (s: Sc
           {scopeLabel(s, tr)}
         </Checkbox>
       ))}
+      {/* What two of them show, before anyone grants them (the owner, 2026-10-28). */}
+      <Text slot="description" className="muted">
+        {tr('people.scopes.seesApps')}
+      </Text>
     </CheckboxGroup>
   );
 }
