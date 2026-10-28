@@ -2039,22 +2039,28 @@ The plan: [plan-m4.md](plan-m4.md).
    M4 lets helpers put the activity screens (messages, notes, contacts, appointments, tasks) and apps on areas; §10's
    activities (games, quizzes, stories) come with M7, which brings their remote setup with them. The other choice: a
    framework for activities in M4 already, with nothing to put in it until M7.
+   **Confirmed by the owner, 2026-10-28.**
 2. **UCAP's code is six presses on four large areas** (the corners, each with its own sound and name; 1 to 4 on a
    keyboard), 4096 possibilities. It is short so that everyone can enter it; the server lets five wrong tries pass,
    then waits a minute, longer each time, and only the device itself (with its key) can try. The other choices: digits
    on a pad of ten areas (smaller areas, a million possibilities), or a length the person picks.
+   **Confirmed by the owner, 2026-10-28.**
 3. **One code per person**, the same on every device that locks, set on any of them; a forgotten one is replaced from
    another unlocked device of the person or with the recovery words. The other choice: a code per device.
+   **Confirmed by the owner, 2026-10-28.**
 4. **What a representative may do:** invite and approve helpers, set and withdraw their permissions (never adding to
    their own), end connections, sign out the person's devices. Not: messages or notes, approving a new device (plan.md:
    "approved only on the person's own devices"), recovery, the person's consents to outside providers. The person may
    end the arrangement on their own device at any time, also one an administrator made; the administrator may end the
    one they made.
+   **Confirmed by the owner, 2026-10-28.**
 5. **Who may end the kiosk is part of the kiosk's setting**, said when it starts ("Beenden können Clara und Maria" or
    "nur Maria"): the person's own kiosk is theirs to end (with their code); a helper who locks it chooses whether the
    person may end it. CONCEPT §20: "so users cannot break out … this depends on what the user wants".
+   **Confirmed by the owner, 2026-10-28.**
 6. **The first words of an account set up without them need no waiting period**: there are no old words to protect,
    and every device of the person is told. Later new words without the old ones wait 24 hours.
+   **Confirmed by the owner, 2026-10-28.**
 7. **The apps a device can open are listed in its device editor** for helpers with `device.configure` (names only, as
    Android shows them), so they can put an app on an area. The other choice: the person's device alone chooses apps.
    **Confirmed by the owner, 2026-10-28, bound to the permissions:** asked whether a device should ask before its list
@@ -2064,6 +2070,7 @@ The plan: [plan-m4.md](plan-m4.md).
 8. **A screen has at most nine areas** (G1): one, two stacked or side by side, three, four, six in three rows or two,
    eight, nine. Up to nine, every area keeps at least a ninth of the screen, as the help area must (S11). CONCEPT §6:
    "including one, two, six, or more areas". The other choice: more areas, with the help area spanning several cells.
+   **Confirmed by the owner, 2026-10-28.**
 9. **The emergency number, while UCAP is the phone app, is asked about by UCAP** (G10). plan.md, Appendix D, A3b: "The
    emergency number always opens the dialler." Opening the dialler then opens UCAP's own question ("1 1 2 anrufen?
    Anrufen, Abbrechen oder Hilfe."), and the call goes out only when the person chooses "Anrufen", as they would press
