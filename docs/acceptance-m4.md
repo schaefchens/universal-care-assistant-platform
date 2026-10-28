@@ -3,7 +3,7 @@
 Where each exit check of [plan-m4.md](plan-m4.md)'s steps and each step of its acceptance script is checked: by an
 automated test, in the browser walk, by a run on the Android emulator, or not yet, and what it waits for. The runs on
 the emulator are recorded in [decisions.md](decisions.md), M4, under "Decided (within the plan)". M1's checks are in
-[acceptance.md](acceptance.md), M3's in [acceptance-m3.md](acceptance-m3.md). State of 2026-10-27.
+[acceptance.md](acceptance.md), M3's in [acceptance-m3.md](acceptance-m3.md). State of 2026-10-28.
 
 ```sh
 npm run typecheck && npm test        # 643 tests (M4: config, links, lock and its route matrix, changes, representatives,
@@ -15,8 +15,8 @@ node tools/android/a11y-tree.ts      # its accessibility tree, compared with Tal
 ```
 
 **Legend:** *test* = automated (file named); *e2e* = in the browser walk (`e2e/acceptance.spec.ts`, its step named);
-*emulator* = run on the scratch emulator `ucap_m4_scratch` (the shared one never got a screen lock, a device owner or
-another phone app); *open* = not yet, with the reason.
+*emulator* = run on the scratch emulator `ucap_m4_scratch`, or for the list of apps, G2 and G7 on the shared one (which
+never got a screen lock, a device owner or another phone app); *open* = not yet, with the reason.
 
 **The browser walk** (`npm run test:e2e`, about seventeen minutes, 42 steps): Clara's tablet, Maria's and Tom's
 phones are browsers; Clara's phone is simulated (`e2e/phone.ts`), signing what its native code would send. The
@@ -47,7 +47,7 @@ servers' clock is moved where the script waits (a day for new words and recoveri
 | The scope matrix for each setting | `server/test/helper-setup.test.ts` | test |
 | Announcement goldens | `packages/shared/test/config.test.ts` | test |
 | Maria sets Clara's reading voice, speed and the phone fallback; the tablet says it | step G2 | e2e |
-| On the emulator | G2's changes are said and undone on the same screen as every remote change (M1, S11, checked on the emulator then); their sentences in step G2. A helper's change of speed on the emulator itself: open (it needs a helper account on the dev stack) | open |
+| On the emulator | a helper's slower voice, saved in a browser, applied on the idle phone, said with the helper's sentence and "Rückgängig", undone by touch to the version before; G2's other changes are said and undone on the same screen as every remote change (M1, S11) (decisions, "G2 and G7 on the shared emulator") | emulator |
 | axe on the helper's page | step G2 ("Alles für Clara") | e2e |
 
 ## G3 Device linking
@@ -94,7 +94,7 @@ servers' clock is moved where the script waits (a day for new words and recoveri
 | k of n, a trustee who ended, a second recovery while one waits, stopping it, the new words | `server/test/trusted.test.ts` | test |
 | Wrong codes count against the trusted person | `server/test/trusted.test.ts` (G11) | test |
 | Clara recovered by Maria and Tom | step G7 | e2e |
-| On the emulator | a waiting change's notice and "Abbrechen" on the tablet, checked with new words from the browser (G5's run); a whole recovery through trusted persons with the emulator as one of the devices: open | open |
+| On the emulator | the phone as the trusted person: asked, agreed, a new device's code entered, the same four pictures, yes; the new device the person's after the wait (shortened in the dev database), enrolled through the recovery (decisions, "G2 and G7 on the shared emulator"); a waiting change's notice and "Abbrechen" on a tablet (G5's run) | emulator |
 
 ## G8 Home screen, apps and the way back
 
@@ -142,12 +142,12 @@ servers' clock is moved where the script waits (a day for new words and recoveri
 
 | # | Item | Where |
 |---|---|---|
-| 1 | Remote setup: a screen "Freizeit", a softer sound, a slower voice, short guidance; applied while nobody touches, said, "Rückgängig" | steps G1 and G2; on the emulator the person's own page (G1) |
+| 1 | Remote setup: a screen "Freizeit", a softer sound, a slower voice, short guidance; applied while nobody touches, said, "Rückgängig" | steps G1 and G2; on the emulator the person's own page (G1) and a helper's slower voice, said and undone (G2) |
 | 2 | Care contacts: the phone fallback to Tom's number, said | step G2 |
 | 3 | A second device by a code and four pictures | step G3; G3 on the emulator |
 | 4 | App lock: the code chosen, help while locked, messages behind the code, wrong codes said, unlocked | step G4; G4 on the emulator |
 | 5 | New words: said at once on the tablet, "Abbrechen", a day later the new ones work | steps G5 and G5c; the notice and stop on the emulator (G11) |
-| 6 | Trusted persons: two of two, a day later the tablet is Clara's | step G7 |
+| 6 | Trusted persons: two of two, a day later the tablet is Clara's | step G7; on the emulator as the trusted person's phone |
 | 7 | A representative named by an administrator; Tom's phone says Maria's act | step G6 |
 | 8 | Home and apps: "Radio" opens, Home and "Zurück zu UCAP" lead back | G8 on the emulator (Clock as the app) |
 | 9 | Kiosk: only UCAP and the allowed app, Home back, help works, ended by Maria | G9 on the emulator (as device owner, ended with the person's code); Maria's part in step G9 |

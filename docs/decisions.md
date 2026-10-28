@@ -2376,3 +2376,20 @@ The plan: [plan-m4.md](plan-m4.md).
     approval and end.
   - The browser walk: 42 of 42, step 3's approval with the sentence. A first run lost G7 to a press made 2 ms after
     another had reloaded the list it stood in ("Tom fragen" had moved): the step now waits for the list.
+- **G2 and G7 on the shared emulator (2026-10-28)**, the last emulator checks of acceptance-m4.md, with the dev stack and
+  a test helper ("Erika Test") in a fresh browser profile; of the person's phone only states and the test's own texts:
+  - **G2:** Erika, allowed "Bedienung der Geräte einstellen" on the phone, made it speak two steps slower in "Gerät von
+    Wanda Test" (version 14, rate 0.8). The phone, left alone, applied it about three minutes later: "Neue
+    Einstellungen" with "Erika Test hat eingestellt, dass ich langsamer spreche." and "Wenn du das nicht möchtest,
+    wähle „Rückgängig“.", and "Behalten" and "Rückgängig". "Rückgängig" by touch said "Rückgängig gemacht. Die vorigen
+    Einstellungen gelten wieder." and made version 15, the same as 13. Ending the help removed the phone's list of apps.
+  - **G7, the phone as a trusted person:** Erika asked Wanda (one of one); the phone showed "Erika Test möchte dich als
+    Vertrauensperson. … Du siehst dadurch nichts von den Daten von Erika Test.", and "Zustimmen" said "Du bist jetzt
+    Vertrauensperson für Erika Test.". A new browser without words made new words and showed a code and four pictures;
+    the code typed on the phone, which said "Das Gerät zeigt diese vier Bilder: … Sind es dieselben?" and showed the
+    same four (compared by a script, never printed); "Ja, das ist das neue Gerät von Erika Test" said "Genug haben
+    zugestimmt: Das Gerät gehört ab … Uhr Erika Test, wenn es bis dahin niemand stoppt." and the new device said when it
+    would be Erika's. The day was skipped by moving that one waiting change and its job to the present in the dev
+    database (the walk moves its clocks instead): the job applied it, the new device was enrolled through the recovery
+    (`enrolled_via` trusted) and reached Erika's Startseite with new words. Erika then ended Wanda's roles from it.
+  - The person's history on the phone keeps Erika's invitations, approvals and ends.
